@@ -11,6 +11,7 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -81,7 +82,19 @@ class ServerEditorViewModel @Inject constructor(
         }
     }
 
+    /** True while a save is in flight; also disables the button (see [saving]). */
+    var saving by mutableStateOf(false)
+        private set
+
+    var saveError by mutableStateOf<String?>(null)
+        private set
+
     fun save(onDone: () -> Unit) {
+        // Guard re-entry: the id is generated inside the coroutine, so two fast taps
+        // would mint two ids and persist two profiles with the same name and URL.
+        if (saving) return
+        saving = true
+        saveError = null
         viewModelScope.launch {
             val id = editingId ?: UUID.randomUUID().toString()
             val profile = ServerProfile(
@@ -89,8 +102,22 @@ class ServerEditorViewModel @Inject constructor(
                 name = name.trim(),
                 baseUrl = CodegClient.normalizeBaseUrl(url),
             )
-            repository.save(profile, token.trim())
+            try {
+                // Both halves can fail: the Keystore encryption of the token
+                // (KeyStoreException / InvalidKeyException) and the DataStore write
+                // (IOException when the disk is full). Unhandled, this propagated to
+                // the default handler and killed the process; swallowed, the screen
+                // simply never advanced.
+                repository.save(profile, token.trim())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                saving = false
+                saveError = e.displayMessage()
+                return@launch
+            }
             if (editingId == null) repository.select(id)
+            saving = false
             onDone()
         }
     }

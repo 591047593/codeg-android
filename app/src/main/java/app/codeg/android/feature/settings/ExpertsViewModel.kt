@@ -11,6 +11,8 @@ import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -40,8 +42,10 @@ class ExpertsViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -56,14 +60,14 @@ class ExpertsViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
-        viewModelScope.launch {
+    fun load(): Job? {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
@@ -116,20 +120,34 @@ class ExpertsViewModel @Inject constructor(
     private fun updateDetail(transform: (DetailState) -> DetailState) =
         _ui.update { st -> st.detail?.let { d -> st.copy(detail = transform(d)) } ?: st }
 
+    /**
+     * Apply [transform] only if the open detail still belongs to [expertId].
+     *
+     * A toggle is a round trip, so the user can close the dialog or open a different
+     * expert before it returns. Writing the result unconditionally put one expert's
+     * link state into another expert's dialog, and the failure path re-opened a dialog
+     * the user had already dismissed.
+     */
+    private fun updateDetailFor(expertId: String, transform: (DetailState) -> DetailState) =
+        _ui.update { st ->
+            val d = st.detail
+            if (d != null && d.expert.id == expertId) st.copy(detail = transform(d)) else st
+        }
+
     fun toggleLink(agent: AgentType, on: Boolean) {
         val c = client ?: return
         val detail = _ui.value.detail ?: return
         val expertId = detail.expert.id
         if (detail.toggling.contains(agent)) return
-        updateDetail { it.copy(toggling = it.toggling + agent) }
+        updateDetailFor(expertId) { it.copy(toggling = it.toggling + agent) }
         viewModelScope.launch {
             try {
                 if (on) {
                     val status = c.expertLink(expertId, agent)
-                    updateDetail { it.copy(statusByAgent = it.statusByAgent + (agent to status)) }
+                    updateDetailFor(expertId) { it.copy(statusByAgent = it.statusByAgent + (agent to status)) }
                 } else {
                     c.expertUnlink(expertId, agent)
-                    updateDetail { d ->
+                    updateDetailFor(expertId) { d ->
                         val prev = d.statusByAgent[agent]
                         val cleared = ExpertInstallStatus(
                             expertId = expertId, agentType = agent, state = ExpertLinkState.NOT_LINKED,
@@ -139,12 +157,25 @@ class ExpertsViewModel @Inject constructor(
                         d.copy(statusByAgent = d.statusByAgent + (agent to cleared))
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                updateDetail { it.copy(error = e.displayMessage()) }
-                openDetail(detail.expert) // re-sync real state after a failed toggle
+                updateDetailFor(expertId) { it.copy(error = e.displayMessage()) }
+                // Re-sync real state — but only if that expert's dialog is still open,
+                // otherwise this would resurrect a dialog the user closed.
+                if (_ui.value.detail?.expert?.id == expertId) reSyncDetail(detail.expert)
             } finally {
-                updateDetail { it.copy(toggling = it.toggling - agent) }
+                updateDetailFor(expertId) { it.copy(toggling = it.toggling - agent) }
             }
+        }
+    }
+
+    /** Refresh the open detail in place; unlike [openDetail] it never opens a dialog. */
+    private suspend fun reSyncDetail(expert: ExpertListItem) {
+        val c = client ?: return
+        val statuses = runCatching { c.expertInstallStatus(expert.id) }.getOrNull() ?: return
+        updateDetailFor(expert.id) {
+            it.copy(statusByAgent = statuses.associateBy { s -> s.agentType })
         }
     }
 

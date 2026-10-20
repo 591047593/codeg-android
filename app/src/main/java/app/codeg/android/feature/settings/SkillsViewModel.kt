@@ -10,6 +10,7 @@ import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -41,8 +42,10 @@ class SkillsViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -57,14 +60,14 @@ class SkillsViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
-        viewModelScope.launch {
+    fun load(): Job? {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")

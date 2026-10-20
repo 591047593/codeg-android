@@ -84,6 +84,7 @@
     <string name="activity_empty_title">暂无动态</string>
     <string name="activity_empty_message">运行中和最近的会话会显示在这里。</string>
     <string name="activity_updated">更新于 %1$s</string>
+    <string name="activity_load_failed">无法加载动态</string>
 
     <!-- Search -->
     <string name="search_placeholder">搜索会话</string>
@@ -278,6 +279,7 @@
 
     <!-- ===== Settings · Quick Messages ===== -->
     <string name="quickmsg_empty_title">暂无快捷消息</string>
+    <string name="quickmsg_delete">删除快捷消息</string>
     <string name="quickmsg_empty_subtitle">添加可复用的消息模板。</string>
     <string name="quickmsg_new_cd">新建快捷消息</string>
     <string name="quickmsg_new_title">新建快捷消息</string>
@@ -848,4 +850,8 @@
     <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
     <string name="projects_folder_not_found">未找到文件夹</string>
     <string name="time_just_now">刚刚</string>
+    <string name="providers_delete_title">删除模型提供商</string>
+    <string name="mcp_delete_title">删除 MCP 服务器</string>
+    <string name="mcp_id_taken">该 id 已被另一个 MCP 服务器占用</string>
+    <string name="mcp_rename_incomplete">已重命名，但无法删除旧条目 %1$s：%2$s</string>
 </resources>

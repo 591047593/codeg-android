@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -80,8 +81,41 @@ class SessionListViewModel @Inject constructor(
             repository.selectedProfile.collectLatest { profile -> onProfile(profile) }
         }
         // Refetch when a conversation is renamed/pinned/status-changed/deleted elsewhere.
+        // A change that lands while a fetch is already running is remembered and applied
+        // when that fetch finishes, instead of being dropped: the previous version
+        // consumed the event and did nothing, so a rename made during a pull-to-refresh
+        // left the old title on screen until some unrelated action refreshed the list.
         viewModelScope.launch {
-            repository.conversationsChanged.collect { if (client != null && !_ui.value.isBusy) fetch(isInitial = false) }
+            repository.conversationsChanged
+                .conflate()
+                .collect {
+                    if (client == null) return@collect
+                    if (_ui.value.isBusy) {
+                        pendingRefresh = true
+                    } else {
+                        fetch(isInitial = false)
+                        drainPendingRefresh()
+                    }
+                }
+        }
+    }
+
+    /** A change arrived while a fetch was in flight; apply it once that fetch settles. */
+    private var pendingRefresh = false
+
+    /** Guards against the re-entrant drain: fetch's `finally` calls back into here. */
+    private var drainingRefresh = false
+
+    private suspend fun drainPendingRefresh() {
+        if (drainingRefresh) return
+        drainingRefresh = true
+        try {
+            while (pendingRefresh) {
+                pendingRefresh = false
+                if (client != null && !_ui.value.isBusy) fetch(isInitial = false)
+            }
+        } finally {
+            drainingRefresh = false
         }
     }
 
@@ -98,16 +132,32 @@ class SessionListViewModel @Inject constructor(
         val resolved = repository.client(profile)
         client = resolved
         if (resolved == null) {
-            _ui.update { it.copy(isLoading = false, error = appContext.getString(R.string.sessions_missing_token)) }
+            // No token for this server. The list on screen belongs to whichever server
+            // was selected before, so it must be cleared rather than kept under the new
+            // server's title — tapping one of those rows would resolve a foreign
+            // conversation id against the new server.
+            _ui.value = SessionListUiState(
+                hasLoaded = true,
+                isLoading = false,
+                error = appContext.getString(R.string.sessions_missing_token),
+            )
             return
         }
         fetch(isInitial = true, force = changed)
     }
 
-    /** Pull-to-refresh / toolbar refresh — keeps the current list on screen. */
+    /**
+     * Pull-to-refresh / toolbar refresh — keeps the current list on screen.
+     *
+     * Also drives the Retry button on the full-screen error, which is only shown before
+     * anything has loaded. That case has to run the *initial* path: the non-initial one
+     * only sets `isRefreshing`, so the screen would clear its error and fall through to
+     * an empty list with a pull indicator instead of a spinner.
+     */
     fun refresh() {
         if (_ui.value.isBusy) return
-        viewModelScope.launch { fetch(isInitial = false) }
+        val initial = !_ui.value.hasLoaded
+        viewModelScope.launch { fetch(isInitial = initial) }
     }
 
     private suspend fun fetch(isInitial: Boolean, force: Boolean = false) {
@@ -142,6 +192,9 @@ class SessionListViewModel @Inject constructor(
         } catch (e: Exception) {
             if (token != fetchGeneration) return
             _ui.update { it.copy(isLoading = false, isRefreshing = false, error = e.displayMessage()) }
+        } finally {
+            // A change notification that arrived while this fetch was running applies now.
+            if (pendingRefresh) drainPendingRefresh()
         }
     }
 
@@ -152,7 +205,13 @@ class SessionListViewModel @Inject constructor(
      */
     fun setPinned(conversation: ConversationSummary, pinned: Boolean) {
         val active = client ?: return
-        val previous = _ui.value.conversations
+        // Remember only this row's previous pin so a failure reverts only this row.
+        // Restoring the whole captured list put back a snapshot taken before the
+        // request: a concurrent pin of another row, a pull-to-refresh that arrived
+        // meanwhile, or a server switch would all be undone — resurrecting deleted
+        // rows, dropping a newer pin, or repopulating the screen with another
+        // server's conversations.
+        val previousPinnedAt = conversation.pinnedAt
         _ui.update { state ->
             state.copy(
                 conversations = state.conversations.map {
@@ -163,8 +222,23 @@ class SessionListViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 active.setPinned(conversation.id, pinned)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(conversations = previous, error = e.displayMessage()) }
+                _ui.update { state ->
+                    // Revert only if this row still exists and the server it belongs to is
+                    // still the selected one.
+                    if (client !== active) {
+                        state
+                    } else {
+                        state.copy(
+                            conversations = state.conversations.map {
+                                if (it.id == conversation.id) it.copy(pinnedAt = previousPinnedAt) else it
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
             }
         }
     }

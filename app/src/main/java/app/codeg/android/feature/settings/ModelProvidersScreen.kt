@@ -46,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodegTextField
+import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.component.SecretField
@@ -59,6 +60,7 @@ fun ModelProvidersContent(viewModel: ModelProvidersViewModel = hiltViewModel()) 
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     var editor by remember { mutableStateOf<ProviderEditorTarget?>(null) }
+    var pendingDelete by remember { mutableStateOf<ModelProviderInfo?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         when {
@@ -67,13 +69,22 @@ fun ModelProvidersContent(viewModel: ModelProvidersViewModel = hiltViewModel()) 
                 if (ui.providers.isEmpty() && !ui.loading) {
                     item("empty") { Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { EmptyState(Icons.Rounded.Memory, stringResource(R.string.providers_empty_title), stringResource(R.string.providers_empty_subtitle)) } }
                 }
+                ui.error?.let { message ->
+                    item("err") {
+                        ErrorBanner(
+                            message = message,
+                            onDismiss = { viewModel.dismissError() },
+                            onRetry = { viewModel.load() },
+                        )
+                    }
+                }
                 for (agent in ui.supportedAgents) {
                     val group = ui.providers.filter { it.agentType == agent }
                     if (group.isNotEmpty()) {
                         item("h-${agent.wire}") {
                             Text(agent.displayName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
                         }
-                        items(group, key = { it.id }) { p -> ProviderRow(p, onEdit = { editor = ProviderEditorTarget(p) }, onDelete = { viewModel.delete(p) }) }
+                        items(group, key = { it.id }) { p -> ProviderRow(p, onEdit = { editor = ProviderEditorTarget(p) }, onDelete = { pendingDelete = p }) }
                     }
                 }
             }
@@ -93,7 +104,33 @@ fun ModelProvidersContent(viewModel: ModelProvidersViewModel = hiltViewModel()) 
             existing = target.provider,
             supportedAgents = ui.supportedAgents,
             onDismiss = { editor = null },
-            onSave = { name, url, key, agent, model -> viewModel.save(target.provider, name, url, key, agent, model); editor = null },
+            onSave = { name, url, key, agent, model ->
+                // Close only after the write lands: the API key is unrecoverable once
+                // the dialog is gone (the server only returns it masked).
+                viewModel.save(target.provider, name, url, key, agent, model) { editor = null }
+            },
+        )
+    }
+
+    // Deleting a provider is permanent and its API key cannot be recovered from the
+    // screen (only `apiKeyMasked` is returned), so a single mis-tap on the row menu
+    // would strand every agent that referenced it. Confirm first.
+    pendingDelete?.let { provider ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = colors.bgElevated,
+            title = { Text(stringResource(R.string.providers_delete_title), color = colors.textPrimary) },
+            text = { Text(provider.name, color = colors.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.delete(provider); pendingDelete = null }) {
+                    Text(stringResource(R.string.common_delete), color = colors.danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
         )
     }
 }

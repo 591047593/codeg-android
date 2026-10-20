@@ -2,6 +2,7 @@ package app.codeg.android.core.common
 
 import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
 import java.util.Locale
 
 /**
@@ -40,9 +41,26 @@ object LocaleManager {
             .putString(KEY, language.storageKey).apply()
     }
 
-    /** Apply the saved language override to [base], or return it unchanged for [AppLanguage.SYSTEM]. */
+    /**
+     * Apply the saved language override to [base].
+     *
+     * [AppLanguage.SYSTEM] still resets [Locale.getDefault] to the device locale rather
+     * than returning early. `Locale.setDefault` is process-wide state: without the reset,
+     * switching from an explicit language back to "follow system" left every
+     * locale-sensitive formatter (`String.format`, date patterns, collation) on the
+     * previous override until the process restarted. The configuration itself is left
+     * alone in that case, so the platform resolves resources normally.
+     */
     fun wrap(base: Context): Context {
-        val locale = current(base).locale ?: return base
+        val locale = current(base).locale
+        if (locale == null) {
+            // "Follow system": restore the process default to the device locale.
+            // `Resources.getSystem()` is unaffected by this app's configuration
+            // overrides, so its locale is the device one. minSdk 31, so `locales[0]`
+            // is always available.
+            Locale.setDefault(Resources.getSystem().configuration.locales[0])
+            return base
+        }
         Locale.setDefault(locale)
         val config = Configuration(base.resources.configuration)
         config.setLocale(locale)

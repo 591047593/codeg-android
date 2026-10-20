@@ -1,8 +1,10 @@
 package app.codeg.android.core.common
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.time.Instant
+import java.util.Locale
 
 /**
  * Magnitude thresholds for the compact list-row timestamp.
@@ -45,6 +47,27 @@ class RelativeTimeTest {
         val result = RelativeTime.compact(ago(7 * 24 * 3600), now)
         assertEquals(false, result.endsWith("d"))
         assertEquals(false, result == "just now")
+    }
+
+    @Test
+    fun `the month-day date follows the current default locale`() {
+        // The formatter used to be a cached `val`, so it kept the locale that was
+        // active when the object was first touched — switching the app language left
+        // old-language month names on rows older than a week until the process died.
+        val original = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.US)
+            val english = RelativeTime.compact(ago(40L * 24 * 3600), now)
+            Locale.setDefault(Locale.GERMANY)
+            val german = RelativeTime.compact(ago(40L * 24 * 3600), now)
+            assertNotEquals(
+                "month name should follow the locale",
+                english,
+                german,
+            )
+        } finally {
+            Locale.setDefault(original)
+        }
     }
 
     @Test

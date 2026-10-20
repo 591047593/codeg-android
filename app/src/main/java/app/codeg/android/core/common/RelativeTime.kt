@@ -22,7 +22,17 @@ import java.util.Locale
  * and the month-day date are localized at the call site.
  */
 object RelativeTime {
-    private val monthDay: DateTimeFormatter =
+    /**
+     * "Mar 5"-style date for anything older than a week.
+     *
+     * Resolved from the *current* default locale on each call rather than cached in a
+     * `val`: this object is initialised once per process, but the app can change its
+     * display language at runtime (`LocaleManager.wrap` calls `Locale.setDefault` and
+     * recreates the activity). A cached formatter would keep printing month names in
+     * the language that happened to be active when the object was first touched, for
+     * the remaining life of the process.
+     */
+    private fun monthDayFormatter(): DateTimeFormatter =
         DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
 
     /**
@@ -44,7 +54,7 @@ object RelativeTime {
         if (hours < 24) return "${hours}h"
         val days = hours / 24
         if (days < 7) return "${days}d"
-        return monthDay.format(instant.atZone(ZoneId.systemDefault()))
+        return monthDayFormatter().format(instant.atZone(ZoneId.systemDefault()))
     }
 }
 

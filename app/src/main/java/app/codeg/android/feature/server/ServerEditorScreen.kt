@@ -107,10 +107,20 @@ fun ServerEditorScreen(
                 else -> Unit
             }
 
+            viewModel.saveError?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.danger,
+                )
+            }
+
             PrimaryButton(
                 text = stringResource(R.string.server_save),
                 onClick = { viewModel.save(onDone) },
-                enabled = viewModel.canSave,
+                // `saving` also blocks a second tap from persisting a duplicate profile.
+                enabled = viewModel.canSave && !viewModel.saving,
+                loading = viewModel.saving,
             )
         }
     }

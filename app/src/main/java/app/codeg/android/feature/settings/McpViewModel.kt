@@ -11,6 +11,8 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -38,8 +40,10 @@ class McpViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -54,15 +58,15 @@ class McpViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
+    fun load(): Job? {
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
@@ -79,15 +83,39 @@ class McpViewModel @Inject constructor(
         val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
         val spec = runCatching { lenient.parseToJsonElement(specText) }.getOrNull()
             ?: return onResult(appContext.getString(R.string.mcp_spec_invalid_json))
+        val id = serverId.trim()
+        // The id is the primary key, so renaming is really "create the new key, then
+        // delete the old one". Refuse an id that belongs to a *different* server rather
+        // than upserting over it and then deleting the original — that silently replaced
+        // an unrelated server's configuration.
+        if (originalId != null && id != originalId && _ui.value.servers.any { it.id == id }) {
+            return onResult(appContext.getString(R.string.mcp_id_taken))
+        }
         viewModelScope.launch {
             try {
-                c.mcpUpsertLocalServer(serverId.trim(), spec, apps)
-                if (originalId != null && originalId != serverId.trim()) runCatching { c.mcpRemoveServer(originalId) }
-                load()
-                onResult(null)
+                c.mcpUpsertLocalServer(id, spec, apps)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                onResult(e.displayMessage())
+                return@launch onResult(e.displayMessage())
             }
+            // The upsert landed; a failed cleanup after a rename leaves a duplicate but
+            // must not be reported as success — say so instead of silently ignoring it.
+            if (originalId != null && originalId != id) {
+                val cleanup = runCatching { c.mcpRemoveServer(originalId) }
+                if (cleanup.isFailure) {
+                    load()
+                    return@launch onResult(
+                        appContext.getString(
+                            R.string.mcp_rename_incomplete,
+                            originalId,
+                            cleanup.exceptionOrNull()?.displayMessage().orEmpty(),
+                        ),
+                    )
+                }
+            }
+            load()
+            onResult(null)
         }
     }
 
@@ -100,6 +128,10 @@ class McpViewModel @Inject constructor(
         }
     }
 }
+
+
+    /** Clear the error shown by the screen's [ErrorBanner]. */
+    fun dismissError() = _ui.update { it.copy(error = null) }
 
 data class McpUiState(
     val servers: List<LocalMcpServer> = emptyList(),

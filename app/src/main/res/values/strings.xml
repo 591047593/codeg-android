@@ -84,6 +84,7 @@
     <string name="activity_empty_title">No activity</string>
     <string name="activity_empty_message">Running and recent sessions show up here.</string>
     <string name="activity_updated">Updated %1$s</string>
+    <string name="activity_load_failed">Couldn\'t load activity</string>
 
     <!-- Search -->
     <string name="search_placeholder">Search sessions</string>
@@ -278,6 +279,7 @@
 
     <!-- ===== Settings · Quick Messages ===== -->
     <string name="quickmsg_empty_title">No quick messages</string>
+    <string name="quickmsg_delete">Delete quick message</string>
     <string name="quickmsg_empty_subtitle">Add reusable message templates.</string>
     <string name="quickmsg_new_cd">New quick message</string>
     <string name="quickmsg_new_title">New quick message</string>
@@ -861,4 +863,8 @@
     <string name="session_server_changed">The active server changed. Reopen this session to continue.</string>
     <string name="projects_folder_not_found">Folder not found</string>
     <string name="time_just_now">now</string>
+    <string name="providers_delete_title">Delete model provider</string>
+    <string name="mcp_delete_title">Delete MCP server</string>
+    <string name="mcp_id_taken">That id is already used by another MCP server</string>
+    <string name="mcp_rename_incomplete">Renamed, but the old entry %1$s could not be removed: %2$s</string>
 </resources>
