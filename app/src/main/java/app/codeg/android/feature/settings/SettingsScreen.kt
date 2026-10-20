@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.common.DeepLinkBus
+import app.codeg.android.core.common.DeepLinkRoute
 import app.codeg.android.core.designsystem.component.CodegSegmented
 import app.codeg.android.core.designsystem.component.SettingsIconBadge
 import app.codeg.android.core.designsystem.theme.AccentPalette
@@ -70,21 +73,36 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.datastore.ThemeMode
 import app.codeg.android.core.model.AgentType
 
-private enum class SettingsLeaf(@StringRes val titleRes: Int, val icon: ImageVector, @StringRes val groupRes: Int, val implemented: Boolean) {
-    APPEARANCE(R.string.settings_leaf_appearance, Icons.Rounded.Brush, R.string.settings_group_personalization, true),
-    LANGUAGE(R.string.settings_leaf_language, Icons.Rounded.Language, R.string.settings_group_personalization, true),
-    GENERAL(R.string.settings_leaf_general, Icons.Rounded.Tune, R.string.settings_group_personalization, true),
-    QUICK_MESSAGES(R.string.settings_leaf_quick_messages, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_personalization, true),
-    AGENTS(R.string.settings_leaf_agents, Icons.Rounded.Person, R.string.settings_group_ai_agents, true),
-    MODEL_PROVIDERS(R.string.settings_leaf_model_providers, Icons.Rounded.Memory, R.string.settings_group_ai_agents, true),
-    EXPERTS(R.string.settings_leaf_experts, Icons.Rounded.School, R.string.settings_group_ai_agents, true),
-    SKILLS(R.string.settings_leaf_skills, Icons.Rounded.Extension, R.string.settings_group_ai_agents, true),
-    MCP(R.string.settings_leaf_mcp, Icons.Rounded.Memory, R.string.settings_group_ai_agents, true),
-    VERSION_CONTROL(R.string.settings_leaf_version_control, Icons.Rounded.Difference, R.string.settings_group_integrations, true),
-    CHAT_CHANNELS(R.string.settings_leaf_chat_channels, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_integrations, true),
-    SYSTEM(R.string.settings_leaf_system, Icons.Rounded.Settings, R.string.settings_group_system, true),
-    OPEN_SOURCE_LICENSES(R.string.settings_leaf_open_source_licenses, Icons.Rounded.Policy, R.string.settings_group_system, true),
-    ABOUT(R.string.settings_leaf_about, Icons.Rounded.Info, R.string.settings_group_system, true),
+private enum class SettingsLeaf(
+    @StringRes val titleRes: Int,
+    val icon: ImageVector,
+    @StringRes val groupRes: Int,
+    val implemented: Boolean,
+    /** Stable wire slug for `codeg://settings/<slug>`; see [SettingsSlug]. */
+    val slug: String,
+) {
+    APPEARANCE(R.string.settings_leaf_appearance, Icons.Rounded.Brush, R.string.settings_group_personalization, true, SettingsSlug.APPEARANCE),
+    LANGUAGE(R.string.settings_leaf_language, Icons.Rounded.Language, R.string.settings_group_personalization, true, SettingsSlug.LANGUAGE),
+    GENERAL(R.string.settings_leaf_general, Icons.Rounded.Tune, R.string.settings_group_personalization, true, SettingsSlug.GENERAL),
+    QUICK_MESSAGES(R.string.settings_leaf_quick_messages, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_personalization, true, SettingsSlug.QUICK_MESSAGES),
+    AGENTS(R.string.settings_leaf_agents, Icons.Rounded.Person, R.string.settings_group_ai_agents, true, SettingsSlug.AGENTS),
+    MODEL_PROVIDERS(R.string.settings_leaf_model_providers, Icons.Rounded.Memory, R.string.settings_group_ai_agents, true, SettingsSlug.MODEL_PROVIDERS),
+    EXPERTS(R.string.settings_leaf_experts, Icons.Rounded.School, R.string.settings_group_ai_agents, true, SettingsSlug.EXPERTS),
+    SKILLS(R.string.settings_leaf_skills, Icons.Rounded.Extension, R.string.settings_group_ai_agents, true, SettingsSlug.SKILLS),
+    MCP(R.string.settings_leaf_mcp, Icons.Rounded.Memory, R.string.settings_group_ai_agents, true, SettingsSlug.MCP),
+    VERSION_CONTROL(R.string.settings_leaf_version_control, Icons.Rounded.Difference, R.string.settings_group_integrations, true, SettingsSlug.VERSION_CONTROL),
+    CHAT_CHANNELS(R.string.settings_leaf_chat_channels, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_integrations, true, SettingsSlug.CHAT_CHANNELS),
+    SYSTEM(R.string.settings_leaf_system, Icons.Rounded.Settings, R.string.settings_group_system, true, SettingsSlug.SYSTEM),
+    OPEN_SOURCE_LICENSES(R.string.settings_leaf_open_source_licenses, Icons.Rounded.Policy, R.string.settings_group_system, true, SettingsSlug.OPEN_SOURCE_LICENSES),
+    ABOUT(R.string.settings_leaf_about, Icons.Rounded.Info, R.string.settings_group_system, true, SettingsSlug.ABOUT);
+
+    companion object {
+        /** Resolve a `codeg://settings/<slug>` segment onto a leaf (see [SettingsSlug]). */
+        fun fromSlug(slug: String): SettingsLeaf? =
+            SettingsSlug.resolve(slug)?.let { canonical ->
+                entries.firstOrNull { it.slug == canonical }
+            }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,6 +114,23 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var agentDetail by remember { mutableStateOf<AgentType?>(null) }
     val inAgentDetail = leaf == SettingsLeaf.AGENTS && agentDetail != null
     BackHandler(enabled = leaf != null) { if (inAgentDetail) agentDetail = null else leaf = null }
+
+    // `codeg://settings/<slug>` used to arrive here as "open the Settings tab" and
+    // nothing else — the slug was parsed and then dropped, so every settings deep
+    // link landed on the root list. Open the matching leaf instead.
+    //
+    // MainShell navigates to this tab and deliberately leaves the link pending so the
+    // slug survives until this composable is actually on screen (the tab's
+    // destination is only built after the navigation commits).
+    val pendingLink by DeepLinkBus.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingLink) {
+        val link = pendingLink as? DeepLinkRoute.OpenSettings ?: return@LaunchedEffect
+        SettingsLeaf.fromSlug(link.slug)?.let { target ->
+            agentDetail = null
+            leaf = target
+        }
+        DeepLinkBus.consume(link)
+    }
 
     Scaffold(
         containerColor = Color.Transparent,

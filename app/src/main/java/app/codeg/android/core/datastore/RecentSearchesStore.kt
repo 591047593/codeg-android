@@ -19,7 +19,7 @@ class RecentSearchesStore @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    val searches: Flow<List<String>> = dataStore.data.map { decode(it[KEY]) }
+    val searches: Flow<List<String>> = dataStore.safeData().map { decode(it[KEY]) }
 
     suspend fun add(term: String) {
         val trimmed = term.trim()

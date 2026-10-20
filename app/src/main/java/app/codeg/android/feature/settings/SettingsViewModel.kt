@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -31,13 +31,19 @@ class SettingsViewModel @Inject constructor(
     val about: StateFlow<AboutInfo> = _about.asStateFlow()
 
     init {
+        // Follow the app-wide selection so About always describes the server the rest
+        // of the app is talking to. A one-shot `selectedProfile.first()` here showed
+        // the name/version of whichever server was selected when Settings first opened.
         viewModelScope.launch {
-            val profile = repository.selectedProfile.first()
-            _about.update { it.copy(serverName = profile?.name) }
-            if (profile != null) {
-                val client = repository.client(profile)
-                val version = client?.let { runCatching { it.health().version }.getOrNull() }
-                _about.update { it.copy(serverVersion = version) }
+            repository.selectedEndpoint.collectLatest { profile ->
+                _about.update { it.copy(serverName = profile?.name, serverVersion = null) }
+                if (profile == null) return@collectLatest
+                val client = repository.client(profile) ?: return@collectLatest
+                val version = runCatching { client.health().version }.getOrNull()
+                // Guard against a superseded probe landing after a newer selection.
+                if (_about.value.serverName == profile.name) {
+                    _about.update { it.copy(serverVersion = version) }
+                }
             }
         }
     }

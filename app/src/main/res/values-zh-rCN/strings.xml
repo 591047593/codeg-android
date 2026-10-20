@@ -836,4 +836,15 @@
     <string name="cc_test_message_sent">测试消息已发送。</string>
     <string name="cc_token_removed">令牌已移除。</string>
     <string name="mcp_spec_invalid_json">规格不是有效的 JSON</string>
+    <!-- ===== Transient send/turn status line + send notices ===== -->
+    <string name="session_status_connecting">正在连接…</string>
+    <string name="session_status_thinking">思考中…</string>
+    <string name="session_status_reconnecting">正在重新连接…</string>
+    <string name="session_status_reattaching">正在重新附着…</string>
+    <string name="session_status_running_tool">正在运行 %1$s…</string>
+    <string name="session_status_running_generic">正在运行工具…</string>
+    <string name="session_turn_in_progress">此会话已有一轮正在进行。</string>
+    <string name="session_attachments_skipped">已添加 %1$d 张图片；跳过 %2$d 张（过大或超出上限）。</string>
+    <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
+    <string name="server_missing_token">此服务器缺少令牌</string>
 </resources>

@@ -191,7 +191,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             }
             is app.codeg.android.core.common.DeepLinkRoute.OpenConversation -> nav.navigate("conversation/${route.id}")
             is app.codeg.android.core.common.DeepLinkRoute.OpenProject -> nav.navigate("project/${route.id}")
-            is app.codeg.android.core.common.DeepLinkRoute.OpenSettings -> toTab(HomeTab.SETTINGS)
+            is app.codeg.android.core.common.DeepLinkRoute.OpenSettings -> {
+                // Navigate to the tab but leave the link pending: SettingsScreen picks
+                // the slug up and opens the matching leaf, then consumes it. Consuming
+                // here would drop the slug on the floor (the old behaviour).
+                toTab(HomeTab.SETTINGS)
+                return@LaunchedEffect
+            }
         }
         app.codeg.android.core.common.DeepLinkBus.consume(route)
     }

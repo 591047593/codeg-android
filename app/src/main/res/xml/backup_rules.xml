@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup / restore policy.
+
+  The auth tokens are encrypted with an AndroidKeyStore key (see
+  KeystoreSecretStore). That key is device-bound and is NOT included in a backup, so
+  the stored ciphertext is undecryptable after a restore — `get()` returns null via its
+  `runCatching`, and every server silently reads as "missing token" with no
+  explanation, recoverable only by re-entering each token.
+
+  Rather than restore unusable ciphertext, exclude the secret store from both Auto
+  Backup and device-to-device transfer. Everything else (server profiles, appearance,
+  recent searches) is non-sensitive and still backed up; only the tokens must be
+  re-entered on a new device.
+-->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="codeg_secrets.xml" />
+    <!-- The app-language override uses a synchronous prefs file read in
+         attachBaseContext; restoring it is harmless but pointless to carry. -->
+    <exclude
+        domain="sharedpref"
+        path="codeg.locale.xml" />
+</full-backup-content>

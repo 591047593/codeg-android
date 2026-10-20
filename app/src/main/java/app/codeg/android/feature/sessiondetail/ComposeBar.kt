@@ -9,6 +9,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,8 +129,13 @@ fun ComposeBar(
                     onValueChange = onTextChange,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.textPrimary),
                     cursorBrush = SolidColor(colors.accent),
+                    // Cap the growth at six lines and let the field scroll internally
+                    // past that; without the explicit scroll state the caret could be
+                    // clipped below the visible area on a long draft.
                     maxLines = 6,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
                 )
             }
 

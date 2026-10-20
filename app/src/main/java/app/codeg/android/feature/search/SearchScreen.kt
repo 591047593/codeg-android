@@ -132,7 +132,7 @@ fun SearchScreen(
                         }
                     else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                         items(ui.results, key = { it.id }) { c ->
-                            SessionRow(c, onClick = { viewModel.submit(); onOpenConversation(c.id) }, modifier = Modifier.animateItem(), folderName = ui.folderNames[c.folderId])
+                            SessionRow(c, onClick = { viewModel.rememberCurrentQuery(); onOpenConversation(c.id) }, modifier = Modifier.animateItem(), folderName = ui.folderNames[c.folderId])
                         }
                     }
                 }

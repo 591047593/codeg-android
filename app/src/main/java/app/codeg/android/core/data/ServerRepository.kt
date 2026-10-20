@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,6 +50,22 @@ class ServerRepository @Inject constructor(
 
     val selectedProfile: Flow<ServerProfile?> =
         combine(profiles, selectedId) { list, id -> list.firstOrNull { it.id == id } }
+
+    /**
+     * [selectedProfile] de-duplicated down to the fields that change *which server the
+     * client talks to*. Renaming a profile re-emits [selectedProfile] without changing
+     * the endpoint, and screens should not refetch for that.
+     *
+     * Screens that only need the profile once at open time used to call
+     * `selectedProfile.first()`. That snapshot goes stale the moment the user switches
+     * servers elsewhere — every subsequent request kept hitting the old server (or a
+     * deleted one) until the screen was destroyed. Collect this instead and reload;
+     * `collectLatest` makes a rapid A→B switch cancel the in-flight load for A.
+     */
+    val selectedEndpoint: Flow<ServerProfile?> =
+        selectedProfile.distinctUntilChangedBy { profile ->
+            profile?.let { "${it.id}|${it.baseUrl}" }
+        }
 
     /** The token for a profile, read off the IO dispatcher (Keystore decrypt). */
     suspend fun token(id: String): String? =

@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.GitBranchList
 import app.codeg.android.core.model.GitCredentials
@@ -26,7 +27,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -46,13 +47,34 @@ class ProjectDetailViewModel @Inject constructor(
     private val _ui = MutableStateFlow(ProjectDetailState(loading = true))
     val ui: StateFlow<ProjectDetailState> = _ui.asStateFlow()
 
-    init { load() }
+    /** The profile this screen's data was loaded from; kept in sync with the app-wide selection. */
+    private var activeProfile: ServerProfile? = null
+
+    init {
+        // A one-shot `selectedProfile.first()` inside load() pinned this screen to
+        // whichever server was selected when it opened — switching servers elsewhere
+        // left the file/diff/commit views pointed at the old server. Follow the
+        // selection instead; `collectLatest` cancels the in-flight load on a switch.
+        viewModelScope.launch {
+            repository.selectedEndpoint.collectLatest { profile ->
+                val changed = when {
+                    profile == null -> activeProfile != null
+                    activeProfile == null -> true
+                    else -> profile.id != activeProfile?.id || profile.baseUrl != activeProfile?.baseUrl
+                }
+                if (changed) {
+                    activeProfile = profile
+                    load()
+                }
+            }
+        }
+    }
 
     fun load() {
         _ui.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             try {
-                val profile = repository.selectedProfile.first() ?: throw IllegalStateException("No server selected")
+                val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val client = repository.client(profile) ?: throw IllegalStateException("Missing token for this server")
                 val folders = client.listFolders()
                 val folder = folders.firstOrNull { it.id == folderId }

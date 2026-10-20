@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+, our minSdk) split backup into cloud backup and device-to-device
+  transfer. Both are configured here; see backup_rules.xml for why the encrypted
+  secret store is excluded — its AndroidKeyStore key does not travel with the data.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude
+            domain="sharedpref"
+            path="codeg_secrets.xml" />
+        <exclude
+            domain="sharedpref"
+            path="codeg.locale.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude
+            domain="sharedpref"
+            path="codeg_secrets.xml" />
+        <exclude
+            domain="sharedpref"
+            path="codeg.locale.xml" />
+    </device-transfer>
+</data-extraction-rules>
