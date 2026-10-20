@@ -1,6 +1,8 @@
 package app.codeg.android.feature.projects
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,9 +21,13 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CreateNewFolder
+import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.HistoryToggleOff
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
 import app.codeg.android.core.common.rememberNowInstant
+import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FolderBadge
 import app.codeg.android.core.designsystem.component.GlassCard
@@ -73,6 +80,9 @@ fun ProjectListScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var showBrowser by remember { mutableStateOf(false) }
     var showClone by remember { mutableStateOf(false) }
+    // Which folder the user asked to remove, and how. Confirmed before the call.
+    var pendingRemove by remember { mutableStateOf<Pair<FolderDetail, RemoveKind>?>(null) }
+    var removeError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -140,7 +150,13 @@ fun ProjectListScreen(
                                     if (index > 0) {
                                         HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 66.dp))
                                     }
-                                    FolderRow(folder, ui.runningCount(folder.id)) { onOpenFolder(folder.id) }
+                                    FolderRow(
+                                        folder = folder,
+                                        running = ui.runningCount(folder.id),
+                                        onClick = { onOpenFolder(folder.id) },
+                                        onRemoveFromWorkspace = { pendingRemove = folder to RemoveKind.WORKSPACE },
+                                        onRemoveFromHistory = { pendingRemove = folder to RemoveKind.HISTORY },
+                                    )
                                 }
                             }
                         }
@@ -169,7 +185,57 @@ fun ProjectListScreen(
             onDismiss = { showClone = false },
         )
     }
+
+    // Removal is bookkeeping only — the directory and its conversations stay put — but
+    // it is still not something to trigger by accident, so it is confirmed and the
+    // dialog says plainly what is not being deleted.
+    pendingRemove?.let { (folder, kind) ->
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            containerColor = colors.bgElevated,
+            title = {
+                Text(
+                    stringResource(
+                        if (kind == RemoveKind.WORKSPACE) R.string.projects_remove_workspace_title
+                        else R.string.projects_remove_history_title,
+                    ),
+                    color = colors.textPrimary,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.projects_remove_message, folder.name),
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = folder
+                        pendingRemove = null
+                        val done: (String?) -> Unit = { err -> removeError = err }
+                        if (kind == RemoveKind.WORKSPACE) viewModel.removeFromWorkspace(target, done)
+                        else viewModel.removeFromHistory(target, done)
+                    },
+                ) { Text(stringResource(R.string.common_remove), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRemove = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    removeError?.let { message ->
+        Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.BottomCenter) {
+            ErrorBanner(message = message, onDismiss = { removeError = null })
+        }
+    }
 }
+
+/** Which server-side removal the user picked from a folder row's long-press menu. */
+private enum class RemoveKind { WORKSPACE, HISTORY }
 
 /**
  * One folder as a borderless grouped row: a colored [FolderBadge] tile, the name
@@ -177,14 +243,27 @@ fun ProjectListScreen(
  * relative last-opened time, then a drill-in chevron. The enclosing [GlassCard]
  * draws the surface; rows are split by inset hairlines.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FolderRow(folder: FolderDetail, running: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun FolderRow(
+    folder: FolderDetail,
+    running: Int,
+    onClick: () -> Unit,
+    onRemoveFromWorkspace: () -> Unit,
+    onRemoveFromHistory: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = CodegTheme.colors
     val tile = colorFromHex(folder.color) ?: colors.accent
     val now by rememberNowInstant()
     val justNowLabel = stringResource(R.string.time_just_now)
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
     Row(
-        modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier.fillMaxWidth()
+            // Long-press opens the removal menu; a plain tap still opens the folder.
+            .combinedClickable(onClick = onClick, onLongClick = { menuOpen = true })
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -208,6 +287,20 @@ private fun FolderRow(folder: FolderDetail, running: Int, modifier: Modifier = M
             }
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+    }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.projects_remove_from_workspace)) },
+                leadingIcon = { Icon(Icons.Rounded.FolderOff, null, tint = colors.textSecondary) },
+                onClick = { menuOpen = false; onRemoveFromWorkspace() },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.projects_remove_from_history)) },
+                leadingIcon = { Icon(Icons.Rounded.HistoryToggleOff, null, tint = colors.textSecondary) },
+                onClick = { menuOpen = false; onRemoveFromHistory() },
+            )
+        }
     }
 }
 

@@ -862,6 +862,11 @@
     <string name="session_attachments_skipped">Added %1$d image(s); %2$d skipped (too large or over the limit).</string>
     <string name="session_server_changed">The active server changed. Reopen this session to continue.</string>
     <string name="projects_folder_not_found">Folder not found</string>
+    <string name="projects_remove_from_workspace">Remove from workspace</string>
+    <string name="projects_remove_from_history">Remove from history</string>
+    <string name="projects_remove_workspace_title">Remove from workspace?</string>
+    <string name="projects_remove_history_title">Remove from history?</string>
+    <string name="projects_remove_message">%1$s will be removed from this list. The folder on disk and its conversations are not deleted.</string>
     <string name="time_just_now">now</string>
     <string name="providers_delete_title">Delete model provider</string>
     <string name="mcp_delete_title">Delete MCP server</string>

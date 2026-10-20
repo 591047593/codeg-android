@@ -1,13 +1,16 @@
 package app.codeg.android.feature.projects
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -24,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ProjectsViewModel @Inject constructor(
     private val repository: ServerRepository,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(ProjectsUiState())
@@ -86,6 +90,44 @@ class ProjectsViewModel @Inject constructor(
         viewModelScope.launch {
             val err = runCatching { c.openFolder(path) }.exceptionOrNull()?.displayMessage()
             if (err == null) fetch(initial = false)
+            onResult(err)
+        }
+    }
+
+    /**
+     * Close a folder in the workspace, dropping it from this list.
+     *
+     * This only unhooks the folder on the server — the directory on disk and every
+     * conversation recorded under it are untouched, which is why it needs no
+     * destructive-action confirmation beyond the menu it is reached from.
+     */
+    fun removeFromWorkspace(folder: FolderDetail, onResult: (String?) -> Unit) {
+        val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
+        viewModelScope.launch {
+            val err = runCatching { c.removeFolderFromWorkspace(folder.id) }
+                .exceptionOrNull()?.displayMessage()
+            if (err == null) {
+                // Optimistic removal so the row disappears immediately; a refresh
+                // reconciles with the server either way.
+                _ui.update { it.copy(folders = it.folders.filterNot { f -> f.id == folder.id }) }
+                repository.notifyFoldersChanged()
+                fetch(initial = false)
+            }
+            onResult(err)
+        }
+    }
+
+    /** Drop a path from the "recently opened" history, leaving the workspace untouched. */
+    fun removeFromHistory(folder: FolderDetail, onResult: (String?) -> Unit) {
+        val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
+        viewModelScope.launch {
+            val err = runCatching { c.removeFolderFromHistory(folder.path) }
+                .exceptionOrNull()?.displayMessage()
+            if (err == null) {
+                _ui.update { it.copy(folders = it.folders.filterNot { f -> f.id == folder.id }) }
+                repository.notifyFoldersChanged()
+                fetch(initial = false)
+            }
             onResult(err)
         }
     }
