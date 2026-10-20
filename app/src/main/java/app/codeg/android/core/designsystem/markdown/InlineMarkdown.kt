@@ -113,7 +113,7 @@ private fun parseInline(
 
             // Italic (single * or _).
             (c == '*' || c == '_') -> {
-                val end = raw.indexOf(c, i + 1)
+                val end = findClosingSingleDelimiter(raw, i, c)
                 if (end > i) {
                     flushPlain()
                     builder.withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
@@ -154,4 +154,32 @@ private fun parseInline(
         }
     }
     flushPlain()
+}
+
+/**
+ * Index of the delimiter that closes a *single* emphasis run opened at [open], or -1.
+ *
+ * A naive `indexOf` pairs the opening `*` of `*a **b** c*` with the first `*` of `**b`,
+ * so the bold span is severed and the rest of the line renders as literal asterisks.
+ * Runs of two or more belong to the bold branch, whether they open or close, so the
+ * whole run is skipped here.
+ *
+ * Kept as a free function (rather than inline in the parser) so it can be unit-tested
+ * without pulling Compose's text types into a JVM test.
+ */
+internal fun findClosingSingleDelimiter(raw: String, open: Int, marker: Char): Int {
+    var scan = open + 1
+    while (scan < raw.length) {
+        if (raw[scan] == marker) {
+            val startsRun = scan + 1 < raw.length && raw[scan + 1] == marker
+            val endsRun = scan > 0 && raw[scan - 1] == marker
+            if (startsRun || endsRun) {
+                while (scan < raw.length && raw[scan] == marker) scan++
+                continue
+            }
+            return scan
+        }
+        scan++
+    }
+    return -1
 }
