@@ -107,11 +107,10 @@ class QuickMessagesViewModel @Inject constructor(
             }
         }
     }
-}
-
 
     /** Clear the error shown by the screen's [ErrorBanner]. */
     fun dismissError() = _ui.update { it.copy(error = null) }
+}
 
 data class QuickMessagesUiState(
     val messages: List<QuickMessage> = emptyList(),

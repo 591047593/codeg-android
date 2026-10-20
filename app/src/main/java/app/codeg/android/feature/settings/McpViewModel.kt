@@ -127,11 +127,10 @@ class McpViewModel @Inject constructor(
             runCatching { c.mcpRemoveServer(server.id) }.onFailure { e -> _ui.update { it.copy(servers = previous, error = e.displayMessage()) } }
         }
     }
-}
-
 
     /** Clear the error shown by the screen's [ErrorBanner]. */
     fun dismissError() = _ui.update { it.copy(error = null) }
+}
 
 data class McpUiState(
     val servers: List<LocalMcpServer> = emptyList(),

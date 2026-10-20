@@ -108,11 +108,10 @@ class ModelProvidersViewModel @Inject constructor(
             runCatching { c.deleteModelProvider(provider.id) }.onFailure { e -> _ui.update { it.copy(providers = previous, error = e.displayMessage()) } }
         }
     }
-}
-
 
     /** Clear the error shown by the screen's [ErrorBanner]. */
     fun dismissError() = _ui.update { it.copy(error = null) }
+}
 
 data class ModelProvidersUiState(
     val providers: List<ModelProviderInfo> = emptyList(),
