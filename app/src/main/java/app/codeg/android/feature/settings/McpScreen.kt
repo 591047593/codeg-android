@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodegFilterChip
 import app.codeg.android.core.designsystem.component.CodegTextField
+import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -72,15 +74,27 @@ fun McpContent(viewModel: McpViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     var editor by remember { mutableStateOf<McpEditorTarget?>(null) }
+    var pendingDelete by remember { mutableStateOf<LocalMcpServer?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         when {
             ui.loading && ui.servers.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Without this a failed list load rendered as the "no MCP servers"
+                // empty state, and a failed save/delete showed nothing at all.
+                ui.error?.let { message ->
+                    item("err") {
+                        ErrorBanner(
+                            message = message,
+                            onDismiss = { viewModel.dismissError() },
+                            onRetry = { viewModel.load() },
+                        )
+                    }
+                }
                 if (ui.servers.isEmpty() && !ui.loading) {
                     item("empty") { Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { EmptyState(Icons.Rounded.Memory, stringResource(R.string.mcp_empty_title), stringResource(R.string.mcp_empty_subtitle)) } }
                 }
-                items(ui.servers, key = { it.id }) { s -> McpRow(s, onEdit = { editor = McpEditorTarget(s) }, onDelete = { viewModel.delete(s) }) }
+                items(ui.servers, key = { it.id }) { s -> McpRow(s, onEdit = { editor = McpEditorTarget(s) }, onDelete = { pendingDelete = s }) }
             }
         }
         if (!(ui.loading && ui.servers.isEmpty())) {
@@ -98,6 +112,27 @@ fun McpContent(viewModel: McpViewModel = hiltViewModel()) {
             existing = target.server,
             onDismiss = { editor = null },
             onSave = { id, spec, apps, onErr -> viewModel.save(target.server?.id, id, spec, apps) { err -> if (err == null) editor = null else onErr(err) } },
+        )
+    }
+
+    // Deleting an MCP server drops its whole JSON spec with no undo; confirm first,
+    // matching the chat-channel and skill lists.
+    pendingDelete?.let { server ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = colors.bgElevated,
+            title = { Text(stringResource(R.string.mcp_delete_title), color = colors.textPrimary) },
+            text = { Text(server.id, color = colors.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.delete(server); pendingDelete = null }) {
+                    Text(stringResource(R.string.common_delete), color = colors.danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
         )
     }
 }

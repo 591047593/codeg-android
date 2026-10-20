@@ -28,6 +28,7 @@ import app.codeg.android.core.model.hermesProvider
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -82,7 +83,7 @@ class AgentsViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
@@ -90,9 +91,7 @@ class AgentsViewModel @Inject constructor(
 
     // region List
 
-    fun load() {
-        viewModelScope.launch { reload() }
-    }
+    fun load(): Job? = viewModelScope.launch { reload() }
 
     private suspend fun reload() {
         _ui.update { it.copy(loading = true, error = null) }
@@ -162,6 +161,9 @@ class AgentsViewModel @Inject constructor(
 
     /** Open the config editor for [agentType], building a fresh draft + provider list. */
     fun openDetail(agentType: AgentType) {
+        // Claim the pending slot synchronously so a slower earlier request cannot
+        // write its detail over this one.
+        _ui.update { it.copy(pendingDetailAgent = agentType) }
         viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
@@ -177,16 +179,25 @@ class AgentsViewModel @Inject constructor(
                     emptyList()
                 }
                 val draft = AgentDraft.fromAgent(agent)
-                _ui.update {
-                    it.copy(detail = AgentDetailState(agentType, agent, draft = draft, original = draft, providers = providers))
+                _ui.update { state ->
+                    // Drop a response that lost the race: the user may have opened a
+                    // different agent (or closed the detail) while this one was
+                    // fetching providers. Writing it anyway left AgentDetailScreen
+                    // comparing `detail.agentType` against the agent the user is
+                    // looking at, failing that check, and showing its spinner forever.
+                    if (state.pendingDetailAgent != agentType) state
+                    else state.copy(
+                        detail = AgentDetailState(agentType, agent, draft = draft, original = draft, providers = providers),
+                        pendingDetailAgent = null,
+                    )
                 }
             } catch (e: Exception) {
-                _ui.update { it.copy(error = e.displayMessage()) }
+                _ui.update { it.copy(error = e.displayMessage(), pendingDetailAgent = null) }
             }
         }
     }
 
-    fun closeDetail() = _ui.update { it.copy(detail = null) }
+    fun closeDetail() = _ui.update { it.copy(detail = null, pendingDetailAgent = null) }
 
     /** Edit a structured field, then re-bake the raw config/env so they stay in lockstep. */
     fun editDraft(transform: (AgentDraft) -> AgentDraft) = updateDetail { d ->
@@ -581,6 +592,8 @@ data class AgentsUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val detail: AgentDetailState? = null,
+    /** The agent whose detail is currently being opened; `null` when none is pending. */
+    val pendingDetailAgent: AgentType? = null,
 )
 
 data class AgentDetailState(

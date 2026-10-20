@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
@@ -110,7 +111,7 @@ fun FolderChangesView(
                     if (e is ApiError.Server && e.code == "not_a_git_repository") {
                         Centered { EmptyState(Icons.Rounded.Difference, stringResource(R.string.commits_not_a_git_repo), stringResource(R.string.commits_not_a_git_repo_message)) }
                     } else {
-                        Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_load_failed), e?.message ?: stringResource(R.string.files_error), onRetry = { result = null }) }
+                        Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_load_failed), e?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null }) }
                     }
                 }
                 else -> {
@@ -231,7 +232,7 @@ private fun WorkingDiff(client: CodegClient, rootPath: String, file: String) {
     val r = result
     when {
         r == null -> Centered { LoadingView(stringResource(R.string.common_loading)) }
-        r.isFailure -> Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_diff_load_failed), r.exceptionOrNull()?.message ?: stringResource(R.string.files_error), onRetry = { result = null }) }
+        r.isFailure -> Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_diff_load_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null }) }
         else -> {
             val files = UnifiedDiff.parse(r.getOrDefault(""))
             if (files == null) Centered { EmptyState(Icons.Rounded.Difference, stringResource(R.string.changes_no_diff_title), stringResource(R.string.changes_no_diff_message)) }

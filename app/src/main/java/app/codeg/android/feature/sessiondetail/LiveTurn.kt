@@ -23,10 +23,22 @@ data class LiveToolCallState(
      *  `x.ai/tool` identity, …). Null for most tools and hosts. */
     val meta: JsonObject? = null,
 ) {
-    val isFinished: Boolean
-        get() = status in setOf("completed", "failed", "error", "cancelled", "canceled")
-    val isError: Boolean get() = status == "failed" || status == "error"
+    val isFinished: Boolean get() = isFinishedStatus(status)
+    val isError: Boolean get() = status == TOOL_FAILED || status == TOOL_ERROR
 }
+
+// `status in setOf(...)` allocated a fresh HashSet on every read, and these are read
+// once per tool per snapshot (every ~50ms while streaming) plus on every tool event.
+// Comparing literals allocates nothing.
+private const val TOOL_COMPLETED = "completed"
+private const val TOOL_FAILED = "failed"
+private const val TOOL_ERROR = "error"
+private const val TOOL_CANCELLED = "cancelled"
+private const val TOOL_CANCELED = "canceled"
+
+internal fun isFinishedStatus(status: String): Boolean =
+    status == TOOL_COMPLETED || status == TOOL_FAILED || status == TOOL_ERROR ||
+        status == TOOL_CANCELLED || status == TOOL_CANCELED
 
 /** One ordered piece of an in-flight assistant turn (immutable snapshot). */
 sealed interface LiveSegment {
@@ -207,10 +219,11 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
 
     /** The active (unfinished) tool's title, for the compose status line. */
     fun activeToolTitle(): String? {
+        // Scanned with the same predicate the state type exposes, without building a
+        // throwaway LiveToolCallState (with a Data class equals/hashCode and a String
+        // copy) just to read one boolean. Called on every tool event.
         for (s in segments.asReversed()) {
-            if (s is Seg.Tool && !LiveToolCallState(s.call.id, s.call.title, s.call.kind, s.call.status, null, "", null).isFinished) {
-                return s.call.title
-            }
+            if (s is Seg.Tool && !isFinishedStatus(s.call.status)) return s.call.title
         }
         return null
     }
@@ -249,9 +262,11 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
                 is Seg.Text -> if (seg.text.toString().isNotBlank()) blocks.add(ContentBlock.Text(seg.text.toString()))
                 is Seg.Thinking -> if (seg.text.toString().isNotBlank()) blocks.add(ContentBlock.Thinking(seg.text.toString()))
                 is Seg.Tool -> {
-                    blocks.add(ContentBlock.ToolUse(seg.call.id, seg.call.title, seg.call.rawInput, seg.call.meta))
-                    val output = seg.call.rawOutput.toString().ifEmpty { seg.call.content }
-                    blocks.add(ContentBlock.ToolResult(seg.call.id, output, LiveToolCallState(seg.call.id, "", "", seg.call.status, null, "", null).isError))
+                    val call = seg.call
+                    blocks.add(ContentBlock.ToolUse(call.id, call.title, call.rawInput, call.meta))
+                    val output = call.rawOutput.toString().ifEmpty { call.content }
+                    val isError = call.status == TOOL_FAILED || call.status == TOOL_ERROR
+                    blocks.add(ContentBlock.ToolResult(call.id, output, isError))
                 }
             }
         }

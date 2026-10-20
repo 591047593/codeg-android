@@ -88,11 +88,22 @@ fun CommitSheet(
 
     suspend fun load() {
         loadError = null
+        val hadSelection = selected.isNotEmpty()
         runCatching { client.gitStatus(rootPath, showAllUntracked = true) }
             .onSuccess { result ->
                 entries = result
-                // Tracked changes start selected; untracked start unselected.
-                selected = result.filter { it.change != GitChange.UNTRACKED }.map { it.path }.toSet()
+                // Default the selection to the tracked changes — but only on the first
+                // load. Re-running this on Retry used to reset the checkboxes to that
+                // default, silently discarding what the user had ticked while the
+                // commit button's count still suggested their selection was active.
+                // Files that disappeared from the status are dropped so a stale path
+                // cannot be sent to `git_commit`.
+                selected = if (hadSelection) {
+                    val present = result.map { it.path }.toSet()
+                    selected intersect present
+                } else {
+                    result.filter { it.change != GitChange.UNTRACKED }.map { it.path }.toSet()
+                }
             }
             .onFailure { loadError = it.displayMessage() }
     }

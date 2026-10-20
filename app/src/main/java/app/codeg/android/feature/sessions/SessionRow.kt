@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.statusColor
@@ -62,6 +63,9 @@ fun SessionRow(
 ) {
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
+    // Relative time needs a clock, not `Instant.now()` inside composition (which is
+    // non-idempotent and froze the label until something else forced a recomposition).
+    val now by rememberNowInstant()
 
     Box {
         Row(
@@ -131,7 +135,11 @@ fun SessionRow(
                 LivePulse()
             } else {
                 Text(
-                    text = RelativeTime.compact(conversation.updatedAt),
+                    text = RelativeTime.compact(
+                        conversation.updatedAt,
+                        now = now,
+                        justNow = stringResource(R.string.time_just_now),
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.textTertiary,
                 )

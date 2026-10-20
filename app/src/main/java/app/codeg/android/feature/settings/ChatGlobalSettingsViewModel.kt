@@ -9,6 +9,7 @@ import app.codeg.android.core.model.WebhookConfig
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -34,8 +35,10 @@ class ChatGlobalSettingsViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -50,15 +53,15 @@ class ChatGlobalSettingsViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
+    fun load(): Job? {
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
@@ -83,26 +86,50 @@ class ChatGlobalSettingsViewModel @Inject constructor(
         }
     }
 
+    // The three setters below apply optimistically and roll back on failure, matching
+    // [persistWebhooks]. Previously the failure path only recorded an error, so the
+    // switch stayed in its new position while the server kept the old value — the user
+    // believed a filter was applied and it was not, and nothing re-read the server
+    // (load() only runs on a profile change).
+
     fun setCommandPrefix(prefix: String) {
         val c = client ?: return
         val clean = prefix.ifBlank { "/" }
+        val previous = _ui.value.commandPrefix
         _ui.update { it.copy(commandPrefix = clean) }
-        viewModelScope.launch { runCatching { c.setChatCommandPrefix(clean) }.onFailure { e -> _ui.update { it.copy(error = e.displayMessage()) } } }
+        viewModelScope.launch {
+            runCatching { c.setChatCommandPrefix(clean) }
+                .onFailure { e ->
+                    _ui.update { it.copy(commandPrefix = previous, error = e.displayMessage()) }
+                }
+        }
     }
 
     fun setLanguage(code: String) {
         val c = client ?: return
+        val previous = _ui.value.language
         _ui.update { it.copy(language = code) }
-        viewModelScope.launch { runCatching { c.setChatMessageLanguage(code) }.onFailure { e -> _ui.update { it.copy(error = e.displayMessage()) } } }
+        viewModelScope.launch {
+            runCatching { c.setChatMessageLanguage(code) }
+                .onFailure { e ->
+                    _ui.update { it.copy(language = previous, error = e.displayMessage()) }
+                }
+        }
     }
 
     fun toggleEvent(id: String, on: Boolean) {
         val c = client ?: return
-        val next = if (on) _ui.value.enabledEvents + id else _ui.value.enabledEvents - id
+        val previous = _ui.value.enabledEvents
+        val next = if (on) previous + id else previous - id
         _ui.update { it.copy(enabledEvents = next) }
         // Persist the explicit list (ordered by the catalog).
         val list = ChatEventCatalog.all.map { it.id }.filter { next.contains(it) }
-        viewModelScope.launch { runCatching { c.setChatEventFilter(list) }.onFailure { e -> _ui.update { it.copy(error = e.displayMessage()) } } }
+        viewModelScope.launch {
+            runCatching { c.setChatEventFilter(list) }
+                .onFailure { e ->
+                    _ui.update { it.copy(enabledEvents = previous, error = e.displayMessage()) }
+                }
+        }
     }
 
     fun addWebhook(url: String) {

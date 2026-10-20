@@ -9,6 +9,8 @@ import app.codeg.android.core.model.ModelProviderInfo
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -33,8 +35,10 @@ class ModelProvidersViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -49,15 +53,15 @@ class ModelProvidersViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
+    fun load(): Job? {
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
@@ -69,7 +73,8 @@ class ModelProvidersViewModel @Inject constructor(
         }
     }
 
-    fun save(existing: ModelProviderInfo?, name: String, apiUrl: String, apiKey: String, agentType: AgentType, model: String?) {
+    /** Persist a provider; [onSaved] runs only on success so the editor keeps the input on failure. */
+    fun save(existing: ModelProviderInfo?, name: String, apiUrl: String, apiKey: String, agentType: AgentType, model: String?, onSaved: () -> Unit = {}) {
         val c = client ?: return
         viewModelScope.launch {
             try {
@@ -86,6 +91,9 @@ class ModelProvidersViewModel @Inject constructor(
                     )
                 }
                 load()
+                onSaved()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(error = e.displayMessage()) }
             }
@@ -100,6 +108,9 @@ class ModelProvidersViewModel @Inject constructor(
             runCatching { c.deleteModelProvider(provider.id) }.onFailure { e -> _ui.update { it.copy(providers = previous, error = e.displayMessage()) } }
         }
     }
+
+    /** Clear the error shown by the screen's [ErrorBanner]. */
+    fun dismissError() = _ui.update { it.copy(error = null) }
 }
 
 data class ModelProvidersUiState(

@@ -21,7 +21,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.EmptyState
+import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.feature.sessions.CollapsibleSectionHeader
@@ -60,11 +61,13 @@ fun ActivityScreen(
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
     val colors = CodegTheme.colors
 
-    // The feed is a poll. Bind it to this destination's lifetime so leaving the tab
-    // stops the 25s loop instead of running it for the rest of the process.
-    DisposableEffect(Unit) {
+    // The feed is a 25s poll. Bound to RESUMED, not to the composition: leaving the tab
+    // disposes this composable, but pressing Home or locking the screen does not — the
+    // destination stays composed and a `DisposableEffect` keeps polling with nothing
+    // collecting the result.
+    LifecycleResumeEffect(Unit) {
         viewModel.startPolling()
-        onDispose { viewModel.stopPolling() }
+        onPauseOrDispose { viewModel.stopPolling() }
     }
 
     Scaffold(
@@ -85,6 +88,21 @@ fun ActivityScreen(
                 ui.hasLoaded && ui.isEmptyFeed ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         EmptyState(Icons.Rounded.Bedtime, stringResource(R.string.activity_empty_title), stringResource(R.string.activity_empty_message))
+                    }
+
+                // Nothing loaded and the last attempt failed. Without this branch the
+                // screen fell through to an empty pull-to-refresh surface with no
+                // message and no way to retry, and stayed there until a poll happened
+                // to succeed. `error` was written by the view model but read nowhere.
+                !ui.hasLoaded && ui.error != null ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        InlineError(
+                            icon = Icons.Rounded.Bedtime,
+                            title = stringResource(R.string.activity_load_failed),
+                            message = ui.error!!,
+                            onRetry = viewModel::refresh,
+                            retryLabel = stringResource(R.string.common_retry),
+                        )
                     }
 
                 else -> PullToRefreshBox(isRefreshing = ui.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {

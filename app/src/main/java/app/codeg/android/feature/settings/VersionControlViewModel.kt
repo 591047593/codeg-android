@@ -11,6 +11,8 @@ import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
@@ -35,8 +37,10 @@ class VersionControlViewModel @Inject constructor(
      * The profile whose endpoint the loaded data belongs to. Kept in sync with the
      * app-wide selection: a one-shot `selectedProfile.first()` at open time went
      * stale as soon as the user switched servers elsewhere, leaving this screen
-     * talking to the previous server. `collectLatest` cancels a load for the old
-     * endpoint when the selection changes quickly.
+     * talking to the previous server. The collector joins the load it starts, so
+     * `collectLatest` genuinely cancels an in-flight request for the old endpoint —
+     * without the join it only cancels the lambda, and the old server's response could
+     * still land on top of the new server's data.
      */
     private var activeProfile: ServerProfile? = null
 
@@ -51,15 +55,15 @@ class VersionControlViewModel @Inject constructor(
                 if (changed) {
                     activeProfile = profile
                     client = null
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
+    fun load(): Job? {
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
@@ -83,21 +87,33 @@ class VersionControlViewModel @Inject constructor(
         val c = client ?: return
         val path = _ui.value.customPath.trim()
         if (path.isEmpty()) return
-        _ui.update { it.copy(testing = true, testResult = null) }
+        _ui.update { it.copy(testing = true, testResult = null, error = null) }
         viewModelScope.launch {
-            val result = runCatching { c.testGitPath(path) }.getOrNull()
-            _ui.update { it.copy(testing = false, testResult = result) }
+            try {
+                _ui.update { it.copy(testing = false, testResult = c.testGitPath(path)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A swallowed failure left `testResult` null, which the screen renders
+                // identically to "nothing tested yet" — the button appeared to do
+                // nothing at all. Surface it.
+                _ui.update { it.copy(testing = false, testResult = null, error = e.displayMessage()) }
+            }
         }
     }
 
     fun save() {
         val c = client ?: return
         val path = _ui.value.customPath.trim().ifEmpty { null }
-        _ui.update { it.copy(saving = true) }
+        // Clear the previous error: it used to survive a later successful save and stay
+        // on screen as if the save had just failed.
+        _ui.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
             try {
                 c.updateGitSettings(path)
                 _ui.update { it.copy(saving = false, detect = runCatching { c.detectGit() }.getOrDefault(it.detect)) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(saving = false, error = e.displayMessage()) }
             }

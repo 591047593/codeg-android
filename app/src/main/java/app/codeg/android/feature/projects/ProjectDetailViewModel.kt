@@ -23,6 +23,7 @@ import app.codeg.android.core.network.isAuthFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +55,10 @@ class ProjectDetailViewModel @Inject constructor(
         // A one-shot `selectedProfile.first()` inside load() pinned this screen to
         // whichever server was selected when it opened — switching servers elsewhere
         // left the file/diff/commit views pointed at the old server. Follow the
-        // selection instead; `collectLatest` cancels the in-flight load on a switch.
+        // selection instead. The collector joins the load it starts, so `collectLatest`
+        // really does cancel the in-flight request for the old endpoint: `load()`
+        // launches into `viewModelScope`, which the collector's own cancellation would
+        // otherwise not reach.
         viewModelScope.launch {
             repository.selectedEndpoint.collectLatest { profile ->
                 val changed = when {
@@ -64,15 +68,15 @@ class ProjectDetailViewModel @Inject constructor(
                 }
                 if (changed) {
                     activeProfile = profile
-                    load()
+                    load()?.join()
                 }
             }
         }
     }
 
-    fun load() {
+    fun load(): Job? {
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        return viewModelScope.launch {
             try {
                 val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val client = repository.client(profile) ?: throw IllegalStateException("Missing token for this server")
@@ -90,12 +94,31 @@ class ProjectDetailViewModel @Inject constructor(
                         branch = liveBranch,
                         runningCount = conversations.count { c -> c.status.isLive },
                         sessionCount = conversations.size,
+                        error = null,
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                // Clear the loaded project on failure, not just the spinner.
+                //
+                // The screen renders its error state only when `folder == null`, so
+                // keeping the previous folder (and `client`, which the Files / Changes /
+                // Commits tabs use directly) on a server switch or a missing token left
+                // a *successfully loaded* header pointing at the old server while every
+                // tab silently talked to it — the exact staleness this ViewModel was
+                // changed to follow `selectedEndpoint` in order to avoid.
+                _ui.update {
+                    it.copy(
+                        loading = false,
+                        error = e.displayMessage(),
+                        folder = null,
+                        client = null,
+                        branch = null,
+                        runningCount = 0,
+                        sessionCount = 0,
+                    )
+                }
             }
         }
     }
@@ -242,13 +265,21 @@ class ProjectDetailViewModel @Inject constructor(
     private fun quantity(@PluralsRes id: Int, count: Int): String =
         appContext.resources.getQuantityString(id, count, count)
 
-    /** Run a tab-level op with the shared busy + banner lifecycle; reload on success. */
+    /**
+     * Run a tab-level op with the shared busy + banner lifecycle; reload on success.
+     *
+     * The flag is set synchronously, before the coroutine is launched. Checking it and
+     * setting it inside the coroutine was a check-then-act across a suspension point:
+     * two taps in the same frame both passed the guard and then ran two mutations
+     * against the same working tree, and the first to finish cleared `gitBusy` while
+     * the other was still running.
+     */
     private fun performGit(@StringRes title: Int, body: suspend (CodegClient, String) -> GitBanner?) {
         val c = client ?: return
         val path = repoPath ?: return
         if (_ui.value.gitBusy) return
+        _ui.update { it.copy(gitBusy = true, gitBusyTitle = appContext.getString(title), gitBanner = null) }
         viewModelScope.launch {
-            _ui.update { it.copy(gitBusy = true, gitBusyTitle = appContext.getString(title), gitBanner = null) }
             try {
                 body(c, path)?.let { banner -> _ui.update { s -> s.copy(gitBanner = banner) } }
                 didMutate()
@@ -295,11 +326,21 @@ class ProjectDetailViewModel @Inject constructor(
     }
 
     private suspend fun requestCredentials(github: Boolean, host: String?, retry: Boolean): GitCredentialOutcome? {
+        // Supersede any prompt that is still outstanding. Without this the previous
+        // coroutine parked forever on a deferred the ViewModel no longer referenced, so
+        // its `performGit` never reached `finally` and `gitBusy` stayed true — leaving
+        // the whole Changes/Commits surface disabled.
+        credentialDeferred?.cancel()
         val prompt = GitCredentialPrompt(id = ++promptSeq, github = github, host = host, isRetry = retry)
         val deferred = CompletableDeferred<GitCredentialOutcome?>()
         credentialDeferred = deferred
         _ui.update { it.copy(credentialPrompt = prompt) }
-        return deferred.await()
+        return try {
+            deferred.await()
+        } finally {
+            // Only clear the field if it is still ours; a newer prompt may have replaced it.
+            if (credentialDeferred === deferred) credentialDeferred = null
+        }
     }
 
     /** The origin remote's host, to choose the prompt mode; null → generic. */

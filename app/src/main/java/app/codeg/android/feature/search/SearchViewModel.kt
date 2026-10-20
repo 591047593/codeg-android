@@ -41,12 +41,36 @@ class SearchViewModel @Inject constructor(
     private var client: CodegClient? = null
     private var folderNames: Map<Int, String> = emptyMap()
 
+    /**
+     * Monotonic token identifying the newest search. Every write to `results` checks it,
+     * so a slow response for an older term can't overwrite newer results — the debounce
+     * collector was the only path that cancelled its predecessor, while `submit`,
+     * `useRecent` and `retry` all write independently.
+     */
+    private var searchGeneration = 0
+
     init {
         viewModelScope.launch {
             repository.selectedProfile.collectLatest { profile ->
-                client = profile?.let { repository.client(it) }
-                folderNames = client?.let { c -> runCatching { c.listFolders() }.getOrNull()?.associate { it.id to it.name } } ?: emptyMap()
-                _ui.update { it.copy(folderNames = folderNames) }
+                val resolved = profile?.let { repository.client(it) }
+                client = resolved
+                folderNames = resolved?.let { c ->
+                    runCatching { c.listFolders() }.getOrNull()?.associate { it.id to it.name }
+                } ?: emptyMap()
+                // The previous server's results are not this server's results: keep them
+                // on screen and the user taps a row whose id only means something to the
+                // server they just switched away from.
+                searchGeneration += 1
+                _ui.update {
+                    it.copy(
+                        folderNames = folderNames,
+                        results = emptyList(),
+                        searching = false,
+                        query = "",
+                        error = null,
+                    )
+                }
+                _query.value = ""
             }
         }
         viewModelScope.launch {
@@ -69,8 +93,11 @@ class SearchViewModel @Inject constructor(
         val q = _query.value.trim()
         if (q.isEmpty()) return
         viewModelScope.launch {
-            recentStore.add(q)
+            // Search first, persist second. Recording before searching meant this
+            // coroutine sat on a DataStore write while the debounce collector ran the
+            // *newer* term, and this call then wrote the older term's results over it.
             runSearch(q)
+            if (_query.value.trim() == q) recentStore.add(q)
         }
     }
 
@@ -84,8 +111,8 @@ class SearchViewModel @Inject constructor(
     fun useRecent(term: String) {
         _query.value = term
         viewModelScope.launch {
-            recentStore.add(term) // promote to most-recent
             runSearch(term)
+            recentStore.add(term) // promote to most-recent
         }
     }
 
@@ -97,17 +124,24 @@ class SearchViewModel @Inject constructor(
     private suspend fun runSearch(raw: String) {
         val q = raw.trim()
         if (q.isEmpty()) {
+            searchGeneration += 1
             _ui.update { it.copy(results = emptyList(), searching = false, query = "", error = null) }
             return
         }
         val c = client ?: return
+        searchGeneration += 1
+        val generation = searchGeneration
         _ui.update { it.copy(searching = true, query = q, error = null) }
         try {
             val results = c.listConversations(search = q, sortBy = "updated")
+            // A newer search (or a server switch) superseded this one while it was in
+            // flight; its answer describes a question the user has moved on from.
+            if (generation != searchGeneration) return
             _ui.update { it.copy(results = results, searching = false) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (generation != searchGeneration) return
             _ui.update { it.copy(searching = false, error = e.displayMessage()) }
         }
     }

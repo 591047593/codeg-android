@@ -161,14 +161,35 @@ fun SessionListScreen(
                 }
 
                 ui.hasLoaded && ui.isEmpty -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        EmptyState(
-                            icon = Icons.Rounded.Forum,
-                            title = stringResource(R.string.sessions_empty_title),
-                            message = stringResource(R.string.sessions_empty_message),
-                            actionLabel = stringResource(R.string.session_new_task),
-                            onAction = onNewTask,
-                        )
+                    // The empty state is inside the refresh container: a server that has
+                    // no conversations yet is exactly when a manual refresh is needed
+                    // (a session created from another client would otherwise only appear
+                    // after an app restart), and it is also the only place a failing
+                    // refresh can surface its error.
+                    PullToRefreshBox(
+                        isRefreshing = ui.isRefreshing,
+                        onRefresh = viewModel::refresh,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        // A scrollable child is required for the pull gesture to reach the
+                        // refresh container; a bare Box swallows nothing and never
+                        // reports the drag.
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            item {
+                                Box(
+                                    Modifier.fillParentMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    EmptyState(
+                                        icon = Icons.Rounded.Forum,
+                                        title = stringResource(R.string.sessions_empty_title),
+                                        message = stringResource(R.string.sessions_empty_message),
+                                        actionLabel = stringResource(R.string.session_new_task),
+                                        onAction = onNewTask,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
