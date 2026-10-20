@@ -63,9 +63,12 @@ class InlineDelimiterTest {
         // Found on a real device: sending `STREAMTEST_OK_12345` rendered as
         // `STREAMTESTOK12345` — `_OK_` was taken as an italic run and the delimiters
         // were swallowed, silently altering what the user typed.
-        assertEquals(-1, findClosingSingleDelimiter("STREAMTEST_OK_12345", 6, '_'))
-        assertEquals(false, isIntraword("STREAMTEST_OK_12345", 6, '_'))
-        assertEquals(false, isIntraword("STREAMTEST_OK_12345", 9, '_'))
+        // `STREAMTEST_OK_12345` — the underscores are at index 10 and 13, each with a
+        // letter on both sides, so they are intraword and can neither open nor close
+        // emphasis: the whole string renders literally.
+        assertEquals(true, isIntraword("STREAMTEST_OK_12345", 10, '_'))
+        assertEquals(true, isIntraword("STREAMTEST_OK_12345", 13, '_'))
+        assertEquals(-1, findClosingSingleDelimiter("STREAMTEST_OK_12345", 10, '_'))
     }
 
     @Test
@@ -80,7 +83,8 @@ class InlineDelimiterTest {
     @Test
     fun `asterisk keeps working inside a word`() {
         // The intraword rule is underscore-only; `a*b*c` still italicises as before.
-        assertEquals(4, findClosingSingleDelimiter("a*b*c", 1, '*'))
+        // The closer is at index 3.
+        assertEquals(3, findClosingSingleDelimiter("a*b*c", 1, '*'))
         assertEquals(false, isIntraword("a*b*c", 1, '*'))
     }
 }
