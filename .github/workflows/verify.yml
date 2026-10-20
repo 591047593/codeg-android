@@ -27,3 +27,13 @@ jobs:
 
       - name: Check, test, and assemble the app
         run: ./gradlew :app:check :app:assembleDebug :app:assembleRelease --no-daemon
+
+      # Temporary: publish the debug APK so it can be installed on a local
+      # emulator for runtime verification. Remove once manual testing is done.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codeg-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
