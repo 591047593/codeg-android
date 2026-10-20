@@ -57,4 +57,30 @@ class InlineDelimiterTest {
         // The opener itself must never be returned as its own close.
         assertEquals(2, findClosingSingleDelimiter("*a*", 0, '*'))
     }
+
+    @Test
+    fun `an underscore inside an identifier is literal, not emphasis`() {
+        // Found on a real device: sending `STREAMTEST_OK_12345` rendered as
+        // `STREAMTESTOK12345` — `_OK_` was taken as an italic run and the delimiters
+        // were swallowed, silently altering what the user typed.
+        assertEquals(-1, findClosingSingleDelimiter("STREAMTEST_OK_12345", 6, '_'))
+        assertEquals(false, isIntraword("STREAMTEST_OK_12345", 6, '_'))
+        assertEquals(false, isIntraword("STREAMTEST_OK_12345", 9, '_'))
+    }
+
+    @Test
+    fun `an underscore at a word boundary still opens emphasis`() {
+        // `_abc_` — the opener is preceded by nothing and the closer by nothing, so
+        // both are boundary delimiters and the run is real emphasis.
+        assertEquals(false, isIntraword("_abc_", 0, '_'))
+        assertEquals(false, isIntraword("_abc_", 4, '_'))
+        assertEquals(4, findClosingSingleDelimiter("_abc_", 0, '_'))
+    }
+
+    @Test
+    fun `asterisk keeps working inside a word`() {
+        // The intraword rule is underscore-only; `a*b*c` still italicises as before.
+        assertEquals(4, findClosingSingleDelimiter("a*b*c", 1, '*'))
+        assertEquals(false, isIntraword("a*b*c", 1, '*'))
+    }
 }

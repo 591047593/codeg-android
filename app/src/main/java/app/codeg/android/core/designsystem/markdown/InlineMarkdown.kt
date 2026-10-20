@@ -83,10 +83,10 @@ private fun parseInline(
             }
 
             // Bold (** or __).
-            (c == '*' || c == '_') && i + 1 < n && raw[i + 1] == c -> {
+            (c == '*' || c == '_') && i + 1 < n && raw[i + 1] == c && !isIntraword(raw, i, c) -> {
                 val marker = "$c$c"
                 val end = raw.indexOf(marker, i + 2)
-                if (end > i + 1) {
+                if (end > i + 1 && !isIntraword(raw, end, c)) {
                     flushPlain()
                     builder.withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
                         parseInline(builder, raw.substring(i + 2, end), linkColor, codeBg, codeColor)
@@ -112,7 +112,7 @@ private fun parseInline(
             }
 
             // Italic (single * or _).
-            (c == '*' || c == '_') -> {
+            (c == '*' || c == '_') && !isIntraword(raw, i, c) -> {
                 val end = findClosingSingleDelimiter(raw, i, c)
                 if (end > i) {
                     flushPlain()
@@ -177,9 +177,28 @@ internal fun findClosingSingleDelimiter(raw: String, open: Int, marker: Char): I
                 while (scan < raw.length && raw[scan] == marker) scan++
                 continue
             }
+            // An underscore inside a word is literal, so it cannot close a span either.
+            if (isIntraword(raw, scan, marker)) { scan++; continue }
             return scan
         }
         scan++
     }
     return -1
+}
+
+/**
+ * True when the delimiter at [index] sits *inside* a word, which CommonMark treats as
+ * literal rather than an emphasis marker.
+ *
+ * This matters for identifiers, which is most of what an agent writes: without the rule
+ * a prompt like `STREAMTEST_OK_12345` loses its underscores — `_OK_` is taken as an
+ * italic run and the delimiter characters are swallowed, so the bubble renders
+ * `STREAMTESTOK12345`. The rule applies to `_` only; `*` keeps its usual meaning
+ * (`a*b*c` still italicises in this renderer, matching the previous behaviour).
+ */
+internal fun isIntraword(raw: String, index: Int, marker: Char): Boolean {
+    if (marker != '_') return false
+    val before = if (index > 0) raw[index - 1] else ' '
+    val after = if (index + 1 < raw.length) raw[index + 1] else ' '
+    return before.isLetterOrDigit() && after.isLetterOrDigit()
 }

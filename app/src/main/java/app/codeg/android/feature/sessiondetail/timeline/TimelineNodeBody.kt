@@ -157,12 +157,19 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
     // it now follows a shared minute clock like every other relative timestamp.
     val now by rememberNowInstant()
     val justNow = stringResource(R.string.time_just_now)
-    val meta = buildList {
-        add(RelativeTime.compact(turn.completedAt ?: turn.timestamp, now = now, justNow = justNow))
-        val tokens = turn.usage?.total ?: 0
-        if (tokens > 0) add(compactTokens(tokens))
-        turn.durationMs?.let { if (it > 0) add(compactDuration(it)) }
-    }.joinToString(" · ")
+    // Model, time, tokens and duration form one "·"-separated line. They used to be two
+    // adjacent Texts (model, then meta) with a weight Spacer between the actions and the
+    // model — so the model butted straight against the timestamp and rendered as
+    // "deepseek-v4.1-flash10月4".
+    val meta = remember(turn, now, justNow) {
+        buildList {
+            turn.model?.takeIf { it.isNotBlank() }?.let { add(it) }
+            add(RelativeTime.compact(turn.completedAt ?: turn.timestamp, now = now, justNow = justNow))
+            val tokens = turn.usage?.total ?: 0
+            if (tokens > 0) add(compactTokens(tokens))
+            turn.durationMs?.let { if (it > 0) add(compactDuration(it)) }
+        }.joinToString(" · ")
+    }
 
     Row(
         modifier.fillMaxWidth().padding(top = 2.dp),
@@ -172,10 +179,17 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
         if (copyText.isNotEmpty()) CopyButton(copyText)
         if (questionId != null) JumpToQuestionButton(questionId)
         Spacer(Modifier.weight(1f))
-        turn.model?.takeIf { it.isNotBlank() }?.let {
-            Text(it, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Text(meta, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = colors.textTertiary, maxLines = 1)
+        Text(
+            meta,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = colors.textTertiary,
+            // Ellipsize rather than squeeze: the row's other children must keep their
+            // intrinsic size, and this is the only piece that may be cut.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
