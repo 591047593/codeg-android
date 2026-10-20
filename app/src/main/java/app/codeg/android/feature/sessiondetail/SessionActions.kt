@@ -151,8 +151,9 @@ fun SessionActionsMenu(
                 DetailRow(stringResource(R.string.sessionactions_detail_messages), summary.messageCount.toString())
                 summary.model?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_model), it) }
                 summary.gitBranch?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_branch), it) }
-                DetailRow(stringResource(R.string.sessionactions_detail_created), RelativeTime.compact(summary.createdAt))
-                DetailRow(stringResource(R.string.sessionactions_detail_updated), RelativeTime.compact(summary.updatedAt))
+                val justNow = stringResource(R.string.time_just_now)
+                DetailRow(stringResource(R.string.sessionactions_detail_created), RelativeTime.compact(summary.createdAt, justNow = justNow))
+                DetailRow(stringResource(R.string.sessionactions_detail_updated), RelativeTime.compact(summary.updatedAt, justNow = justNow))
             }
         }
     }

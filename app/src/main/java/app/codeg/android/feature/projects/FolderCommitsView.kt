@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.component.CopyButton
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -59,6 +61,7 @@ import app.codeg.android.core.model.GitLogResult
 import app.codeg.android.core.model.GitPushInfo
 import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
+import java.time.Instant
 import java.time.OffsetDateTime
 
 /**
@@ -119,7 +122,7 @@ fun FolderCommitsView(viewModel: ProjectDetailViewModel, client: CodegClient, ro
                     if (!isRepo) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState(Icons.Rounded.History, stringResource(R.string.commits_not_a_git_repo), stringResource(R.string.commits_not_a_git_repo_message)) }
                     } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { InlineError(Icons.Rounded.History, stringResource(R.string.commits_load_failed), e?.message ?: stringResource(R.string.commits_error), onRetry = { result = null }) }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { InlineError(Icons.Rounded.History, stringResource(R.string.commits_load_failed), e?.displayMessage() ?: stringResource(R.string.commits_error), onRetry = { result = null }) }
                     }
                 }
                 else -> {
@@ -214,12 +217,13 @@ private fun SyncButton(
 @Composable
 private fun CommitRow(entry: GitLogEntry, onClick: () -> Unit) {
     val colors = CodegTheme.colors
+    val now by rememberNowInstant()
     ListItem(
         headlineContent = { Text(entry.subject, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 2) },
         supportingContent = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(entry.author, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1)
-                Text(relativeDate(entry.date), fontSize = 11.sp, color = colors.textTertiary)
+                Text(relativeDate(entry.date, now), fontSize = 11.sp, color = colors.textTertiary)
                 if (entry.totalAdditions > 0) Text("+${entry.totalAdditions}", fontSize = 11.sp, color = Color_Add)
                 if (entry.totalDeletions > 0) Text("−${entry.totalDeletions}", fontSize = 11.sp, color = colors.danger)
                 Box(Modifier.weight(1f))
@@ -240,6 +244,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
     var result by remember(entry.fullHash) { mutableStateOf<Result<String>?>(null) }
     LaunchedEffect(entry.fullHash) { result = runCatching { client.gitShowDiff(rootPath, entry.fullHash) } }
 
+    val now by rememberNowInstant()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item("header") {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -247,7 +252,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
                 if (entry.body.isNotEmpty()) Text(entry.body, fontSize = 13.sp, color = colors.textSecondary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(entry.author, fontSize = 12.sp, color = colors.textSecondary)
-                    Text(relativeDate(entry.date), fontSize = 12.sp, color = colors.textTertiary)
+                    Text(relativeDate(entry.date, now), fontSize = 12.sp, color = colors.textTertiary)
                     entry.pushed?.let { Icon(if (it) Icons.Rounded.Cloud else Icons.Rounded.CloudOff, null, tint = colors.textTertiary, modifier = Modifier.size(13.dp)) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -277,5 +282,9 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
 
 private val Color_Add = Color(0xFF85D18F)
 
-private fun relativeDate(iso: String): String =
-    runCatching { RelativeTime.compact(OffsetDateTime.parse(iso).toInstant()) }.getOrDefault(iso.take(10))
+@Composable
+private fun relativeDate(iso: String, now: Instant): String {
+    val justNow = stringResource(R.string.time_just_now)
+    return runCatching { RelativeTime.compact(OffsetDateTime.parse(iso).toInstant(), now = now, justNow = justNow) }
+        .getOrDefault(iso.take(10))
+}

@@ -51,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FolderBadge
 import app.codeg.android.core.designsystem.component.GlassCard
@@ -132,7 +133,9 @@ fun ProjectListScreen(
                         // single card inside the lazy list is fine.
                         item {
                             GlassCard(padding = 0.dp) {
-                                val list = sortedFolders(ui.folders)
+                                // Sorted once per folder-set rather than on every
+                                // recomposition of the list card.
+                                val list = remember(ui.folders) { sortedFolders(ui.folders) }
                                 list.forEachIndexed { index, folder ->
                                     if (index > 0) {
                                         HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 66.dp))
@@ -178,6 +181,8 @@ fun ProjectListScreen(
 private fun FolderRow(folder: FolderDetail, running: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     val tile = colorFromHex(folder.color) ?: colors.accent
+    val now by rememberNowInstant()
+    val justNowLabel = stringResource(R.string.time_just_now)
     Row(
         modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -194,7 +199,13 @@ private fun FolderRow(folder: FolderDetail, running: Int, modifier: Modifier = M
         if (running > 0) {
             RunningPill(running)
         } else {
-            folder.lastOpenedAt?.let { Text(RelativeTime.compact(it), fontSize = 11.sp, color = colors.textTertiary) }
+            folder.lastOpenedAt?.let {
+                Text(
+                    RelativeTime.compact(it, now = now, justNow = justNowLabel),
+                    fontSize = 11.sp,
+                    color = colors.textTertiary,
+                )
+            }
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
     }

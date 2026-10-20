@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.markdown.MarkdownContent
 import app.codeg.android.core.designsystem.markdown.SingleBlockView
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -146,15 +147,18 @@ private fun SystemNodeBody(turn: MessageTurn, modifier: Modifier) {
 @Composable
 private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifier) {
     val colors = CodegTheme.colors
-    // Copy text joins every block → memoize it. Meta stays live so the relative time
-    // ("47m") keeps ticking rather than freezing at whatever it was when first composed.
+    // Joining every text block is O(n) over the reply, so it is memoized on the turn.
     val copyText = remember(turn) {
         turn.blocks
             .mapNotNull { (it as? ContentBlock.Text)?.text?.takeIf { t -> t.isNotBlank() } }
             .joinToString("\n\n")
     }
+    // The relative time ("47m") ticked only when something else recomposed this row;
+    // it now follows a shared minute clock like every other relative timestamp.
+    val now by rememberNowInstant()
+    val justNow = stringResource(R.string.time_just_now)
     val meta = buildList {
-        add(RelativeTime.compact(turn.completedAt ?: turn.timestamp))
+        add(RelativeTime.compact(turn.completedAt ?: turn.timestamp, now = now, justNow = justNow))
         val tokens = turn.usage?.total ?: 0
         if (tokens > 0) add(compactTokens(tokens))
         turn.durationMs?.let { if (it > 0) add(compactDuration(it)) }

@@ -31,16 +31,23 @@ data class ToolCallVM(
      *  the context-compaction tag, …). Null for most tools and hosts. */
     val meta: JsonObject? = null,
 ) {
-    val trimmedOutput: String get() = (output ?: "").trim()
-    val hasOutput: Boolean get() = trimmedOutput.isNotEmpty()
-    val isCommand: Boolean get() = bucket == ToolKindBucket.EXECUTE
+    // Derived values are materialised once, at construction, not on every read.
+    //
+    // These were `get()` properties, so `trimmedOutput` allocated a fresh trimmed
+    // String every time it was touched — and the tool card reads it several times per
+    // composition (as a `remember` key, inside the output derivation, in the header).
+    // Tool output can be megabytes, so that is a real per-frame cost on a scrolling
+    // transcript. `isPlanMode` walked a name table on every read as well.
+    val trimmedOutput: String = (output ?: "").trim()
+    val hasOutput: Boolean = trimmedOutput.isNotEmpty()
+    val isCommand: Boolean = bucket == ToolKindBucket.EXECUTE
 
     /**
      * A plan-*mode* transition (Claude's `EnterPlanMode`/`ExitPlanMode`, Grok's
      * `enter_plan_mode`/`exit_plan_mode`, Cline's `switch_mode`). A mode signal, not a
      * work tool, so it renders standalone instead of folding into a group.
      */
-    val isPlanMode: Boolean get() = ToolDerive.isPlanModeName(rawName)
+    val isPlanMode: Boolean = ToolDerive.isPlanModeName(rawName)
 
     companion object {
         fun of(

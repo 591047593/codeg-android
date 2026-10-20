@@ -4,10 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.designsystem.component.CopyButton
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -75,10 +75,13 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
     when {
         r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(message = stringResource(R.string.common_loading)) }
         r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.message ?: stringResource(R.string.files_error), onRetry = { result = null })
+            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null })
         }
         else -> {
-            val items = sortItems(r.getOrDefault(emptyList()))
+            // Sorting on every recomposition (scroll, selection, theme) re-ran an
+            // O(n log n) compare over the whole directory listing; the list itself
+            // only changes when the fetch result does.
+            val items = remember(r) { sortItems(r.getOrDefault(emptyList())) }
             LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                 if (stack.size > 1) {
                     item("up") {
@@ -140,7 +143,7 @@ private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) 
         when {
             r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
             r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.message ?: stringResource(R.string.files_error), onRetry = { result = null })
+                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null })
             }
             else -> {
                 val content = r.getOrDefault("")
@@ -163,13 +166,47 @@ private fun FileContent(content: String) {
         if (all.size > 4000) all.take(4000) + truncationNote else all
     }
     val gutterWidth = (lines.size.toString().length * 8 + 12).dp
+
+    // Long lines wrap instead of each row owning a horizontal ScrollState.
+    //
+    // The previous version called `horizontalScroll(rememberScrollState())` inside the
+    // LazyColumn's item lambda. `remember` is scoped to the composition that calls it,
+    // so that minted a *separate* ScrollState for every row — up to 4000 remember slots
+    // for a large file — and each row panned independently, so the file never scrolled
+    // as a document. Sharing one state across rows is not a valid alternative: parallel
+    // scroll modifiers on the same state contend and only one of them wins.
+    //
+    // Wrapping is the honest fix here. The vertical list already virtualises, the row
+    // count is capped at 4000 before the split, and a wrapped long line is readable
+    // where a per-row horizontal pan was not. `softWrap` is the Text default, so this
+    // is simply the absence of the scroll modifier.
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 12.dp).clip(RoundedCornerShape(10.dp)).background(colors.codeSurface).border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp)),
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.codeSurface)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp)),
+        contentPadding = PaddingValues(vertical = 6.dp),
     ) {
+        // No item key: the row identity IS its index, and a different file changes the
+        // content behind every index — a key would claim the row survived when only the
+        // position did.
         items(lines.size) { i ->
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                Text("${i + 1}", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, modifier = Modifier.width(gutterWidth).padding(start = 6.dp, end = 6.dp))
-                Text(lines[i].ifEmpty { " " }, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.textSecondary)
+            Row {
+                Text(
+                    "${i + 1}",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = colors.textTertiary,
+                    modifier = Modifier.width(gutterWidth).padding(start = 6.dp, end = 6.dp),
+                )
+                Text(
+                    lines[i].ifEmpty { " " },
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = colors.textSecondary,
+                )
             }
         }
     }

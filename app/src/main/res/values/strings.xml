@@ -707,7 +707,7 @@
     <!-- ===== ViewModel-surfaced messages ===== -->
     <string name="cc_toast_deleted">Deleted \"%1$s\".</string>
     <string name="cc_toast_delete_failed">Couldn\'t delete: %1$s</string>
-    <string name="sessions_missing_token">Missing token for this server</string>
+    <string name="sessions_missing_token">Missing token for this server. Open Manage servers to re-enter it.</string>
     <string name="live_cancelled">Cancelled.</string>
     <string name="live_agent_connection_errored">The agent connection errored.</string>
     <string name="files_truncated_note">… file truncated at %1$d lines</string>
@@ -859,5 +859,6 @@
     <string name="session_turn_in_progress">A turn is already running on this session.</string>
     <string name="session_attachments_skipped">Added %1$d image(s); %2$d skipped (too large or over the limit).</string>
     <string name="session_server_changed">The active server changed. Reopen this session to continue.</string>
-    <string name="server_missing_token">Missing token for this server</string>
+    <string name="projects_folder_not_found">Folder not found</string>
+    <string name="time_just_now">now</string>
 </resources>

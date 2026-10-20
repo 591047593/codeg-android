@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalContext
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodeBlock
 import app.codeg.android.core.designsystem.component.LivePulse
+import app.codeg.android.core.designsystem.diff.DiffFile
 import app.codeg.android.core.designsystem.diff.DiffView
 import app.codeg.android.core.designsystem.diff.UnifiedDiff
 import app.codeg.android.core.designsystem.markdown.MarkdownContent
@@ -215,36 +216,71 @@ private fun TodoInputBody(input: String) {
 /** Tool output: a line-numbered Read file, a labeled error, a cleaned command
  *  console (JSON envelope unwrapped + CLI metadata stripped), or classified
  *  json / diff / markdown / log. */
-@Composable
-private fun ToolOutputSection(vm: ToolCallVM) {
+/**
+ * Everything [ToolOutputSection] derives from a tool result, computed once per result
+ * instead of once per recomposition.
+ *
+ * The classification pipeline (unwrap MCP envelope → parse a Read body → clean a CLI
+ * envelope → strip a fence → scan for markdown signals → parse a unified diff) is
+ * string-and-regex work over output that can be megabytes, and a scrolling transcript
+ * recomposes each visible card many times. [remember] keyed on the exact inputs makes
+ * the cost once-per-result; the classification itself is pure, so this is safe.
+ */
+internal sealed interface ToolOutputRender {
+    data class ReadFile(val file: ReadOutputFormat.File) : ToolOutputRender
+    data class Command(val text: String) : ToolOutputRender
+    data class Json(val text: String) : ToolOutputRender
+    data class Diff(val parsed: DiffFile?, val raw: String) : ToolOutputRender
+    data class Markdown(val text: String) : ToolOutputRender
+    data class Log(val text: String) : ToolOutputRender
+    data class Error(val text: String) : ToolOutputRender
+    /** Nothing to show (e.g. a metadata-only CLI envelope). */
+    data object Empty : ToolOutputRender
+}
+
+internal fun deriveToolOutputRender(vm: ToolCallVM): ToolOutputRender {
     // Codex wraps every MCP result in `{result: <CallToolResult>, error: null}` on its
     // live wire; unwrap to the text the tool actually returned before classifying, or
     // the card renders the envelope's raw JSON.
     val out = ToolOutputFormat.mcpResultText(vm.trimmedOutput) ?: vm.trimmedOutput
-    if (vm.bucket == ToolKindBucket.READ && !vm.isError) {
+    if (vm.isError) return ToolOutputRender.Error(out)
+    if (vm.bucket == ToolKindBucket.READ) {
         val file = ReadOutputFormat.parse(out)
-        if (file != null && file.content.isNotBlank()) {
-            FileBodyView(file)
-            return
-        }
+        if (file != null && file.content.isNotBlank()) return ToolOutputRender.ReadFile(file)
     }
-    when {
-        vm.isError -> ToolErrorOutput(out)
-        vm.isCommand -> {
-            val clean = ToolOutputFormat.cleanCommandOutput(out)
-            if (clean.isNotEmpty()) CodeBlock(code = clean, language = "console")
-        }
-        else -> when (ToolOutputFormat.classify(out)) {
-            ToolOutputFormat.Kind.JSON -> CodeBlock(code = prettyPrintJsonString(out) ?: out, language = "json")
-            ToolOutputFormat.Kind.DIFF ->
-                if (UnifiedDiff.looksLikeDiff(out)) {
-                    UnifiedDiff.parse(out)?.let { DiffView(it) } ?: CodeBlock(code = out, language = "diff")
-                } else {
-                    CodeBlock(code = out, language = "diff")
-                }
-            ToolOutputFormat.Kind.MARKDOWN -> MarkdownContent(out)
-            ToolOutputFormat.Kind.LOG -> CodeBlock(code = out, language = "output")
-        }
+    if (vm.isCommand) {
+        val clean = ToolOutputFormat.cleanCommandOutput(out)
+        return if (clean.isNotEmpty()) ToolOutputRender.Command(clean) else ToolOutputRender.Empty
+    }
+    return when (ToolOutputFormat.classify(out)) {
+        ToolOutputFormat.Kind.JSON ->
+            ToolOutputRender.Json(prettyPrintJsonString(out) ?: out)
+        ToolOutputFormat.Kind.DIFF ->
+            if (UnifiedDiff.looksLikeDiff(out)) {
+                ToolOutputRender.Diff(UnifiedDiff.parse(out), out)
+            } else {
+                ToolOutputRender.Log(out)
+            }
+        ToolOutputFormat.Kind.MARKDOWN -> ToolOutputRender.Markdown(out)
+        ToolOutputFormat.Kind.LOG -> ToolOutputRender.Log(out)
+    }
+}
+
+@Composable
+private fun ToolOutputSection(vm: ToolCallVM) {
+    // Keyed on the exact inputs the derivation reads, so a card recomposing for an
+    // unrelated reason (scroll, selection, theme) reuses the previous result.
+    val render = remember(vm.trimmedOutput, vm.bucket, vm.isError) { deriveToolOutputRender(vm) }
+    when (render) {
+        is ToolOutputRender.ReadFile -> FileBodyView(render.file)
+        is ToolOutputRender.Command -> CodeBlock(code = render.text, language = "console")
+        is ToolOutputRender.Json -> CodeBlock(code = render.text, language = "json")
+        is ToolOutputRender.Diff ->
+            render.parsed?.let { DiffView(it) } ?: CodeBlock(code = render.raw, language = "diff")
+        is ToolOutputRender.Markdown -> MarkdownContent(render.text)
+        is ToolOutputRender.Log -> CodeBlock(code = render.text, language = "output")
+        is ToolOutputRender.Error -> ToolErrorOutput(render.text)
+        ToolOutputRender.Empty -> Unit
     }
 }
 

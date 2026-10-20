@@ -140,6 +140,26 @@ object ToolOutputFormat {
     )
     private val outputSepLine = Regex("^output:\\s*$", RegexOption.IGNORE_CASE)
 
+    // Hoisted out of the functions that use them: these sit on the tool-card render
+    // path, which runs on every recomposition. Compiling a Regex allocates a Pattern
+    // and parses the expression; `looksLikeMarkdown` alone compiled up to eight of
+    // them per call. As `object` state they are built once for the process.
+    private val leadingFence = Regex("^\\s*```[\\w-]*\\s*\\n?")
+    private val trailingFence = Regex("\\n?\\s*```\\s*$")
+    private val diffHunkHeader = Regex("(?m)^@@ ")
+
+    /** Markdown signals, ≥2 of which mean "render as markdown" (iOS heuristic). */
+    private val markdownSignals = listOf(
+        Regex("(?m)^#{1,6}\\s"),
+        Regex("(?m)^\\s*[-*+]\\s"),
+        Regex("(?m)^\\s*\\d+\\.\\s"),
+        Regex("\\*\\*[^*]+\\*\\*"),
+        Regex("\\[[^\\]]+\\]\\([^)]+\\)"),
+        Regex("```"),
+        Regex("(?m)^>\\s"),
+        Regex("(?m)^\\|.+\\|$"),
+    )
+
     private fun isMetaLine(s: String) = metaLine.containsMatchIn(s)
 
     /** Strip CLI execution-envelope metadata ("Chunk ID:", "Wall time:", "Output:"
@@ -177,8 +197,8 @@ object ToolOutputFormat {
     /** Remove a single leading / trailing Markdown code fence (```sh … ```). */
     fun stripMarkdownFence(text: String): String {
         var result = text
-        Regex("^\\s*```[\\w-]*\\s*\\n?").find(result)?.let { result = result.removeRange(it.range) }
-        Regex("\\n?\\s*```\\s*$").find(result)?.let { result = result.removeRange(it.range) }
+        leadingFence.find(result)?.let { result = result.removeRange(it.range) }
+        trailingFence.find(result)?.let { result = result.removeRange(it.range) }
         return result
     }
 
@@ -194,19 +214,15 @@ object ToolOutputFormat {
     fun classify(output: String): Kind {
         val trimmed = output.trim()
         if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && parseAny(trimmed) != null) return Kind.JSON
-        if (trimmed.contains("diff --git") || Regex("(?m)^@@ ").containsMatchIn(trimmed)) return Kind.DIFF
+        if (trimmed.contains("diff --git") || diffHunkHeader.containsMatchIn(trimmed)) return Kind.DIFF
         return if (looksLikeMarkdown(output)) Kind.MARKDOWN else Kind.LOG
     }
 
     /** ≥2 markdown signals → render the output as markdown (iOS heuristic). */
     fun looksLikeMarkdown(s: String): Boolean {
         var count = 0
-        val patterns = listOf(
-            "(?m)^#{1,6}\\s", "(?m)^\\s*[-*+]\\s", "(?m)^\\s*\\d+\\.\\s",
-            "\\*\\*[^*]+\\*\\*", "\\[[^\\]]+\\]\\([^)]+\\)", "```", "(?m)^>\\s", "(?m)^\\|.+\\|$",
-        )
-        for (p in patterns) {
-            if (Regex(p).containsMatchIn(s)) count++
+        for (signal in markdownSignals) {
+            if (signal.containsMatchIn(s)) count++
             if (count >= 2) return true
         }
         return false
@@ -292,10 +308,13 @@ object ToolFieldLabel {
 
     fun label(key: String): String = map[key] ?: humanize(key)
 
+    /** Split camelCase boundaries; compiled once (this runs per rendered field name). */
+    private val camelBoundary = Regex("([a-z0-9])([A-Z])")
+
     /** `read_only` → "Read only", `timeoutMs` → "Timeout ms". */
     private fun humanize(key: String): String {
         var spaced = key.replace("_", " ")
-        spaced = spaced.replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
+        spaced = spaced.replace(camelBoundary, "$1 $2")
         spaced = spaced.lowercase().trim()
         val first = spaced.firstOrNull() ?: return key
         return first.uppercase() + spaced.drop(1)

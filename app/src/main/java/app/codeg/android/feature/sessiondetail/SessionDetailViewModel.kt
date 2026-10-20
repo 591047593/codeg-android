@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
+import app.codeg.android.core.common.ApplicationScope
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.SelectorPrefs
 import app.codeg.android.core.datastore.SelectorPrefsStore
@@ -90,6 +91,7 @@ class SessionDetailViewModel @Inject constructor(
     private val selectorPrefs: SelectorPrefsStore,
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
+    private val applicationScope: ApplicationScope,
 ) : ViewModel() {
 
     private val conversationIdArg: Int? = savedStateHandle.get<Int>("id")?.takeIf { it >= 0 }
@@ -516,7 +518,15 @@ class SessionDetailViewModel @Inject constructor(
         reconcileJob?.cancel()
         closeStream()
         val conn = connectionId
-        if (conn != null) viewModelScope.launch { runCatching { client?.cancel(conn) } }
+        val c = client
+        if (conn != null && c != null) {
+            // Detached from viewModelScope on purpose: tapping Stop and then immediately
+            // navigating back clears this ViewModel, and a `viewModelScope.launch` here
+            // would be cancelled before the request left the device — leaving the agent
+            // running server-side with no client watching it. The scope below survives
+            // the screen.
+            applicationScope.launch { runCatching { c.cancel(conn) } }
+        }
         clearInteractivePrompts()
     }
 

@@ -707,7 +707,7 @@
     <!-- ===== ViewModel-surfaced messages ===== -->
     <string name="cc_toast_deleted">已删除“%1$s”。</string>
     <string name="cc_toast_delete_failed">删除失败：%1$s</string>
-    <string name="sessions_missing_token">此服务器缺少令牌</string>
+    <string name="sessions_missing_token">此服务器缺少令牌。请打开“管理服务器”重新输入。</string>
     <string name="live_cancelled">已取消。</string>
     <string name="live_agent_connection_errored">智能体连接出错。</string>
     <string name="files_truncated_note">…文件已截断至 %1$d 行</string>
@@ -846,5 +846,6 @@
     <string name="session_turn_in_progress">此会话已有一轮正在进行。</string>
     <string name="session_attachments_skipped">已添加 %1$d 张图片；跳过 %2$d 张（过大或超出上限）。</string>
     <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
-    <string name="server_missing_token">此服务器缺少令牌</string>
+    <string name="projects_folder_not_found">未找到文件夹</string>
+    <string name="time_just_now">刚刚</string>
 </resources>
