@@ -43,8 +43,16 @@ class ServerEditorViewModel @Inject constructor(
     fun onUrlChange(value: String) { url = value }
     fun onTokenChange(value: String) { token = value }
 
+    /**
+     * False only for a URL we could not talk over (an unsupported scheme, or nothing
+     * after `://`). A bare `host:port` is accepted — [CodegClient.normalizeBaseUrl]
+     * supplies the `http://` prefix.
+     */
+    val urlValid: Boolean
+        get() = CodegClient.isUsableBaseUrl(url)
+
     val canSave: Boolean
-        get() = name.isNotBlank() && url.isNotBlank() && token.isNotBlank()
+        get() = name.isNotBlank() && url.isNotBlank() && urlValid && token.isNotBlank()
 
     private fun loadExisting(id: String) {
         viewModelScope.launch {
@@ -56,10 +64,16 @@ class ServerEditorViewModel @Inject constructor(
     }
 
     fun testConnection() {
+        if (!urlValid) {
+            test = TestState.Failure("Unsupported server URL")
+            return
+        }
         viewModelScope.launch {
             test = TestState.Testing
             test = try {
-                val health = repository.transientClient(url.trim(), token.trim()).health()
+                // normalizeBaseUrl also supplies the missing scheme, so testing a bare
+                // host:port exercises the same URL the save path will persist.
+                val health = repository.transientClient(url, token.trim()).health()
                 TestState.Success(health.version)
             } catch (e: Exception) {
                 TestState.Failure(e.displayMessage())

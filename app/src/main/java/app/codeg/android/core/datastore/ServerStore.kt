@@ -24,10 +24,10 @@ class ServerStore @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     val profiles: Flow<List<ServerProfile>> =
-        dataStore.data.map { decode(it[PROFILES]) }
+        dataStore.safeData().map { decode(it[PROFILES]) }
 
     val selectedId: Flow<String?> =
-        dataStore.data.map { it[SELECTED] }
+        dataStore.safeData().map { it[SELECTED] }
 
     /** Insert or replace a profile (matched by id). First profile auto-selects. */
     suspend fun upsert(profile: ServerProfile) {

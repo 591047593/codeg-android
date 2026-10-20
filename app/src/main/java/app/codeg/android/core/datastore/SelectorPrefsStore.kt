@@ -51,7 +51,7 @@ class SelectorPrefsStore @Inject constructor(
     suspend fun saveConfig(agent: AgentType, configId: String, valueId: String) =
         update(agent) { it.copy(configValues = (it.configValues ?: emptyMap()) + (configId to valueId)) }
 
-    private suspend fun all(): Map<String, SelectorPrefs> = decode(dataStore.data.first()[KEY])
+    private suspend fun all(): Map<String, SelectorPrefs> = decode(dataStore.safeData().first()[KEY])
 
     private suspend fun update(agent: AgentType, mutate: (SelectorPrefs) -> SelectorPrefs) {
         dataStore.edit { prefs ->

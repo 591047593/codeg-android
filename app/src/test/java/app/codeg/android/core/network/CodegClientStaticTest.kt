@@ -39,6 +39,40 @@ class CodegClientStaticTest {
     }
 
     @Test
+    fun `normalizeBaseUrl supplies http when the scheme is omitted`() {
+        // Entering a LAN address as `host:port` is the common case; without a scheme
+        // Ktor resolved it as a relative reference and the request failed opaquely.
+        assertEquals("http://192.168.1.10:3080", CodegClient.normalizeBaseUrl("192.168.1.10:3080"))
+        assertEquals("http://192.168.1.10:3080", CodegClient.normalizeBaseUrl("  192.168.1.10:3080/ "))
+        // An explicit scheme is always preserved, including https.
+        assertEquals("https://codeg.example.com", CodegClient.normalizeBaseUrl("https://codeg.example.com/"))
+        // Nothing entered stays empty so callers can treat it as "not filled in yet".
+        assertEquals("", CodegClient.normalizeBaseUrl("   "))
+    }
+
+    @Test
+    fun `normalizeBaseUrl does not duplicate a scheme when the host is missing`() {
+        // `trimEnd('/')` alone turned "http://" into "http:", which then looked
+        // scheme-less and was prefixed again into "http://http:".
+        assertEquals("http://", CodegClient.normalizeBaseUrl("http://"))
+        assertEquals("http://", CodegClient.normalizeBaseUrl("http:///"))
+        assertFalse(CodegClient.isUsableBaseUrl("http://"))
+        assertFalse(CodegClient.isUsableBaseUrl("https:///"))
+    }
+
+    @Test
+    fun `isUsableBaseUrl accepts bare hosts and http(s) but rejects other schemes`() {
+        assertTrue(CodegClient.isUsableBaseUrl("192.168.1.10:3080"))
+        assertTrue(CodegClient.isUsableBaseUrl("http://host:3080"))
+        assertTrue(CodegClient.isUsableBaseUrl("https://host"))
+        assertFalse(CodegClient.isUsableBaseUrl(""))
+        assertFalse(CodegClient.isUsableBaseUrl("   "))
+        assertFalse(CodegClient.isUsableBaseUrl("ftp://host"))
+        assertFalse(CodegClient.isUsableBaseUrl("ws://host:3080"))
+        assertFalse(CodegClient.isUsableBaseUrl("http://"))
+    }
+
+    @Test
     fun `decodeAgentList decodes the newest agent types and drops still-unknown ones`() {
         // code_buddy / kimi_code / pi / grok are now first-class AgentType values, so
         // they decode (grok also carries its own config payload). A genuinely-unknown

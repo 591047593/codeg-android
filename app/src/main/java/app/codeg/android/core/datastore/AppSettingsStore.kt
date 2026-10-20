@@ -38,7 +38,7 @@ data class AppSettings(
 class AppSettingsStore @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) {
-    val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
+    val settings: Flow<AppSettings> = dataStore.safeData().map { prefs ->
         AppSettings(
             themeMode = ThemeMode.from(prefs[MODE]),
             accentId = prefs[ACCENT] ?: AppSettings.DEFAULT_ACCENT,

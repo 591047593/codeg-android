@@ -50,14 +50,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +86,8 @@ import app.codeg.android.feature.sessiondetail.timeline.NodeContent
 import app.codeg.android.feature.sessiondetail.timeline.TimelineRow
 import app.codeg.android.feature.sessiondetail.timeline.TranscriptTimeline
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /**
  * The session detail screen: the transcript rendered as a vertical **timeline**
@@ -99,7 +104,10 @@ fun SessionDetailScreen(
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
-    var draft by remember { mutableStateOf("") }
+    // rememberSaveable: a half-typed prompt survived neither rotation nor the
+    // `recreate()` that a theme / language change triggers. The composer is the one
+    // place in the app where unsaved user input is expensive to lose.
+    var draft by rememberSaveable { mutableStateOf("") }
     var showInsert by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -421,15 +429,21 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(attachments, key = { it.id }) { att ->
-            val bitmap = remember(att.id) {
-                runCatching {
-                    val bytes = android.util.Base64.decode(att.base64, android.util.Base64.DEFAULT)
-                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                }.getOrNull()
+            // Decoding a multi-megabyte JPEG (base64 → byte[] → Bitmap) is real work;
+            // doing it inline in `remember` ran it on the composition thread and
+            // stuttered the first frame that showed a freshly picked image.
+            val bitmap by produceState<ImageBitmap?>(initialValue = null, att.id) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val bytes = android.util.Base64.decode(att.base64, android.util.Base64.DEFAULT)
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }.getOrNull()
+                }
             }
             Box(Modifier.size(60.dp)) {
-                if (bitmap != null) {
-                    Image(bitmap, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)))
+                val preview = bitmap
+                if (preview != null) {
+                    Image(preview, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)))
                 } else {
                     Box(Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(colors.codeSurface))
                 }

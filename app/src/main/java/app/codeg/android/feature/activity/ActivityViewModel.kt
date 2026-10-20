@@ -1,7 +1,9 @@
 package app.codeg.android.feature.activity
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
@@ -9,6 +11,7 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import app.codeg.android.feature.sessions.SessionRowItem
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +39,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ActivityViewModel @Inject constructor(
     private val repository: ServerRepository,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(ActivityUiState())
@@ -71,19 +75,60 @@ class ActivityViewModel @Inject constructor(
 
     private suspend fun onProfile(profile: ServerProfile?) {
         pollJob?.cancel()
+        pollJob = null
         if (profile == null) {
             client = null
             _ui.value = ActivityUiState()
             return
         }
-        client = repository.client(profile)
+        val resolved = repository.client(profile)
+        client = resolved
+        if (resolved == null) {
+            // No token for this server (deleted Keystore entry, restored backup, ...).
+            // Starting the poll loop here used to spin forever: `fetch()` returns
+            // immediately when `client` is null, so it woke every 25s to do nothing.
+            _ui.value = ActivityUiState(
+                loading = false,
+                hasLoaded = true,
+                error = appContext.getString(R.string.sessions_missing_token),
+            )
+            return
+        }
         _ui.value = ActivityUiState(loading = true)
+        // Only restart the loop if the screen is currently on-screen. A server switch
+        // can happen from another tab; starting the poll then would resume work for a
+        // screen nobody is looking at.
+        if (pollingRequested) startPollLoopIfReady()
+    }
+
+    /** True between ActivityScreen's DisposableEffect enter and its dispose. */
+    private var pollingRequested = false
+
+    /**
+     * Pause / resume the background poll with the screen's lifecycle. The feed is a
+     * 25s poll; without this it kept running after the user left the tab (and stayed
+     * running in the background), draining battery and data for results nobody reads.
+     */
+    fun startPolling() {
+        pollingRequested = true
+        startPollLoopIfReady()
+    }
+
+    private fun startPollLoopIfReady() {
+        if (client == null) return
+        if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
             while (true) {
                 fetch()
-                delay(25_000)
+                delay(POLL_INTERVAL_MS)
             }
         }
+    }
+
+    fun stopPolling() {
+        pollingRequested = false
+        pollJob?.cancel()
+        pollJob = null
     }
 
     fun refresh() {
@@ -106,6 +151,16 @@ class ActivityViewModel @Inject constructor(
         } catch (e: Exception) {
             _ui.update { it.copy(loading = false, refreshing = false, error = if (it.hasLoaded) it.error else e.displayMessage()) }
         }
+    }
+
+    override fun onCleared() {
+        pollJob?.cancel()
+        pollJob = null
+        super.onCleared()
+    }
+
+    private companion object {
+        const val POLL_INTERVAL_MS = 25_000L
     }
 }
 

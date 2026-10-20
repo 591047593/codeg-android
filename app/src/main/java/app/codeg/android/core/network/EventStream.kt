@@ -131,12 +131,19 @@ class EventStream(
             }
         }
 
-        /** Derive the `ws(s)://host/ws/events` URL from an `http(s)` base URL. */
+        /**
+         * Derive the `ws(s)://host/ws/events` URL from an `http(s)` base URL.
+         *
+         * Goes through [CodegClient.normalizeBaseUrl] so a scheme-less input (which the
+         * settings screen now accepts) picks the right transport instead of the
+         * `startsWith("https")` probe defaulting it to plain `ws://` against an
+         * `https://` endpoint.
+         */
         fun websocketUrl(rawBaseUrl: String): String {
             val base = CodegClient.normalizeBaseUrl(rawBaseUrl)
-            val scheme = if (base.startsWith("https", ignoreCase = true)) "wss" else "ws"
+            val isSecure = base.startsWith("https://", ignoreCase = true)
             val authority = base.substringAfter("://", base)
-            return "$scheme://$authority/ws/events"
+            return "${if (isSecure) "wss" else "ws"}://$authority/ws/events"
         }
     }
 }

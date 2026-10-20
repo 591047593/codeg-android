@@ -50,4 +50,12 @@ class FrameRoutingTest {
         assertEquals("ws://host:3080/ws/events", EventStream.websocketUrl("http://host:3080"))
         assertEquals("wss://host/ws/events", EventStream.websocketUrl("https://host/"))
     }
+
+    @Test
+    fun `websocket url supplies a scheme for a bare host`() {
+        // The settings screen accepts `host:port`; the derived socket must match the
+        // same default the HTTP client uses instead of silently picking ws or wss.
+        assertEquals("ws://192.168.1.10:3080/ws/events", EventStream.websocketUrl("192.168.1.10:3080"))
+        assertEquals("wss://codeg.example.com/ws/events", EventStream.websocketUrl("https://codeg.example.com"))
+    }
 }

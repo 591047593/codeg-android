@@ -3,12 +3,14 @@ package app.codeg.android.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.QuickMessage
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -27,13 +29,37 @@ class QuickMessagesViewModel @Inject constructor(
 
     private var client: CodegClient? = null
 
-    init { load() }
+    /**
+     * The profile whose endpoint the loaded data belongs to. Kept in sync with the
+     * app-wide selection: a one-shot `selectedProfile.first()` at open time went
+     * stale as soon as the user switched servers elsewhere, leaving this screen
+     * talking to the previous server. `collectLatest` cancels a load for the old
+     * endpoint when the selection changes quickly.
+     */
+    private var activeProfile: ServerProfile? = null
+
+    init {
+        viewModelScope.launch {
+            repository.selectedEndpoint.collectLatest { profile ->
+                val changed = when {
+                    profile == null -> activeProfile != null
+                    activeProfile == null -> true
+                    else -> profile.id != activeProfile?.id || profile.baseUrl != activeProfile?.baseUrl
+                }
+                if (changed) {
+                    activeProfile = profile
+                    client = null
+                    load()
+                }
+            }
+        }
+    }
 
     fun load() {
         _ui.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             try {
-                val profile = repository.selectedProfile.first() ?: throw IllegalStateException("No server selected")
+                val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
                 client = c
                 val list = c.quickMessagesList().sortedBy { it.sortOrder }

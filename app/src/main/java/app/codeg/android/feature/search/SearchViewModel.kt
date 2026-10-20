@@ -56,12 +56,38 @@ class SearchViewModel @Inject constructor(
 
     fun onQueryChange(value: String) { _query.value = value }
 
+    /**
+     * Commit the current term to the recent list.
+     *
+     * Only deliberate submits land here — pressing the keyboard's search action,
+     * tapping a result. This used to be called from [runSearch] on every success,
+     * and [runSearch] is driven by a 300 ms debounce on every keystroke, so typing
+     * "codeg" recorded "c", "co", "cod", "code", "codeg" as five separate history
+     * entries and buried anything the user had actually searched for.
+     */
     fun submit() {
         val q = _query.value.trim()
-        if (q.isNotEmpty()) viewModelScope.launch { recentStore.add(q) }
+        if (q.isEmpty()) return
+        viewModelScope.launch {
+            recentStore.add(q)
+            runSearch(q)
+        }
     }
 
-    fun useRecent(term: String) { _query.value = term }
+    /** Record the current term without re-running the query (tapping a result row). */
+    fun rememberCurrentQuery() {
+        val q = _query.value.trim()
+        if (q.isEmpty()) return
+        viewModelScope.launch { recentStore.add(q) }
+    }
+
+    fun useRecent(term: String) {
+        _query.value = term
+        viewModelScope.launch {
+            recentStore.add(term) // promote to most-recent
+            runSearch(term)
+        }
+    }
 
     fun clearRecent() { viewModelScope.launch { recentStore.clear() } }
 
@@ -79,7 +105,6 @@ class SearchViewModel @Inject constructor(
         try {
             val results = c.listConversations(search = q, sortBy = "updated")
             _ui.update { it.copy(results = results, searching = false) }
-            recentStore.add(q)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

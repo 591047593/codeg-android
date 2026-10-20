@@ -3,6 +3,7 @@ package app.codeg.android.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.AcpAgentInfo
 import app.codeg.android.core.model.AgentConfig
 import app.codeg.android.core.model.AgentDraft
@@ -28,6 +29,7 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -61,7 +63,30 @@ class AgentsViewModel @Inject constructor(
      */
     private val opMutex = Mutex()
 
-    init { load() }
+    /**
+     * The profile whose endpoint the loaded agent list belongs to. Was a one-shot
+     * `selectedProfile.first()` per call, so switching servers left this screen
+     * listing (and writing to) the previous server. Now kept in sync with the
+     * app-wide selection.
+     */
+    private var activeProfile: ServerProfile? = null
+
+    init {
+        viewModelScope.launch {
+            repository.selectedEndpoint.collectLatest { profile ->
+                val changed = when {
+                    profile == null -> activeProfile != null
+                    activeProfile == null -> true
+                    else -> profile.id != activeProfile?.id || profile.baseUrl != activeProfile?.baseUrl
+                }
+                if (changed) {
+                    activeProfile = profile
+                    client = null
+                    load()
+                }
+            }
+        }
+    }
 
     // region List
 
@@ -72,7 +97,7 @@ class AgentsViewModel @Inject constructor(
     private suspend fun reload() {
         _ui.update { it.copy(loading = true, error = null) }
         try {
-            val profile = repository.selectedProfile.first() ?: throw IllegalStateException("No server selected")
+            val profile = activeProfile ?: throw IllegalStateException("No server selected")
             val c = repository.client(profile) ?: throw IllegalStateException("Missing token")
             client = c
             val agents = c.acpListAgents().sortedBy { a -> a.sortOrder }
@@ -139,7 +164,7 @@ class AgentsViewModel @Inject constructor(
     fun openDetail(agentType: AgentType) {
         viewModelScope.launch {
             try {
-                val profile = repository.selectedProfile.first() ?: throw IllegalStateException("No server selected")
+                val profile = activeProfile ?: throw IllegalStateException("No server selected")
                 val c = client ?: repository.client(profile)?.also { client = it }
                     ?: throw IllegalStateException("Missing token")
                 val agent = _ui.value.agents.firstOrNull { it.agentType == agentType }

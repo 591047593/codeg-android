@@ -128,6 +128,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -156,6 +159,13 @@ class CodegClient(
     rawBaseUrl: String,
     private val token: String,
     private val http: HttpClient,
+    /**
+     * Dispatcher for the two pieces of genuinely blocking work on a call: reading
+     * the response body and (de)serializing JSON. These are CPU/IO bound and were
+     * previously executed on the caller's thread — which is `Main` for every
+     * `viewModelScope.launch`, so decoding a large transcript blocked the frame.
+     */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /** Base URL with any trailing slash trimmed; `/api/<name>` is appended. */
     val baseUrl: String = normalizeBaseUrl(rawBaseUrl)
@@ -946,13 +956,13 @@ class CodegClient(
             throw ApiError.Transport(e.message ?: "Network error")
         }
 
-        val text = response.bodyAsText()
+        // Pull the body off the caller's thread: a large transcript body read is real
+        // work, and every caller invokes this from `viewModelScope` (Main).
+        val text = withContext(io) { response.bodyAsText() }
         val code = response.status.value
         if (code !in 200..299) {
             if (code == 401) throw ApiError.Unauthorized
-            val parsed = runCatching {
-                CodegJson.response.decodeFromString(ServerError.serializer(), text)
-            }.getOrNull()
+            val parsed = parseServerError(text)
             if (code == 409 || parsed?.code == "turn_in_progress") throw ApiError.TurnInProgress
             throw ApiError.Server(
                 status = code,
@@ -964,19 +974,62 @@ class CodegClient(
         return text
     }
 
+    private suspend fun parseServerError(text: String): ServerError? =
+        withContext(io) {
+            runCatching { CodegJson.response.decodeFromString(ServerError.serializer(), text) }
+                .getOrNull()
+        }
+
     private inline fun <reified T> encode(body: T): String =
         CodegJson.request.encodeToString(body)
 
-    private fun <T> decode(text: String, deserializer: DeserializationStrategy<T>): T =
-        runCatching { CodegJson.response.decodeFromString(deserializer, text) }
-            .getOrElse { throw ApiError.Decoding(it.message ?: "Failed to decode response") }
+    /**
+     * Decode [text] off the caller's thread. Deserializing a full conversation
+     * transcript is potentially megabytes of JSON — doing it on `Main` dropped frames.
+     */
+    private suspend fun <T> decode(text: String, deserializer: DeserializationStrategy<T>): T =
+        withContext(io) {
+            runCatching { CodegJson.response.decodeFromString(deserializer, text) }
+                .getOrElse { throw ApiError.Decoding(it.message ?: "Failed to decode response") }
+        }
 
     // endregion
 
     companion object {
-        /** Trim a trailing slash so `"$baseUrl/api/<name>"` never doubles up. */
-        fun normalizeBaseUrl(raw: String): String =
-            raw.trim().trimEnd('/')
+        /**
+         * Normalise a user-entered server URL into something Ktor can resolve.
+         *
+         * Typing `192.168.1.10:3080` is the natural way to enter a LAN codeg server,
+         * but without a scheme Ktor treated it as a relative reference and the request
+         * failed with an opaque error — and [EventStream.websocketUrl]'s
+         * `startsWith("https")` probe silently picked `ws://` for the same input.
+         * Default to `http://` (the documented deployment: plain HTTP on a LAN
+         * address); an explicit scheme is always preserved.
+         */
+        fun normalizeBaseUrl(raw: String): String {
+            // Trim the padding first, but only strip trailing slashes from the path
+            // portion: `trimEnd('/')` on `"http://"` produced `"http:"`, which then
+            // looked scheme-less and got a second prefix bolted on.
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return trimmed
+            val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
+            // Collapse a bare `scheme://` or `scheme:///` down to `scheme://` so a
+            // host-less value stays recognisably host-less.
+            val authority = withScheme.substringAfter("://").trimEnd('/')
+            val scheme = withScheme.substringBefore("://")
+            return "$scheme://$authority"
+        }
+
+        /** True when [raw] is a value we can build a base URL from. */
+        fun isUsableBaseUrl(raw: String): Boolean {
+            val normalized = normalizeBaseUrl(raw)
+            if (!normalized.contains("://")) return false
+            val authority = normalized.substringAfter("://")
+            if (authority.isBlank()) return false
+            // Reject a scheme we cannot talk over rather than failing at request time.
+            val scheme = normalized.substringBefore("://").lowercase()
+            return scheme == "http" || scheme == "https"
+        }
 
         /**
          * `acp_connect` returns a bare JSON string connection id. Require exactly

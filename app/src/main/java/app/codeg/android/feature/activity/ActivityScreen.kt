@@ -21,6 +21,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,6 +59,13 @@ fun ActivityScreen(
     val sections by viewModel.sections.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
     val colors = CodegTheme.colors
+
+    // The feed is a poll. Bind it to this destination's lifetime so leaving the tab
+    // stops the 25s loop instead of running it for the rest of the process.
+    DisposableEffect(Unit) {
+        viewModel.startPolling()
+        onDispose { viewModel.stopPolling() }
+    }
 
     Scaffold(
         containerColor = Color.Transparent,

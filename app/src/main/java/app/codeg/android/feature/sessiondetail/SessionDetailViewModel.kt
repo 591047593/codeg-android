@@ -53,6 +53,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -74,11 +75,6 @@ private const val MODE_KEY = "mode"
 /** Bounded snapshot poll after an options apply (~2.3s total) — `set_*` only enqueues
  *  the change server-side, so we reconcile against the authoritative snapshot. */
 private const val RECONCILE_ATTEMPTS = 6
-
-/** Status-line copy shown while the agent is thinking (no tool running). Hardcoded to
- *  match the send-flow literal — the transient status micro-copy is intentionally not
- *  localized (see the app's i18n notes). */
-private const val STATUS_THINKING = "Thinking…"
 
 /**
  * Drives the session detail screen end to end: loads the persisted transcript,
@@ -147,13 +143,44 @@ class SessionDetailViewModel @Inject constructor(
 
     init {
         load()
+        watchServerSwitch()
+    }
+
+    /**
+     * A conversation id is scoped to one server, so this screen cannot follow a
+     * server switch the way list screens do. What it *must* not do is keep issuing
+     * requests against the old server while the rest of the app moved on — that is
+     * what the previous one-shot `selectedProfile.first()` per [load] allowed: a
+     * retry after a switch silently addressed the new server with a foreign
+     * conversation id. Detect the switch instead and say so plainly.
+     */
+    private fun watchServerSwitch() {
+        viewModelScope.launch {
+            repository.selectedEndpoint.collect { selected ->
+                val bound = profile ?: return@collect
+                if (selected?.id == bound.id && selected.baseUrl == bound.baseUrl) return@collect
+                // The screen is bound to a server that is no longer selected: stop any
+                // live stream against it so events can't leak into this transcript.
+                closeStream()
+                _ui.update {
+                    it.copy(
+                        isInFlight = false,
+                        sendStatus = null,
+                        notice = appContext.getString(R.string.session_server_changed),
+                    )
+                }
+            }
+        }
     }
 
     fun load() {
         _ui.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             try {
-                val p = repository.selectedProfile.first() ?: throw IllegalStateException("No server selected")
+                // Bind to the CURRENT selection on an explicit (re)load; afterwards the
+                // screen stays on that server until reopened (see watchServerSwitch).
+                val p = profile ?: repository.selectedProfile.first()
+                    ?: throw IllegalStateException("No server selected")
                 profile = p
                 val c = repository.client(p) ?: throw IllegalStateException("Missing token for this server")
                 client = c
@@ -274,7 +301,7 @@ class SessionDetailViewModel @Inject constructor(
                 live = builder.snapshot(),
                 liveFromReattach = false,
                 isInFlight = true,
-                sendStatus = "Connecting…",
+                sendStatus = appContext.getString(R.string.session_status_connecting),
                 notice = null,
                 restoreDraft = null,
                 attachments = if (withAttachments) emptyList() else it.attachments,
@@ -313,11 +340,11 @@ class SessionDetailViewModel @Inject constructor(
                     attemptSend(c, text, attachments, clientMessageId, freshConnection = true)
                 } else throw e
             }
-            _ui.update { if (it.isInFlight) it.copy(sendStatus = "Thinking…") else it }
+            _ui.update { if (it.isInFlight) it.copy(sendStatus = runningStatus()) else it }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiError.TurnInProgress) {
-            discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = "A turn is already running on this session.")
+            discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = appContext.getString(R.string.session_turn_in_progress))
         } catch (e: Exception) {
             discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = e.displayMessage())
         }
@@ -525,7 +552,7 @@ class SessionDetailViewModel @Inject constructor(
             val builder = LiveTurnBuilder()
             liveBuilder = builder
             turnBaseline = _ui.value.turns.size
-            _ui.update { it.copy(isInFlight = true, sendStatus = "Reattaching…", live = builder.snapshot()) }
+            _ui.update { it.copy(isInFlight = true, sendStatus = appContext.getString(R.string.session_status_reattaching), live = builder.snapshot()) }
             try {
                 openStream(found.connectionId, seedOnAttach = true)
             } catch (e: StreamAttachFailed) {
@@ -569,7 +596,9 @@ class SessionDetailViewModel @Inject constructor(
                 ConnectionStatus.PROMPTING -> _ui.update {
                     // The agent is actively prompting — reflect it as "Thinking…" unless a tool is
                     // currently running (that status is more specific). Mirrors the iOS .prompting.
-                    if (it.isInFlight && liveBuilder?.activeToolTitle() == null) it.copy(sendStatus = STATUS_THINKING) else it
+                    if (it.isInFlight && liveBuilder?.activeToolTitle() == null) {
+                        it.copy(sendStatus = appContext.getString(R.string.session_status_thinking))
+                    } else it
                 }
                 // .connecting is a no-op here: the status line only renders while in-flight, and
                 // by then we're already past connecting (iOS shows it only from its idle state).
@@ -627,11 +656,16 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     /** The status-line copy for the current live state: the running tool's title, else
-     *  "Thinking…". Recomputed on tool start/finish so it never sticks on a done tool.
-     *  Hardcoded English to match the send-flow literals (transient status micro-copy is
-     *  intentionally not localized — see the app's i18n notes). */
-    private fun runningStatus(): String =
-        liveBuilder?.activeToolTitle()?.let { "Running ${it.ifBlank { "tool" }}…" } ?: STATUS_THINKING
+     *  the "thinking" copy. Recomputed on tool start/finish so it never sticks on a
+     *  done tool. Localized — these are user-visible for the whole duration of a turn. */
+    private fun runningStatus(): String {
+        val tool = liveBuilder?.activeToolTitle()
+        return if (tool.isNullOrBlank()) {
+            appContext.getString(R.string.session_status_thinking)
+        } else {
+            appContext.getString(R.string.session_status_running_tool, tool)
+        }
+    }
 
     /** A new task's first prompt links a server-side conversation. Android creates that
      *  row up front (so [conversationId] is already set), but has no summary for it yet —
@@ -868,7 +902,7 @@ class SessionDetailViewModel @Inject constructor(
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             val backoffMs = (500L shl (streamReconnects - 1)).coerceAtMost(8_000L)
-            _ui.update { if (it.isInFlight) it.copy(sendStatus = "Reconnecting…") else it }
+            _ui.update { if (it.isInFlight) it.copy(sendStatus = appContext.getString(R.string.session_status_reconnecting)) else it }
             delay(backoffMs)
             // Bail if the turn ended or was superseded (cancel / finalize) while we waited.
             if (gen != streamGeneration || !_ui.value.isInFlight) return@launch
@@ -1153,13 +1187,14 @@ class SessionDetailViewModel @Inject constructor(
                 if (_ui.value.attachments.size >= AttachmentPrep.MAX_COUNT) { skipped++; continue }
                 val att = AttachmentPrep.fromUri(uri, resolver)
                 if (att == null) { skipped++; continue }
-                val currentBytes = _ui.value.attachments.sumOf { it.base64.length }
-                // base64 length ≈ 4/3 of raw bytes; cap on the aggregate raw estimate.
-                if (currentBytes + att.base64.length > AttachmentPrep.MAX_TOTAL_BYTES * 4 / 3) { skipped++; continue }
+                // Measure real encoded bytes; the old code re-derived a raw-size
+                // estimate from the base64 length, which double-applied the 4/3 factor.
+                val currentBytes = _ui.value.attachments.sumOf { it.rawBytes }
+                if (currentBytes + att.rawBytes > AttachmentPrep.MAX_TOTAL_BYTES) { skipped++; continue }
                 _ui.update { it.copy(attachments = it.attachments + att) }
                 added++
             }
-            if (skipped > 0) _ui.update { it.copy(notice = "Added $added image(s); $skipped skipped (too large or over the limit).") }
+            if (skipped > 0) _ui.update { it.copy(notice = appContext.getString(R.string.session_attachments_skipped, added, skipped)) }
         }
     }
 
