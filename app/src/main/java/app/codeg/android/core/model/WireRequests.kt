@@ -129,6 +129,10 @@ data class UpdateConversationStatusBody(val conversationId: Int, val status: Str
 @Serializable
 data class PathBody(val path: String)
 
+/** Body for `remove_folder_from_workspace` (camelCase `folderId`, per the server). */
+@Serializable
+data class FolderIdBody(val folderId: Int)
+
 // MARK: - Projects / Git request bodies (camelCase keys)
 
 @Serializable
