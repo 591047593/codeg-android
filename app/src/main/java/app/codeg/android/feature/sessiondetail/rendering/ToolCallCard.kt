@@ -230,7 +230,7 @@ internal sealed interface ToolOutputRender {
     data class ReadFile(val file: ReadOutputFormat.File) : ToolOutputRender
     data class Command(val text: String) : ToolOutputRender
     data class Json(val text: String) : ToolOutputRender
-    data class Diff(val parsed: DiffFile?, val raw: String) : ToolOutputRender
+    data class Diff(val parsed: List<DiffFile>?, val raw: String) : ToolOutputRender
     data class Markdown(val text: String) : ToolOutputRender
     data class Log(val text: String) : ToolOutputRender
     data class Error(val text: String) : ToolOutputRender
