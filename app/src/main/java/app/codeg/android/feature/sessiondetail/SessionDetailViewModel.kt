@@ -73,6 +73,13 @@ private const val MAX_STREAM_RECONNECTS = 6
 /** The selector key used for the session mode (config options key by their own id). */
 private const val MODE_KEY = "mode"
 
+/**
+ * SavedStateHandle key holding the bound conversation id. Deliberately the same string
+ * as the `conversation/{id}` navigation argument, so an existing session restores from
+ * the route and a conversation created mid-draft restores from this write.
+ */
+private const val KEY_CONVERSATION_ID = "id"
+
 /** Bounded snapshot poll after an options apply (~2.3s total) — `set_*` only enqueues
  *  the change server-side, so we reconcile against the authoritative snapshot. */
 private const val RECONCILE_ATTEMPTS = 6
@@ -89,18 +96,37 @@ private const val RECONCILE_ATTEMPTS = 6
 class SessionDetailViewModel @Inject constructor(
     private val repository: ServerRepository,
     private val selectorPrefs: SelectorPrefsStore,
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
     private val applicationScope: ApplicationScope,
 ) : ViewModel() {
 
-    private val conversationIdArg: Int? = savedStateHandle.get<Int>("id")?.takeIf { it >= 0 }
     /** A new task may be pre-seeded with a folder (e.g. a worktree a branch switch opened). */
     private val folderIdArg: Int? = savedStateHandle.get<Int>("folderId")?.takeIf { it >= 0 }
 
     private var profile: ServerProfile? = null
     private var client: CodegClient? = null
-    private var conversationId: Int? = conversationIdArg
+
+    /**
+     * The conversation this screen is bound to, or null while it is still a draft.
+     *
+     * Persisted into [savedStateHandle] under the same `"id"` key the navigation
+     * argument uses, because the conversation is created lazily on the first send —
+     * the route says `conversation_new` and cannot carry the id. Without this, a
+     * process death between "first prompt sent" and "user navigates back" restored the
+     * screen as a *fresh draft* while the server kept running the conversation the user
+     * had just started: the reply existed but the app had forgotten where it belonged.
+     *
+     * Navigation deliberately does not re-route to `conversation/<id>` when the id
+     * appears: keeping the route stable keeps this ViewModel (and its live WebSocket)
+     * alive across the transition from draft to real conversation.
+     */
+    private var conversationId: Int?
+        get() = savedStateHandle.get<Int>(KEY_CONVERSATION_ID)?.takeIf { it >= 0 }
+        set(value) {
+            savedStateHandle[KEY_CONVERSATION_ID] = value
+        }
+
     private var connectionId: String? = null
     private var folder: FolderDetail? = null
     private var allFolders: List<FolderDetail> = emptyList()
@@ -140,7 +166,7 @@ class SessionDetailViewModel @Inject constructor(
     private var liveFlushScheduled = false
     private var turnBaseline = 0
 
-    private val _ui = MutableStateFlow(SessionDetailUiState(isNew = conversationIdArg == null))
+    private val _ui = MutableStateFlow(SessionDetailUiState(isNew = conversationId == null))
     val ui: StateFlow<SessionDetailUiState> = _ui.asStateFlow()
 
     init {
@@ -410,6 +436,11 @@ class SessionDetailViewModel @Inject constructor(
         val id = c.createConversation(f.id, agent, title = firstPrompt.take(60))
         conversationId = id
         _ui.update { it.copy(isNew = false) }
+        // The row now exists server-side, so the Chats list is stale until it refetches.
+        // Every other mutation on this screen (rename / pin / status / delete) already
+        // broadcasts; creation was the one path that did not, so a first-time task was
+        // missing from the list until something else happened to refresh it.
+        repository.notifyConversationsChanged()
     }
 
     private suspend fun resolveConnection(c: CodegClient): String {
@@ -458,7 +489,11 @@ class SessionDetailViewModel @Inject constructor(
                     StreamFrame.Ready -> s.attach(subscriptionId, conn, lastSeq.takeIf { it > 0 })
                     is StreamFrame.Snapshot -> {
                         streamReconnects = 0
-                        frame.snapshot.eventSeq?.let { lastSeq = it }
+                        // A snapshot is authoritative state, so its cursor is adopted —
+                        // but never moved backwards: a stale snapshot racing a newer one
+                        // would rewind the cursor, and [applyEvent] now drops anything at
+                        // or below it, silently losing the events in between.
+                        frame.snapshot.eventSeq?.let { if (it > lastSeq) lastSeq = it }
                         if (seedOnAttach && !seedLiveFromSnapshot(frame.snapshot)) {
                             // Idle connection — nothing in flight; abort the reattach.
                             if (!attached.isCompleted) attached.complete(Unit)
@@ -573,8 +608,28 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Fold one streamed ACP event into the live turn.
+     *
+     * [seq] is the server's monotonic cursor, and it is what the next re-attach sends as
+     * `since_seq`; the server then replays everything after it. Two invariants matter:
+     *
+     * - The cursor never moves backwards. A replay frame delivered out of order would
+     *   otherwise rewind it, and the following reconnect would replay events this turn
+     *   has already applied.
+     * - An event at or below the cursor is dropped. Text deltas append unconditionally,
+     *   so applying one twice duplicates that paragraph in the reply — and a duplicate
+     *   is exactly what a replay/`event` overlap produces near a reconnect boundary.
+     *
+     * `seq <= 0` means the frame carried no cursor (a live `event` frame from a server
+     * that does not sequence everything); those are applied unconditionally, as before.
+     */
     private fun applyEvent(event: AcpEvent, seq: Long) {
-        if (seq > 0) lastSeq = seq
+        when (val decision = eventCursorDecision(seq, lastSeq)) {
+            EventCursor.APPLY_UNSEQUENCED -> Unit
+            EventCursor.DUPLICATE -> return
+            is EventCursor.ADVANCE -> lastSeq = decision.sequence
+        }
         val builder = liveBuilder
         when (event) {
             is AcpEvent.ContentDelta -> { builder?.appendText(event.text); scheduleLiveEmit() }
@@ -861,6 +916,19 @@ class SessionDetailViewModel @Inject constructor(
         if (planFollowUp != null) send(planFollowUp, withAttachments = false)
     }
 
+    /**
+     * End the live turn on a stream-reported failure.
+     *
+     * The local builder only knows what was streamed *before* the failure. The server may
+     * have produced a complete reply that never reached this socket (an `error` event can
+     * follow a partially delivered turn, or the drop can happen after the agent finished),
+     * so the transcript is reconciled exactly as a normal completion would be. Without
+     * that, the reply stayed invisible until the user left the screen and came back.
+     *
+     * The error itself is surfaced as a notice, not only as the live turn's inline text:
+     * [reconcileAfterTurn] replaces the live turn with the server transcript once it
+     * confirms the turn advanced, which would otherwise take the message with it.
+     */
     private fun failLive(message: String) {
         val builder = liveBuilder
         if (builder != null) {
@@ -870,6 +938,8 @@ class SessionDetailViewModel @Inject constructor(
         }
         closeStream()
         clearInteractivePrompts()
+        _ui.update { it.copy(notice = message) }
+        reconcileAfterTurn()
     }
 
     private fun handleStreamEnded(gen: Int, reason: String?) {
@@ -1603,6 +1673,30 @@ data class SessionDetailUiState(
 )
 
 /** What to do with a plan approval's revision notes — see [planFollowUpAction]. */
+/**
+ * What to do with an event arriving at [sequence] when the cursor is already at [cursor].
+ *
+ * Split out from [SessionDetailViewModel.applyEvent] because getting it wrong is silent:
+ * too permissive duplicates a paragraph of the reply, too strict drops one. Pure, so the
+ * boundary cases are testable without a socket.
+ */
+internal sealed interface EventCursor {
+    /** No cursor on the frame — apply it and leave the cursor alone. */
+    data object APPLY_UNSEQUENCED : EventCursor
+
+    /** At or behind the cursor — already applied (a replay/event overlap). Drop it. */
+    data object DUPLICATE : EventCursor
+
+    /** Ahead of the cursor — apply it and move the cursor forward. */
+    data class ADVANCE(val sequence: Long) : EventCursor
+}
+
+internal fun eventCursorDecision(sequence: Long, cursor: Long): EventCursor = when {
+    sequence <= 0 -> EventCursor.APPLY_UNSEQUENCED
+    sequence <= cursor -> EventCursor.DUPLICATE
+    else -> EventCursor.ADVANCE(sequence)
+}
+
 internal enum class PlanFollowUp { PARK, SEND_NOW, DROP }
 
 /**

@@ -61,4 +61,35 @@ class LiveTurnBuilderTest {
         assertTrue(turn.blocks[1] is ContentBlock.ToolUse)
         assertTrue(turn.blocks[2] is ContentBlock.ToolResult)
     }
+
+    @Test
+    fun `terminal tool statuses are recognised and in-flight ones are not`() {
+        // The predicate drives the compose status line and whether a tool folds into a
+        // group, so a missed spelling shows a finished tool as still running forever.
+        for (terminal in listOf("completed", "failed", "error", "cancelled", "canceled")) {
+            assertTrue("expected terminal: $terminal", isFinishedStatus(terminal))
+        }
+        for (running in listOf("in_progress", "pending", "input_streaming", "")) {
+            assertFalse("expected running: $running", isFinishedStatus(running))
+        }
+    }
+
+    @Test
+    fun `only failed and error count as errors, not cancelled`() {
+        assertEquals(true, LiveToolCallState("i", "t", "k", "failed", null, "", null).isError)
+        assertEquals(true, LiveToolCallState("i", "t", "k", "error", null, "", null).isError)
+        assertEquals(false, LiveToolCallState("i", "t", "k", "cancelled", null, "", null).isError)
+        assertEquals(false, LiveToolCallState("i", "t", "k", "completed", null, "", null).isError)
+    }
+
+    @Test
+    fun `activeToolTitle finds the most recent unfinished tool`() {
+        val b = LiveTurnBuilder("t")
+        b.upsertToolCall("a", "First", "read", "completed", null, null, null)
+        b.upsertToolCall("b", "Second", "execute", "in_progress", null, null, null)
+        assertEquals("Second", b.activeToolTitle())
+
+        b.updateToolCall("b", title = null, status = "completed", rawInput = null, rawOutput = null, content = null, append = false)
+        assertEquals(null, b.activeToolTitle())
+    }
 }
