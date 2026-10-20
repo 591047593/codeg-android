@@ -1007,11 +1007,17 @@ class CodegClient(
          * address); an explicit scheme is always preserved.
          */
         fun normalizeBaseUrl(raw: String): String {
-            val trimmed = raw.trim().trimEnd('/')
+            // Trim the padding first, but only strip trailing slashes from the path
+            // portion: `trimEnd('/')` on `"http://"` produced `"http:"`, which then
+            // looked scheme-less and got a second prefix bolted on.
+            val trimmed = raw.trim()
             if (trimmed.isEmpty()) return trimmed
-            val hasScheme = trimmed.contains("://")
-            val withScheme = if (hasScheme) trimmed else "http://$trimmed"
-            return withScheme
+            val withScheme = if (trimmed.contains("://")) trimmed else "http://$trimmed"
+            // Collapse a bare `scheme://` or `scheme:///` down to `scheme://` so a
+            // host-less value stays recognisably host-less.
+            val authority = withScheme.substringAfter("://").trimEnd('/')
+            val scheme = withScheme.substringBefore("://")
+            return "$scheme://$authority"
         }
 
         /** True when [raw] is a value we can build a base URL from. */

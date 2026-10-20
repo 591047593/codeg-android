@@ -51,6 +51,16 @@ class CodegClientStaticTest {
     }
 
     @Test
+    fun `normalizeBaseUrl does not duplicate a scheme when the host is missing`() {
+        // `trimEnd('/')` alone turned "http://" into "http:", which then looked
+        // scheme-less and was prefixed again into "http://http:".
+        assertEquals("http://", CodegClient.normalizeBaseUrl("http://"))
+        assertEquals("http://", CodegClient.normalizeBaseUrl("http:///"))
+        assertFalse(CodegClient.isUsableBaseUrl("http://"))
+        assertFalse(CodegClient.isUsableBaseUrl("https:///"))
+    }
+
+    @Test
     fun `isUsableBaseUrl accepts bare hosts and http(s) but rejects other schemes`() {
         assertTrue(CodegClient.isUsableBaseUrl("192.168.1.10:3080"))
         assertTrue(CodegClient.isUsableBaseUrl("http://host:3080"))
