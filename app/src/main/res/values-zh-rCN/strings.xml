@@ -849,6 +849,9 @@
     <string name="session_attachments_skipped">已添加 %1$d 张图片；跳过 %2$d 张（过大或超出上限）。</string>
     <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
     <string name="projects_folder_not_found">未找到文件夹</string>
+    <string name="projects_remove_from_list">从列表移除</string>
+    <string name="projects_remove_title">从列表移除？</string>
+    <string name="projects_remove_message">%1$s 将从此列表移除。磁盘上的文件夹及其会话不会被删除。</string>
     <string name="time_just_now">刚刚</string>
     <string name="providers_delete_title">删除模型提供商</string>
     <string name="mcp_delete_title">删除 MCP 服务器</string>

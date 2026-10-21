@@ -1,13 +1,16 @@
 package app.codeg.android.feature.projects
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -24,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ProjectsViewModel @Inject constructor(
     private val repository: ServerRepository,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(ProjectsUiState())
@@ -86,6 +90,30 @@ class ProjectsViewModel @Inject constructor(
         viewModelScope.launch {
             val err = runCatching { c.openFolder(path) }.exceptionOrNull()?.displayMessage()
             if (err == null) fetch(initial = false)
+            onResult(err)
+        }
+    }
+
+    /**
+     * Remove a folder from this list.
+     *
+     * Uses the history endpoint, not the workspace one: the list is built from
+     * `list_all_folder_details`, and `remove_folder_from_workspace` only closes an open
+     * folder — the row comes straight back on the next refresh. Verified against a live
+     * server: history removal took the count 32 -> 31, workspace removal left it at 32.
+     *
+     * Nothing on disk is touched, and no conversation is deleted.
+     */
+    fun removeFromHistory(folder: FolderDetail, onResult: (String?) -> Unit) {
+        val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
+        viewModelScope.launch {
+            val err = runCatching { c.removeFolderFromHistory(folder.path) }
+                .exceptionOrNull()?.displayMessage()
+            if (err == null) {
+                _ui.update { it.copy(folders = it.folders.filterNot { f -> f.id == folder.id }) }
+                repository.notifyFoldersChanged()
+                fetch(initial = false)
+            }
             onResult(err)
         }
     }

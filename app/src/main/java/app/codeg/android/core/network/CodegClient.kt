@@ -21,6 +21,7 @@ import app.codeg.android.core.model.UpdateKimiCodeConfigBody
 import app.codeg.android.core.model.UpdatePiConfigBody
 import app.codeg.android.core.model.ValidatePiCommandBody
 import app.codeg.android.core.model.FolderDetail
+import app.codeg.android.core.model.FolderIdBody
 import app.codeg.android.core.model.HealthResponse
 import app.codeg.android.core.model.ListConversationsBody
 import app.codeg.android.core.model.PromptBody
@@ -183,6 +184,26 @@ class CodegClient(
     /** Open (non-chat) folders only — the new-session folder picker's source. */
     suspend fun listOpenFolders(): List<FolderDetail> =
         decode(send("list_open_folder_details", encode(EmptyBody)), ListSerializer(FolderDetail.serializer()))
+
+    /**
+     * Close a folder in the workspace.
+     *
+     * Removing a folder is purely bookkeeping on the server — it does not touch the
+     * directory on disk or any conversation under it. That is the only kind of removal
+     * the server exposes; there is no endpoint that deletes a directory.
+     */
+    suspend fun removeFolderFromWorkspace(folderId: Int) {
+        send("remove_folder_from_workspace", encode(FolderIdBody(folderId)))
+    }
+
+    /**
+     * Drop a path from the folder history (the list of directories opened before).
+     *
+     * Keyed by `path` rather than id, because a history entry can outlive its row.
+     */
+    suspend fun removeFolderFromHistory(path: String) {
+        send("remove_folder_from_history", encode(PathBody(path)))
+    }
 
     /** Conversations, optionally filtered by folder / status / search text. */
     suspend fun listConversations(
