@@ -40,6 +40,9 @@ object AgentToml {
      * forbids, so the file stopped loading — and range scans ran past it into the next
      * table, overwriting a sibling's keys.
      */
+    /** Provider ids Codex accepts as a table suffix. */
+    private val PROVIDER_NAME = Regex("^[A-Za-z0-9_-]+$")
+
     private val headerLine = Regex("""^\[([^\[\]]*)]\s*(?:#.*)?$""")
 
     /** The inner text of a table header, or null when [line] is not one. */
@@ -187,17 +190,28 @@ object AgentToml {
             }
             if (line.isEmpty() || line.startsWith("#")) continue
 
-            val section = capture("^\\[\\s*model_providers\\.([A-Za-z0-9_-]+)\\s*\\]$", line)
+            // Parse the header name once, so the provider / features / other-table
+            // branches all agree on what counts as a table. Matching them with separate
+            // regexes is how `[model_providers.custom]   # x` slipped through as
+            // "other table" and lost its provider entry.
+            val header = headerName(line)
+            val section = header
+                ?.takeIf { it.startsWith("model_providers.") }
+                ?.removePrefix("model_providers.")
+                ?.takeIf { it.matches(PROVIDER_NAME) }
             if (section != null) {
                 currentProviderSection = section
                 inFeaturesSection = false
-                if (section.trim().isNotEmpty()) providerNames.add(section.trim())
+                // A provider table is not the root either: `name`, `base_url`, `wire_api`
+                // inside it must not be read as root-level keys.
+                inOtherTable = true
+                providerNames.add(section)
                 continue
             }
-            if (headerName(line) == "features") {
+            if (header == "features") {
                 inFeaturesSection = true; currentProviderSection = null; inOtherTable = false; continue
             }
-            if (headerName(line) != null) {
+            if (header != null) {
                 currentProviderSection = null; inFeaturesSection = false; inOtherTable = true; continue
             }
 
