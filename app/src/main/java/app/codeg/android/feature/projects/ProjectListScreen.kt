@@ -80,8 +80,8 @@ fun ProjectListScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var showBrowser by remember { mutableStateOf(false) }
     var showClone by remember { mutableStateOf(false) }
-    // Which folder the user asked to remove, and how. Confirmed before the call.
-    var pendingRemove by remember { mutableStateOf<Pair<FolderDetail, RemoveKind>?>(null) }
+    // Which folder the user asked to remove. Confirmed before the call.
+    var pendingRemove by remember { mutableStateOf<FolderDetail?>(null) }
     var removeError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -154,8 +154,7 @@ fun ProjectListScreen(
                                         folder = folder,
                                         running = ui.runningCount(folder.id),
                                         onClick = { onOpenFolder(folder.id) },
-                                        onRemoveFromWorkspace = { pendingRemove = folder to RemoveKind.WORKSPACE },
-                                        onRemoveFromHistory = { pendingRemove = folder to RemoveKind.HISTORY },
+                                        onRemove = { pendingRemove = folder },
                                     )
                                 }
                             }
@@ -189,19 +188,11 @@ fun ProjectListScreen(
     // Removal is bookkeeping only — the directory and its conversations stay put — but
     // it is still not something to trigger by accident, so it is confirmed and the
     // dialog says plainly what is not being deleted.
-    pendingRemove?.let { (folder, kind) ->
+    pendingRemove?.let { folder ->
         AlertDialog(
             onDismissRequest = { pendingRemove = null },
             containerColor = colors.bgElevated,
-            title = {
-                Text(
-                    stringResource(
-                        if (kind == RemoveKind.WORKSPACE) R.string.projects_remove_workspace_title
-                        else R.string.projects_remove_history_title,
-                    ),
-                    color = colors.textPrimary,
-                )
-            },
+            title = { Text(stringResource(R.string.projects_remove_title), color = colors.textPrimary) },
             text = {
                 Text(
                     stringResource(R.string.projects_remove_message, folder.name),
@@ -213,9 +204,7 @@ fun ProjectListScreen(
                     onClick = {
                         val target = folder
                         pendingRemove = null
-                        val done: (String?) -> Unit = { err -> removeError = err }
-                        if (kind == RemoveKind.WORKSPACE) viewModel.removeFromWorkspace(target, done)
-                        else viewModel.removeFromHistory(target, done)
+                        viewModel.removeFromHistory(target) { err -> removeError = err }
                     },
                 ) { Text(stringResource(R.string.common_remove), color = colors.danger) }
             },
@@ -234,8 +223,6 @@ fun ProjectListScreen(
     }
 }
 
-/** Which server-side removal the user picked from a folder row's long-press menu. */
-private enum class RemoveKind { WORKSPACE, HISTORY }
 
 /**
  * One folder as a borderless grouped row: a colored [FolderBadge] tile, the name
@@ -249,8 +236,7 @@ private fun FolderRow(
     folder: FolderDetail,
     running: Int,
     onClick: () -> Unit,
-    onRemoveFromWorkspace: () -> Unit,
-    onRemoveFromHistory: () -> Unit,
+    onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
@@ -290,15 +276,15 @@ private fun FolderRow(
     }
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            // Only the history removal takes the row out of this list: the list is built
+            // from `list_all_folder_details`, and `remove_folder_from_workspace` merely
+            // closes an open folder — the row reappears on the next refresh. Verified
+            // against the live server: history removal dropped the count 32 -> 31,
+            // workspace removal left it at 32.
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.projects_remove_from_workspace)) },
+                text = { Text(stringResource(R.string.projects_remove_from_list)) },
                 leadingIcon = { Icon(Icons.Rounded.FolderOff, null, tint = colors.textSecondary) },
-                onClick = { menuOpen = false; onRemoveFromWorkspace() },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.projects_remove_from_history)) },
-                leadingIcon = { Icon(Icons.Rounded.HistoryToggleOff, null, tint = colors.textSecondary) },
-                onClick = { menuOpen = false; onRemoveFromHistory() },
+                onClick = { menuOpen = false; onRemove() },
             )
         }
     }

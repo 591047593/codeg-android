@@ -95,29 +95,15 @@ class ProjectsViewModel @Inject constructor(
     }
 
     /**
-     * Close a folder in the workspace, dropping it from this list.
+     * Remove a folder from this list.
      *
-     * This only unhooks the folder on the server — the directory on disk and every
-     * conversation recorded under it are untouched, which is why it needs no
-     * destructive-action confirmation beyond the menu it is reached from.
+     * Uses the history endpoint, not the workspace one: the list is built from
+     * `list_all_folder_details`, and `remove_folder_from_workspace` only closes an open
+     * folder — the row comes straight back on the next refresh. Verified against a live
+     * server: history removal took the count 32 -> 31, workspace removal left it at 32.
+     *
+     * Nothing on disk is touched, and no conversation is deleted.
      */
-    fun removeFromWorkspace(folder: FolderDetail, onResult: (String?) -> Unit) {
-        val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
-        viewModelScope.launch {
-            val err = runCatching { c.removeFolderFromWorkspace(folder.id) }
-                .exceptionOrNull()?.displayMessage()
-            if (err == null) {
-                // Optimistic removal so the row disappears immediately; a refresh
-                // reconciles with the server either way.
-                _ui.update { it.copy(folders = it.folders.filterNot { f -> f.id == folder.id }) }
-                repository.notifyFoldersChanged()
-                fetch(initial = false)
-            }
-            onResult(err)
-        }
-    }
-
-    /** Drop a path from the "recently opened" history, leaving the workspace untouched. */
     fun removeFromHistory(folder: FolderDetail, onResult: (String?) -> Unit) {
         val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
         viewModelScope.launch {
