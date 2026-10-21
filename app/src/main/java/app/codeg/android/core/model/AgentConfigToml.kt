@@ -31,6 +31,21 @@ object AgentToml {
 
     private fun matchesRe(pattern: String, s: String): Boolean = Regex(pattern).containsMatchIn(s)
 
+    /**
+     * A table header line, optionally with inner padding and a trailing comment.
+     *
+     * TOML allows `[features]   # toggles` and `[ features ]`. Every locator below used
+     * an exact `^\[.*\]$` (or `t == "[features]"`), so a commented header was "not
+     * found": the writer then appended a *second* table of the same name — which TOML
+     * forbids, so the file stopped loading — and range scans ran past it into the next
+     * table, overwriting a sibling's keys.
+     */
+    private val headerLine = Regex("""^\[([^\[\]]*)]\s*(?:#.*)?$""")
+
+    /** The inner text of a table header, or null when [line] is not one. */
+    private fun headerName(line: String): String? =
+        headerLine.find(line.trim())?.groupValues?.get(1)?.trim()
+
     /** Minimal JSON string quoting for TOML values (matches `JSON.stringify(str)`). */
     fun jsonQuote(s: String): String {
         val sb = StringBuilder("\"")
@@ -128,6 +143,12 @@ object AgentToml {
         val featureResponsesWebsocketsV2: Boolean = false,
         val featureSkills: Boolean = false,
         val serviceTierFast: Boolean = false,
+        /** The literal `model_reasoning_effort` value, when the file had one. */
+        val modelReasoningRaw: String? = null,
+        /** The literal `service_tier` value, when the file had one. */
+        val serviceTierRaw: String? = null,
+        /** True when `model_reasoning_effort` was recognised and may be rewritten. */
+        val modelReasoningKnown: Boolean = false,
     )
 
     fun extractCodexToml(configTomlText: String): CodexTomlValues {
@@ -139,12 +160,31 @@ object AgentToml {
         var featureWsV2 = false
         var featureSkills = false
         var serviceTierFast = false
+        // Raw wire values, kept so an unrecognised one is written back unchanged instead
+        // of being coerced (see CodexReasoningEffort.FALLBACK / service_tier).
+        var modelReasoningRaw: String? = null
+        var serviceTierRaw: String? = null
         val providerNames = LinkedHashSet<String>()
         var currentProviderSection: String? = null
         var inFeaturesSection = false
+        // True while inside any other table (`[profiles.*]`, `[tui]`, ...). Root-only
+        // keys must not be read there: Codex puts `model` and `model_reasoning_effort`
+        // inside `[profiles.<name>]`, and reading those as the root values meant any
+        // structured edit wrote the profile's model back over the user's root model.
+        var inOtherTable = false
+        // Inside a `"""` multi-line string. Its body can contain lines that look exactly
+        // like `key = "value"` — a Codex `instructions` block routinely does — and those
+        // were parsed as real assignments and then rewritten in place, editing the text
+        // inside the user's prompt.
+        var inMultilineString = false
 
         for (rawLine in lines(configTomlText)) {
             val line = rawLine.trim()
+            if (inMultilineString) {
+                // A `"""` closes the block; everything up to it is string content.
+                if (line.contains("\"\"\"")) inMultilineString = false
+                continue
+            }
             if (line.isEmpty() || line.startsWith("#")) continue
 
             val section = capture("^\\[\\s*model_providers\\.([A-Za-z0-9_-]+)\\s*\\]$", line)
@@ -154,22 +194,28 @@ object AgentToml {
                 if (section.trim().isNotEmpty()) providerNames.add(section.trim())
                 continue
             }
-            if (matchesRe("^\\[\\s*features\\s*\\]$", line)) {
-                inFeaturesSection = true; currentProviderSection = null; continue
+            if (headerName(line) == "features") {
+                inFeaturesSection = true; currentProviderSection = null; inOtherTable = false; continue
             }
-            if (line.startsWith("[") && line.endsWith("]")) {
-                currentProviderSection = null; inFeaturesSection = false; continue
+            if (headerName(line) != null) {
+                currentProviderSection = null; inFeaturesSection = false; inOtherTable = true; continue
+            }
+
+            // An opening `"""` starts a block; the line's own value is not a plain
+            // literal, so nothing on it is read as an assignment.
+            if (line.contains("\"\"\"")) {
+                inMultilineString = true
+                continue
             }
 
             val assignment = parseStringAssignment(rawLine)
             if (assignment != null) {
                 val (key, value) = assignment
-                if (key == "model") { model = value; continue }
-                if (key == "model_provider") { modelProvider = value; continue }
-                if (key == "model_reasoning_effort") { reasoning = CodexReasoningEffort.fromWire(value); continue }
-                if (currentProviderSection == null && !inFeaturesSection && key == "service_tier") {
-                    serviceTierFast = value.lowercase() == "fast"; continue
-                }
+                val atRoot = currentProviderSection == null && !inFeaturesSection && !inOtherTable
+                if (atRoot && key == "model") { model = value; continue }
+                if (atRoot && key == "model_provider") { modelProvider = value; continue }
+                if (atRoot && key == "model_reasoning_effort") { modelReasoningRaw = value; reasoning = CodexReasoningEffort.fromWire(value); continue }
+                if (atRoot && key == "service_tier") { serviceTierRaw = value; serviceTierFast = value.lowercase() == "fast"; continue }
             }
 
             val boolean = parseBooleanAssignment(rawLine)
@@ -222,6 +268,9 @@ object AgentToml {
             featureResponsesWebsocketsV2 = featureWsV2,
             featureSkills = featureSkills,
             serviceTierFast = serviceTierFast,
+            modelReasoningRaw = modelReasoningRaw,
+            serviceTierRaw = serviceTierRaw,
+            modelReasoningKnown = modelReasoningRaw != null && CodexReasoningEffort.fromWire(modelReasoningRaw!!) != CodexReasoningEffort.FALLBACK,
         )
     }
 
@@ -313,14 +362,25 @@ object AgentToml {
 
     private fun rootEndIndex(lines: List<String>): Int {
         for ((i, l) in lines.withIndex()) {
-            if (matchesRe("^\\[.*\\]$", l.trim())) return i
+            if (headerName(l) != null) return i
         }
         return lines.size
     }
 
     private fun rootAssignmentIndex(lines: List<String>, key: String): Int {
         val end = rootEndIndex(lines)
-        for (i in 0 until end) if (parseAssignmentKey(lines[i]) == key) return i
+        // Skip anything inside a `"""` block: a line there is string content, not an
+        // assignment, and rewriting it would edit the user's prompt text.
+        var inMultiline = false
+        for (i in 0 until end) {
+            val l = lines[i]
+            if (inMultiline) {
+                if (l.contains("\"\"\"")) inMultiline = false
+                continue
+            }
+            if (l.contains("\"\"\"")) { inMultiline = true; continue }
+            if (parseAssignmentKey(l) == key) return i
+        }
         return -1
     }
 
@@ -365,16 +425,17 @@ object AgentToml {
     // region TOML section writers
 
     private fun sectionRange(lines: List<String>, name: String): Pair<Int, Int>? {
-        val header = "[$name]"
         var start = -1
         var end = lines.size
         for ((i, l) in lines.withIndex()) {
-            val t = l.trim()
             if (start < 0) {
-                if (t == header) start = i
+                // `[features]   # toggles` is the same table; an exact string match said
+                // "absent" and the caller then appended a duplicate table, which TOML
+                // rejects outright.
+                if (headerName(l) == name) start = i
                 continue
             }
-            if (matchesRe("^\\[.*\\]$", t)) { end = i; break }
+            if (headerName(l) != null) { end = i; break }
         }
         return if (start < 0) null else start to end
     }
@@ -498,16 +559,19 @@ object AgentToml {
     }
 
     private fun providerSectionRange(lines: List<String>, provider: String): Pair<Int, Int>? {
-        val pattern = "^\\[\\s*model_providers\\.${Regex.escape(provider)}\\s*\\]$"
+        // Match the parsed header name, not the raw line: `[model_providers.openai]  # x`
+        // is the same table, and missing it made this range run on into the *next*
+        // provider's block — so a base_url edit landed on a sibling provider and
+        // destroyed its endpoint.
+        val wanted = "model_providers.$provider"
         var start = -1
         var end = lines.size
         for ((i, l) in lines.withIndex()) {
-            val t = l.trim()
             if (start < 0) {
-                if (matchesRe(pattern, t)) start = i
+                if (headerName(l) == wanted) start = i
                 continue
             }
-            if (matchesRe("^\\[.*\\]$", t)) { end = i; break }
+            if (headerName(l) != null) { end = i; break }
         }
         return if (start < 0) null else start to end
     }
@@ -616,12 +680,26 @@ object AgentToml {
         // Re-normalize root model / reasoning effort, derive the feature flag.
         val normalized = extractCodexToml(next)
         if (normalized.model.trim().isNotEmpty()) next = setRootString(next, "model", normalized.model)
-        next = setRootString(next, "model_reasoning_effort", normalized.modelReasoningEffort.wire)
+        // Only rewrite `model_reasoning_effort` when we understood the existing value.
+        // Codex accepts efforts this build has no enum member for; parsing one to
+        // FALLBACK and writing it back silently changed "minimal" into "high".
+        if (normalized.modelReasoningRaw == null || normalized.modelReasoningKnown) {
+            next = setRootString(next, "model_reasoning_effort", normalized.modelReasoningEffort.wire)
+        }
         val active = if (normalized.modelProvider.trim().isNotEmpty()) normalized.modelProvider.trim() else CODEX_DEFAULT_MODEL_PROVIDER
         val featureOn = normalized.providerSupportsWebsockets[active] ?: false
         next = upsertSectionBool(next, "features", "responses_websockets_v2", if (featureOn) true else null)
         next = upsertSectionBool(next, "features", "skills", if (d.codexSkills) true else null)
-        next = setRootString(next, "service_tier", if (d.codexServiceTierFast) "fast" else "")
+        // `service_tier` is modelled as a "fast" boolean. Any other value (flex,
+        // priority, …) is a real Codex setting, so leave a non-"fast" value untouched
+        // instead of deleting it; only write/clear when the panel's toggle is used.
+        val existingTier = normalized.serviceTierRaw
+        when {
+            d.codexServiceTierFast -> next = setRootString(next, "service_tier", "fast")
+            existingTier == null -> Unit
+            existingTier.equals("fast", ignoreCase = true) -> next = setRootString(next, "service_tier", "")
+            else -> Unit // a tier this build does not model — keep the user's value
+        }
         next = setRootBool(next, "disable_response_storage", true)
 
         val trimmed = next.trim()

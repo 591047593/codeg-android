@@ -834,8 +834,33 @@ class CodegClient(
 
     // region Chat channels
 
-    suspend fun listChatChannels(): List<ChatChannelInfo> =
-        decode(send("list_chat_channels", encode(EmptyBody)), ListSerializer(ChatChannelInfo.serializer()))
+    suspend fun listChatChannels(): List<ChatChannelInfo> {
+        val text = send("list_chat_channels", encode(EmptyBody))
+        // `ChannelType` is a closed enum with a strict serializer, so one channel of a
+        // type this build does not know would fail the whole list — taking the
+        // channels that *are* understood with it. Drop the unknown rows instead, the
+        // same way `decodeAgentList` handles unknown agent types.
+        return decodeKnownChannelTypes(text)
+    }
+
+    private suspend fun decodeKnownChannelTypes(text: String): List<ChatChannelInfo> {
+        val serializer = ListSerializer(ChatChannelInfo.serializer())
+        return withContext(io) {
+            val root = runCatching {
+                CodegJson.response.parseToJsonElement(text)
+            }.getOrNull()
+            if (root !is JsonArray) {
+                decode(text, serializer)
+            } else {
+                val known = root.filter { el ->
+                    val wire = ((el as? JsonObject)?.get("channel_type") as? JsonPrimitive)
+                        ?.takeIf { it.isString }?.content
+                    wire != null && ChannelType.entries.any { it.wire == wire }
+                }
+                CodegJson.response.decodeFromJsonElement(serializer, JsonArray(known))
+            }
+        }
+    }
 
     suspend fun chatChannelStatus(): List<ChannelStatusInfo> =
         decode(send("get_chat_channel_status", encode(EmptyBody)), ListSerializer(ChannelStatusInfo.serializer()))

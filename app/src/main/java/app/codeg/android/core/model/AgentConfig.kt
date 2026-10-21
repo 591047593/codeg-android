@@ -619,6 +619,17 @@ object AgentConfig {
         agent == AgentType.CLAUDE_CODE || agent == AgentType.GEMINI || agent == AgentType.OPEN_CLAW
 
     /**
+     * True when this agent's `configText` is a JSON object the panel rewrites in place.
+     *
+     * Those are the agents whose config must parse before [reapply] may touch it: a
+     * rebuild of an unparseable document silently drops every key the panel does not
+     * model. OpenClaw and Cline keep their own paths (flat env / full rebuild).
+     */
+    fun usesJsonConfig(agent: AgentType): Boolean =
+        agent == AgentType.CLAUDE_CODE || agent == AgentType.GEMINI ||
+            agent == AgentType.OPEN_CODE || agent == AgentType.CLINE
+
+    /**
      * True when the agent is in model_provider auth mode but no provider is
      * selected — the save must be blocked.
      */
@@ -853,6 +864,19 @@ object AgentConfig {
         var codexAuthJsonText = draft.codexAuthJsonText
         val linked = draft.modelProviderId != null
 
+        // Refuse to rebuild a config.json we cannot read.
+        //
+        // `JsonConfig.parse` reports an unparseable document as `({}, error)`. Every
+        // writer below used only the map, so a config the user was mid-way through
+        // editing (one character typed into the Advanced box is enough) was treated as
+        // empty and rebuilt as "only the keys this panel knows" — silently deleting
+        // permissions, hooks, MCP servers and any other key it does not model. Worse,
+        // the result parses cleanly, so the "unparseable config" save guard passed.
+        //
+        // Leaving `configText` untouched keeps the user's text (and the parse error,
+        // which the guard reports) rather than replacing it with a much smaller object.
+        val configParsed = usesJsonConfig(agent) && JsonConfig.parse(draft.configText).error == null
+
         when (agent) {
             AgentType.CLAUDE_CODE -> {
                 val d = if (linked) draft.copy(
@@ -860,7 +884,7 @@ object AgentConfig {
                     claudeMainModel = "", claudeReasoningModel = "",
                     claudeDefaultHaikuModel = "", claudeDefaultSonnetModel = "", claudeDefaultOpusModel = "",
                 ) else draft
-                configText = applyClaudeConfig(draft.configText, d)
+                if (configParsed) configText = applyClaudeConfig(draft.configText, d)
                 envText = applyClaudeEnv(draft.envText, d)
                 configText = applyClaudeEffort(configText, draft.claudeEffortLevel)
             }
@@ -870,7 +894,7 @@ object AgentConfig {
                     googleCloudProject = "", googleCloudLocation = "", googleApplicationCredentials = "",
                     model = "",
                 ) else draft
-                configText = applyGeminiConfig(draft.configText, d)
+                if (configParsed) configText = applyGeminiConfig(draft.configText, d)
                 envText = applyGeminiEnv(draft.envText, d)
             }
             AgentType.OPEN_CLAW -> {
@@ -881,8 +905,8 @@ object AgentConfig {
                 val k = AgentEnvKeys.OpenClaw
                 configText = stripKeysFromConfigEnv(draft.configText, listOf(k.GATEWAY_URL, k.GATEWAY_TOKEN, k.SESSION_KEY))
             }
-            AgentType.CLINE -> configText = buildClineConfig(draft)
-            AgentType.OPEN_CODE -> configText = applyOpenCodeConfig(draft.configText, draft)
+            AgentType.CLINE -> if (configParsed) configText = buildClineConfig(draft.configText, draft)
+            AgentType.OPEN_CODE -> if (configParsed) configText = applyOpenCodeConfig(draft.configText, draft)
             AgentType.CODEX -> {
                 val d = if (linked) draft.copy(apiBaseUrl = "", model = "") else draft
                 codexConfigTomlText = AgentToml.patchCodex(draft.codexConfigTomlText, d)
@@ -1105,12 +1129,26 @@ object AgentConfig {
             draft.cursorAuthMode == CursorAuthMethod.CUSTOM &&
             draft.apiKey.trim().isEmpty()
 
-    private fun buildClineConfig(d: AgentDraft): String {
-        val config = LinkedHashMap<String, JsonElement>()
+    /**
+     * Apply the Cline panel's four fields onto the existing config, keeping every other
+     * key.
+     *
+     * This used to start from an empty map, and Cline is not a "merge" agent — the
+     * server replaces the stored file — so any key the panel does not model
+     * (`temperature`, `customInstructions`, `alwaysAllowReadOnly`, …) was deleted from
+     * disk the first time the user touched any field. The existing keys are carried
+     * through untouched; the panel only sets the four it owns.
+     */
+    private fun buildClineConfig(configText: String, d: AgentDraft): String {
+        val config = LinkedHashMap(JsonConfig.parse(configText).config)
         config["apiProvider"] = JsonPrimitive(d.clineProvider)
-        d.clineApiKey.trim().takeIf { it.isNotEmpty() }?.let { config["apiKey"] = JsonPrimitive(it) }
-        d.clineModel.trim().takeIf { it.isNotEmpty() }?.let { config["model"] = JsonPrimitive(it) }
-        d.clineBaseUrl.trim().takeIf { it.isNotEmpty() }?.let { config["apiBaseUrl"] = JsonPrimitive(it) }
+        fun assign(key: String, value: String) {
+            val t = value.trim()
+            if (t.isEmpty()) config.remove(key) else config[key] = JsonPrimitive(t)
+        }
+        assign("apiKey", d.clineApiKey)
+        assign("model", d.clineModel)
+        assign("apiBaseUrl", d.clineBaseUrl)
         return JsonConfig.serialize(config)
     }
 
