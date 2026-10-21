@@ -9,6 +9,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -132,6 +133,15 @@ data class ChannelConfig(
     var chatId: String = "",
     var appId: String = "",
     var baseUrl: String = "",
+    /**
+     * Every key of the stored `config_json` this panel does not model.
+     *
+     * The editor rebuilds the object from its three fields, so writing that back
+     * deleted anything else the channel carried — a Weixin channel's `qrcode_id` and
+     * `link_token` disappeared just from renaming it. These are carried through
+     * verbatim.
+     */
+    var extra: Map<String, JsonElement> = emptyMap(),
 ) {
     /** Build the `config_json` string for [type] with snake_case keys. */
     fun toJson(type: ChannelType): String {
@@ -140,7 +150,13 @@ data class ChannelConfig(
             ChannelType.LARK -> mapOf("app_id" to appId.trim(), "chat_id" to chatId.trim())
             ChannelType.WEIXIN -> mapOf("base_url" to baseUrl.trim().ifEmpty { WEIXIN_DEFAULT_BASE_URL })
         }
-        return Json.encodeToString(JsonObject.serializer(), JsonObject(obj.toSortedMap().mapValues { JsonPrimitive(it.value) }))
+        // Start from the preserved keys so a save cannot drop data the panel never saw.
+        val merged = LinkedHashMap<String, JsonElement>(extra)
+        obj.forEach { (k, v) -> merged[k] = JsonPrimitive(v) }
+        return Json.encodeToString(
+            JsonObject.serializer(),
+            JsonObject(merged.toSortedMap()),
+        )
     }
 
     /** A short human-readable summary for the detail screen. */
@@ -160,7 +176,13 @@ data class ChannelConfig(
                 runCatching { lenient.parseToJsonElement(it) as? JsonObject }.getOrNull()
             } ?: return ChannelConfig()
             fun str(key: String) = (obj[key] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
-            return ChannelConfig(chatId = str("chat_id"), appId = str("app_id"), baseUrl = str("base_url"))
+            val managed = setOf("chat_id", "app_id", "base_url")
+            return ChannelConfig(
+                chatId = str("chat_id"),
+                appId = str("app_id"),
+                baseUrl = str("base_url"),
+                extra = obj.filterKeys { it !in managed },
+            )
         }
     }
 }
