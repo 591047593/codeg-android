@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.CopyButton
@@ -587,7 +588,7 @@ private fun CursorSection(state: AgentDetailState, vm: AgentsViewModel) {
             modelsLoading = true
             runCatching { vm.cursorListModels(probeKey) }
                 .onSuccess { models = it.models; modelsError = it.error }
-                .onFailure { modelsError = it.message }
+                .onFailure { modelsError = it.displayMessage() }
             modelsLoading = false
         }
     }

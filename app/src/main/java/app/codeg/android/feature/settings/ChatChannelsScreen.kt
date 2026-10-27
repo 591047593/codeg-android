@@ -83,6 +83,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.designsystem.component.CodegFilterChip
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -630,7 +631,6 @@ private fun ChatChannelEditorDialog(existing: ChatChannelInfo?, viewModel: ChatC
     var dailyTime by remember { mutableStateOf(existing?.dailyReportTime ?: "18:00") }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val couldntSaveText = stringResource(R.string.cc_couldnt_save_channel)
 
     LaunchedEffect(existing?.id) {
         if (existing != null) hasToken = viewModel.hasTokenFor(existing.id)
@@ -661,7 +661,7 @@ private fun ChatChannelEditorDialog(existing: ChatChannelInfo?, viewModel: ChatC
                 }
                 onDismiss()
             } catch (e: Exception) {
-                error = e.message ?: couldntSaveText; saving = false
+                error = e.displayMessage(); saving = false
             }
         }
     }
