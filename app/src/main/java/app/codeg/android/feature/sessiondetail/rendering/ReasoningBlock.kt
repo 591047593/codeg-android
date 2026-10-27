@@ -37,13 +37,24 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 
 /**
  * A collapsible "Reasoning" disclosure for an agent's thinking text. Port of the
- * iOS `ReasoningBlock` (finalized state — default collapsed; live auto-expand
- * arrives in M4).
+ * iOS `ReasoningBlock`.
+ *
+ * Collapsed by default, including while the reply is streaming.
+ *
+ * [stateKey] is what the expand state is remembered against, and it must be a stable
+ * node id — not the text. Keying on the text (as this used to) reset the state on every
+ * streamed delta, so a block the user had opened snapped shut ~50 ms later and could
+ * never be read while the turn was live.
  */
 @Composable
-fun ReasoningBlock(text: String, modifier: Modifier = Modifier, initiallyExpanded: Boolean = false) {
+fun ReasoningBlock(
+    text: String,
+    modifier: Modifier = Modifier,
+    stateKey: String = text,
+    initiallyExpanded: Boolean = false,
+) {
     val colors = CodegTheme.colors
-    var expanded by remember(text) { mutableStateOf(initiallyExpanded) }
+    var expanded by remember(stateKey) { mutableStateOf(initiallyExpanded) }
 
     Column(
         modifier
