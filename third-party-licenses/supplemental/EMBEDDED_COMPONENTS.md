@@ -47,4 +47,3 @@ Because OFL requires that font software be redistributed only under OFL, these
 two files are **not** covered by the project's Apache License 2.0. That does not
 extend to text rendered with them: OFL explicitly places no condition on
 documents or output produced using the fonts.
-
