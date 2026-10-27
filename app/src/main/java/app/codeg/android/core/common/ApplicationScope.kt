@@ -2,6 +2,7 @@ package app.codeg.android.core.common
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,8 +25,12 @@ import javax.inject.Singleton
 class ApplicationScope @Inject constructor() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /** Run [block] detached from any screen's lifecycle. */
-    fun launch(block: suspend CoroutineScope.() -> Unit) {
+    /**
+     * Run [block] detached from any screen's lifecycle.
+     *
+     * Returns the [Job] so a caller can still cancel it deliberately — a user pressing
+     * Stop must be able to abort work that outlives the screen.
+     */
+    fun launch(block: suspend CoroutineScope.() -> Unit): Job =
         scope.launch(block = block)
-    }
 }
