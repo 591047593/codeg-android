@@ -76,13 +76,22 @@ fun AgentConfigPiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
     val colors = CodegTheme.colors
     val scope = rememberCoroutineScope()
 
-    val seedEnv = remember { agent.env }
+    // Seeded from the agent's env, and only re-seeded when the agent identity changes.
+    // Without that key these stayed at the *first* agent's values: the panel is reused
+    // across detail screens, so opening Pi after editing another agent showed stale
+    // fields, and they would be saved over the real ones.
+    //
+    // Keyed on the identity rather than on `agent` itself on purpose: a background
+    // refresh of the agent list produces an equal-but-new object, and re-seeding then
+    // would discard whatever the user had typed into these fields.
+    val agentKey = agent.agentType.wire
+    val seedEnv = remember(agentKey) { agent.env }
     // Runtime
-    val seedCmd = remember { seedEnv[PiEnvKeys.COMMAND] ?: "" }
-    var mode by remember { mutableStateOf(if (seedCmd.trim().isEmpty()) PiRuntimeMode.DEFAULT else PiRuntimeMode.CUSTOM) }
-    var command by remember { mutableStateOf(seedCmd) }
-    var configDir by remember { mutableStateOf(seedEnv[PiEnvKeys.CONFIG_DIR] ?: "") }
-    var sessionDir by remember { mutableStateOf(seedEnv[PiEnvKeys.SESSION_DIR] ?: "") }
+    val seedCmd = remember(agentKey) { seedEnv[PiEnvKeys.COMMAND] ?: "" }
+    var mode by remember(agentKey) { mutableStateOf(if (seedCmd.trim().isEmpty()) PiRuntimeMode.DEFAULT else PiRuntimeMode.CUSTOM) }
+    var command by remember(agentKey) { mutableStateOf(seedCmd) }
+    var configDir by remember(agentKey) { mutableStateOf(seedEnv[PiEnvKeys.CONFIG_DIR] ?: "") }
+    var sessionDir by remember(agentKey) { mutableStateOf(seedEnv[PiEnvKeys.SESSION_DIR] ?: "") }
     var validation by remember { mutableStateOf<PiCommandValidation?>(null) }
     var validating by remember { mutableStateOf(false) }
     var piStatus by remember { mutableStateOf<PiCommandValidation?>(null) }
