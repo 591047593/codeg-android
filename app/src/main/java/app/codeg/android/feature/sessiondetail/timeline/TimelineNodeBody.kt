@@ -90,7 +90,10 @@ fun NodeBody(node: TimelineNode, modifier: Modifier = Modifier) {
         // Reasoning stays collapsed even while streaming: the thinking text is
         // diagnostic, and auto-opening it pushed the actual answer off-screen during
         // exactly the moment the user was waiting for it. Tap to read it.
-        is NodeContent.Reasoning -> ReasoningBlock(c.text, modifier, initiallyExpanded = false)
+        //
+        // Keyed on the node id, not the text: a streamed delta changes the text, and a
+        // text key reset the state — a block the user opened snapped shut 50 ms later.
+        is NodeContent.Reasoning -> ReasoningBlock(c.text, modifier, stateKey = node.id)
         is NodeContent.Tool -> ToolCallCard(c.vm, modifier)
         is NodeContent.ToolGroup -> ToolGroupCard(c.items, modifier, streaming = c.streaming)
         is NodeContent.Image -> InlineImage(c.image, c.caption, modifier)
