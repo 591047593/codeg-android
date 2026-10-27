@@ -308,6 +308,10 @@ fun SessionDetailScreen(
 
                 !hasContent ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        // A new task with no folder selected cannot be started at all.
+                        // Saying so here beats letting the send fail with an error after
+                        // the user has typed a prompt.
+                        val needsFolder = ui.isNew && ui.availableFolders.isEmpty() && ui.selectedFolderId == null
                         EmptyState(
                             icon = Icons.Rounded.Forum,
                             title = if (ui.isNew) {
@@ -315,7 +319,11 @@ fun SessionDetailScreen(
                             } else {
                                 stringResource(R.string.session_empty_title)
                             },
-                            message = stringResource(R.string.session_empty_message),
+                            message = if (needsFolder) {
+                                stringResource(R.string.session_error_no_folder)
+                            } else {
+                                stringResource(R.string.session_empty_message)
+                            },
                         )
                     }
 

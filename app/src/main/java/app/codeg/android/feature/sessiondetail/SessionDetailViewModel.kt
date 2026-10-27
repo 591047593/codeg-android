@@ -141,6 +141,8 @@ class SessionDetailViewModel @Inject constructor(
     private var stream: EventStream? = null
     private var consumerJob: Job? = null
     private var sendJob: Job? = null
+    /** Set in onCleared so detached sends stop touching disposed state. */
+    private var cleared = false
     private var streamGeneration = 0
     private var reconnectJob: Job? = null
     /** The post-turn transcript reconcile. Tracked so a new send / cancel can cancel it,
@@ -336,7 +338,13 @@ class SessionDetailViewModel @Inject constructor(
                 isDraftEditable = false,
             )
         }
-        sendJob = viewModelScope.launch { runSend(trimmed, userTurn, attachments, wasNew) }
+        // Detached from viewModelScope on purpose: leaving the screen while the prompt
+        // is still in flight used to cancel the request outright — the conversation row
+        // had already been created server-side, so the user was left with an empty
+        // conversation and a message that never arrived. The send now runs to completion
+        // in a scope that outlives this screen; the guards below stop it from touching
+        // state once the screen is gone.
+        sendJob = applicationScope.launch { runSend(trimmed, userTurn, attachments, wasNew) }
     }
 
     private suspend fun runSend(
@@ -388,7 +396,11 @@ class SessionDetailViewModel @Inject constructor(
     ) {
         val conn = if (freshConnection) connectFresh(c) else resolveConnection(c)
         connectionId = conn
-        openStream(conn)
+        // The screen is gone: the prompt below still has to be delivered (that is the
+        // whole point of running this on ApplicationScope), but opening a WebSocket
+        // whose consumer lives in a cancelled viewModelScope would just wait out the
+        // 12s attach timeout and then retry a connection nobody is watching.
+        if (!cleared) openStream(conn)
         c.prompt(
             connectionId = conn,
             blocks = buildList {
@@ -432,7 +444,9 @@ class SessionDetailViewModel @Inject constructor(
     private suspend fun ensureConversationCreated(firstPrompt: String) {
         if (conversationId != null) return
         val c = client ?: return
-        val f = folder ?: throw IllegalStateException("No folder available to start a task")
+        // Localised: this used to surface as the raw English exception text via
+        // displayMessage(), which is unreadable in a Chinese build.
+        val f = folder ?: throw IllegalStateException(appContext.getString(R.string.session_error_no_folder))
         val id = c.createConversation(f.id, agent, title = firstPrompt.take(60))
         conversationId = id
         _ui.update { it.copy(isNew = false) }
@@ -1158,7 +1172,10 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        sendJob?.cancel()
+        cleared = true
+        // sendJob is deliberately NOT cancelled: it runs on ApplicationScope so an
+        // in-flight prompt still completes. closeStream() ends the local consumption;
+        // runSend checks `cleared` before writing UI state.
         closeStream()
         super.onCleared()
     }
