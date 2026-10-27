@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -94,6 +95,8 @@ fun SessionListScreen(
     // re-runs the grouping flow; rememberSaveable keeps the fold state across
     // rotation / process death.
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    // Confirmed before deleting: a conversation and its transcript are gone for good.
+    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
     val colors = CodegTheme.colors
     val selectedName = servers.firstOrNull { it.id == selectedId }?.name
         ?: stringResource(R.string.app_name)
@@ -207,6 +210,7 @@ fun SessionListScreen(
                             },
                             onOpenConversation = onOpenConversation,
                             onTogglePin = { conv -> viewModel.setPinned(conv, !conv.isPinned) },
+                            onDelete = { conv -> pendingDelete = conv },
                             // A refresh that failed over a still-populated list: surface
                             // it inline above the rows rather than swallowing it.
                             refreshError = ui.error,
@@ -218,6 +222,32 @@ fun SessionListScreen(
             }
         }
     }
+
+    pendingDelete?.let { conv ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = colors.bgElevated,
+            title = { Text(stringResource(R.string.sessionactions_delete_session_confirm), color = colors.textPrimary) },
+            text = {
+                Text(
+                    stringResource(R.string.sessionactions_delete_session_message),
+                    color = colors.textSecondary,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = conv
+                    pendingDelete = null
+                    viewModel.delete(target)
+                }) { Text(stringResource(R.string.common_delete), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -227,6 +257,7 @@ private fun SessionList(
     onToggleSection: (String) -> Unit,
     onOpenConversation: (Int) -> Unit,
     onTogglePin: (ConversationSummary) -> Unit,
+    onDelete: (ConversationSummary) -> Unit,
     refreshError: String?,
     onRetry: () -> Unit,
     onDismissError: () -> Unit,
@@ -278,6 +309,7 @@ private fun SessionList(
                         modifier = Modifier.animateItem(),
                         folderName = row.folderName,
                         onTogglePin = { onTogglePin(row.conversation) },
+                        onDelete = { onDelete(row.conversation) },
                     )
                 }
             }
