@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -60,6 +61,7 @@ fun SessionRow(
     folderName: String? = null,
     selected: Boolean = false,
     onTogglePin: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
@@ -146,24 +148,40 @@ fun SessionRow(
             }
         }
 
-        if (onTogglePin != null) {
+        if (onTogglePin != null || onDelete != null) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (conversation.isPinned) {
-                                stringResource(R.string.session_unpin)
-                            } else {
-                                stringResource(R.string.session_pin)
-                            },
-                        )
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
-                    onClick = {
-                        menuOpen = false
-                        onTogglePin()
-                    },
-                )
+                if (onTogglePin != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (conversation.isPinned) {
+                                    stringResource(R.string.session_unpin)
+                                } else {
+                                    stringResource(R.string.session_pin)
+                                },
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onTogglePin?.invoke()
+                        },
+                    )
+                }
+                // Deleting from the list saves a trip through the detail screen's
+                // overflow menu. The caller confirms before acting.
+                if (onDelete != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.common_delete), color = colors.danger) },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = colors.danger)
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onDelete()
+                        },
+                    )
+                }
             }
         }
     }

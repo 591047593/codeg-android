@@ -243,6 +243,30 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Delete a conversation from the list.
+     *
+     * Removed optimistically and restored by the next refresh if the call fails, so the
+     * row does not linger for a round trip. The caller confirms first.
+     */
+    fun delete(conversation: ConversationSummary) {
+        val active = client ?: return
+        val previous = _ui.value.conversations
+        _ui.update { it.copy(conversations = it.conversations.filterNot { c -> c.id == conversation.id }) }
+        viewModelScope.launch {
+            try {
+                active.deleteConversation(conversation.id)
+                repository.notifyConversationsChanged()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Put the row back: the list is the only place it was removed from, and
+                // a refresh may not run before the user acts again.
+                _ui.update { state -> state.copy(conversations = previous, error = e.displayMessage()) }
+            }
+        }
+    }
+
     fun dismissError() = _ui.update { it.copy(error = null) }
 }
 
