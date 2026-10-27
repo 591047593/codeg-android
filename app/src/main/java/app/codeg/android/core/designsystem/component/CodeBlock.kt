@@ -33,12 +33,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import kotlinx.coroutines.delay
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val SuccessGreen = Color(0xFF85D18F)
 
@@ -79,7 +79,7 @@ fun CodeBlock(
         ) {
             Text(
                 text = (language ?: "").ifBlank { stringResource(R.string.code_default_language) },
-                fontFamily = FontFamily.Monospace,
+                fontFamily = CodegMono,
                 fontSize = 11.sp,
                 color = colors.textTertiary,
             )
@@ -93,7 +93,7 @@ fun CodeBlock(
         ) {
             Text(
                 text = shown,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = CodegMono,
                 fontSize = 12.5.sp,
                 lineHeight = 18.sp,
                 color = colors.textPrimary,

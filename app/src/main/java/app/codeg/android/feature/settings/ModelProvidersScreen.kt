@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +52,7 @@ import app.codeg.android.core.designsystem.component.SecretField
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.ModelProviderInfo
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -149,8 +149,8 @@ private fun ProviderRow(p: ModelProviderInfo, onEdit: () -> Unit, onDelete: () -
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(p.name, fontSize = 15.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(p.apiUrl, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (p.apiKeyMasked.isNotEmpty()) Text(p.apiKeyMasked, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary)
+            Text(p.apiUrl, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (p.apiKeyMasked.isNotEmpty()) Text(p.apiKeyMasked, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary)
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.common_delete)) }, onClick = { menu = false; onDelete() })

@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,6 +48,7 @@ import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.DirectoryItem
 import app.codeg.android.core.network.CodegClient
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Recursive file browser with an internal directory stack + file preview. */
 @Composable
@@ -90,7 +90,7 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Icon(Icons.Rounded.ArrowUpward, null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
-                            Text("..", fontFamily = FontFamily.Monospace, color = colors.textSecondary)
+                            Text("..", fontFamily = CodegMono, color = colors.textSecondary)
                         }
                     }
                 }
@@ -136,7 +136,7 @@ private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) 
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(rel, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(rel, fontFamily = CodegMono, fontSize = 12.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             result?.getOrNull()?.let { if (it.isNotEmpty()) CopyButton(it) }
         }
         val r = result
@@ -196,14 +196,14 @@ private fun FileContent(content: String) {
             Row {
                 Text(
                     "${i + 1}",
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = CodegMono,
                     fontSize = 11.sp,
                     color = colors.textTertiary,
                     modifier = Modifier.width(gutterWidth).padding(start = 6.dp, end = 6.dp),
                 )
                 Text(
                     lines[i].ifEmpty { " " },
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = CodegMono,
                     fontSize = 12.sp,
                     color = colors.textSecondary,
                 )

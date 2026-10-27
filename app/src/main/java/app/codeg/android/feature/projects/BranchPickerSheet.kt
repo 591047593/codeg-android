@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * Branch picker: lists the repo's local + remote branches (current marked) for
@@ -118,7 +118,7 @@ private fun SectionLabel(text: String) {
 private fun BranchRow(branch: String, current: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     ListItem(
-        headlineContent = { Text(branch, fontSize = 14.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { Text(branch, fontSize = 14.sp, fontFamily = CodegMono, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         trailingContent = if (current) {
             { Icon(Icons.Rounded.Check, null, tint = colors.accent, modifier = Modifier.size(18.dp)) }
         } else null,

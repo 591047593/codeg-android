@@ -49,7 +49,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -65,6 +64,7 @@ import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ChatEventCatalog
 import app.codeg.android.core.model.ChatLanguageCatalog
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +132,7 @@ fun ChatGlobalSettingsDialog(onDismiss: () -> Unit, viewModel: ChatGlobalSetting
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             ui.webhooks.forEachIndexed { index, hook ->
                                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(hook.url, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(hook.url, fontSize = 12.sp, fontFamily = CodegMono, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Switch(checked = hook.enabled, onCheckedChange = { viewModel.setWebhookEnabled(index, it) }, colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent))
                                     IconButton(onClick = { viewModel.removeWebhook(index) }) {
                                         Icon(Icons.Rounded.Delete, stringResource(R.string.common_remove), tint = colors.danger, modifier = Modifier.size(18.dp))

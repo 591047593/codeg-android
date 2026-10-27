@@ -39,7 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,6 +58,7 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * The commit composer, presented from the Changes tab. Lists the working-tree
@@ -278,7 +278,7 @@ private fun FileSection(
                     Text(entry.path.substringAfterLast('/'), fontSize = 14.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val dir = entry.path.substringBeforeLast('/', "")
                     if (dir.isNotEmpty()) {
-                        Text(dir, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(dir, fontFamily = CodegMono, fontSize = 10.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

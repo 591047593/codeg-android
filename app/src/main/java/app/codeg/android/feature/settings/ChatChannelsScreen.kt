@@ -71,7 +71,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -102,6 +101,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 // region Visuals
 
@@ -373,7 +373,7 @@ private fun ChatChannelDetailDialog(
                         Divider()
                         SettingRow {
                             Text(stringResource(R.string.cc_daily_report), fontSize = 15.sp, color = colors.textPrimary, modifier = Modifier.weight(1f))
-                            Text(channel.dailyReportTime!!, fontSize = 14.sp, fontFamily = FontFamily.Monospace, color = colors.textSecondary)
+                            Text(channel.dailyReportTime!!, fontSize = 14.sp, fontFamily = CodegMono, color = colors.textSecondary)
                         }
                     }
                 }
@@ -402,7 +402,7 @@ private fun ChatChannelDetailDialog(
                     SettingRow {
                         Text(stringResource(R.string.cc_config), fontSize = 15.sp, color = colors.textSecondary)
                         Spacer(Modifier.weight(1f))
-                        Text(ChannelConfig.parse(channel.configJson).summary(channel.channelType), fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = colors.textPrimary)
+                        Text(ChannelConfig.parse(channel.configJson).summary(channel.channelType), fontSize = 13.sp, fontFamily = CodegMono, color = colors.textPrimary)
                     }
                 }
 

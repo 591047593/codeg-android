@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -30,6 +29,7 @@ import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.PrimaryButton
 import app.codeg.android.core.designsystem.component.SecretField
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,7 +101,7 @@ fun ServerEditorScreen(
                     stringResource(R.string.server_connection_ok, test.version),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF85D18F),
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = CodegMono,
                 )
                 is TestState.Failure -> Text(
                     stringResource(R.string.server_connection_failed, test.message),

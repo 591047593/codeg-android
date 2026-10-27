@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +61,7 @@ import app.codeg.android.feature.sessiondetail.rendering.ToolCallCard
 import app.codeg.android.feature.sessiondetail.rendering.ToolGroupCard
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val SuccessGreen = Color(0xFF85D18F)
 
@@ -187,7 +187,7 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
         Spacer(Modifier.weight(1f))
         Text(
             meta,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = CodegMono,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             color = colors.textTertiary,
@@ -283,7 +283,7 @@ private fun BlinkingCaret() {
         animationSpec = infiniteRepeatable(tween(530), RepeatMode.Reverse),
         label = "caret-alpha",
     )
-    Text("▌", fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = CodegTheme.colors.accent, modifier = Modifier.alpha(a))
+    Text("▌", fontFamily = CodegMono, fontSize = 14.sp, color = CodegTheme.colors.accent, modifier = Modifier.alpha(a))
 }
 
 /**

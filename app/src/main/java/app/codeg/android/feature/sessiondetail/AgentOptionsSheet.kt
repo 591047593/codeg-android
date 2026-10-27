@@ -55,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -73,6 +72,7 @@ import app.codeg.android.core.model.GitBranchList
 import app.codeg.android.core.model.SessionConfigOption
 import app.codeg.android.core.model.SessionConfigSelectOption
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private enum class SheetPage { Main, Branch }
 
@@ -317,7 +317,7 @@ private fun FolderMenuRow(ui: SessionDetailUiState, onSelectFolder: (FolderDetai
                     text = {
                         Column {
                             Text(f.name, fontSize = 14.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(f.path, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(f.path, fontSize = 10.sp, fontFamily = CodegMono, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     },
                     leadingIcon = { Icon(Icons.Rounded.Folder, null, tint = if (f.id == ui.selectedFolderId) colors.accent else colors.textTertiary, modifier = Modifier.size(18.dp)) },
@@ -360,7 +360,7 @@ private fun BranchRow(current: String?, isBusy: Boolean, onClick: () -> Unit) {
             Text(stringResource(R.string.agentopts_branch), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary)
             Text(
                 current ?: stringResource(R.string.agentopts_select_branch),
-                fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 10.sp, fontFamily = CodegMono, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
@@ -369,7 +369,7 @@ private fun BranchRow(current: String?, isBusy: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun PathLine(path: String) {
-    Text(path, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = CodegTheme.colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(path, fontSize = 10.sp, fontFamily = CodegMono, color = CodegTheme.colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 // endregion
@@ -554,7 +554,7 @@ private fun BranchRowItem(
     ) {
         Icon(Icons.AutoMirrored.Rounded.AltRoute, null, tint = if (occupied) colors.textTertiary else colors.accent, modifier = Modifier.size(16.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(display, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(display, fontSize = 13.sp, fontFamily = CodegMono, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (occupied) Text(stringResource(R.string.branch_occupied), fontSize = 11.sp, color = colors.textTertiary)
         }
         when {

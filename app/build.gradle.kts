@@ -36,8 +36,8 @@ android {
         applicationId = "app.codeg.android"
         minSdk = 31
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "1.0.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -162,6 +162,7 @@ tasks.named("generateLicenseReport") {
             supplementalLicensesDir.file("LICENSE_REVIEW.md").asFile to
                 "supplemental/LICENSE_REVIEW.md",
             supplementalLicensesDir.file("MPL-2.0.txt").asFile to "supplemental/MPL-2.0.txt",
+            supplementalLicensesDir.file("OFL-1.1.txt").asFile to "supplemental/OFL-1.1.txt",
         )
         copiedSources.forEach { (source, relativeTarget) ->
             val target = reportDir.file(relativeTarget).asFile

@@ -27,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,6 +41,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * Visual rendering for tool-call *input arguments* and *output*, so an MCP /
@@ -333,7 +333,7 @@ fun ToolFieldInline(label: String, value: String) {
         Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
         Text(
             value,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = CodegMono,
             fontSize = 11.5.sp,
             color = colors.textSecondary,
             modifier = Modifier.weight(1f),
@@ -364,7 +364,7 @@ fun PlainTextBlock(text: String) {
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(text, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, color = colors.textSecondary)
+        Text(text, fontFamily = CodegMono, fontSize = 11.5.sp, color = colors.textSecondary)
     }
 }
 
@@ -440,7 +440,7 @@ fun FileBodyView(file: ReadOutputFormat.File, collapsedLineLimit: Int = 60) {
             Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("FILE", fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
+            Text("FILE", fontFamily = CodegMono, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
             Row(Modifier.weight(1f)) {}
             CopyButton(content)
         }
@@ -450,7 +450,7 @@ fun FileBodyView(file: ReadOutputFormat.File, collapsedLineLimit: Int = 60) {
                 Row(Modifier.padding(vertical = 1.dp)) {
                     Text(
                         (file.startLine + idx).toString(),
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = CodegMono,
                         fontSize = 12.sp,
                         color = colors.textTertiary.copy(alpha = 0.7f),
                         textAlign = TextAlign.End,
@@ -458,7 +458,7 @@ fun FileBodyView(file: ReadOutputFormat.File, collapsedLineLimit: Int = 60) {
                     )
                     Text(
                         line.ifEmpty { " " },
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = CodegMono,
                         fontSize = 12.5.sp,
                         color = colors.textSecondary,
                         modifier = Modifier.padding(end = 12.dp),
@@ -502,11 +502,11 @@ fun ToolErrorOutput(output: String) {
             fields.forEach { (key, value) ->
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(key.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.danger.copy(alpha = 0.7f))
-                    Text(value, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, color = colors.danger.copy(alpha = 0.92f))
+                    Text(value, fontFamily = CodegMono, fontSize = 11.5.sp, color = colors.danger.copy(alpha = 0.92f))
                 }
             }
         } else {
-            Text(output, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.danger.copy(alpha = 0.92f))
+            Text(output, fontFamily = CodegMono, fontSize = 12.sp, color = colors.danger.copy(alpha = 0.92f))
         }
     }
 }

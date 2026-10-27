@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +56,7 @@ import app.codeg.android.core.network.displayMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val SuccessGreen = Color(0xFF4CBC75)
 
@@ -306,7 +306,7 @@ fun AgentConfigPiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
                                     fontSize = 14.sp, color = colors.textPrimary,
                                 )
                                 status.resolvedPath?.takeIf { it.isNotEmpty() }?.let {
-                                    Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(it, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                             else -> Text(stringResource(R.string.agents_pi_not_installed), fontSize = 14.sp, color = colors.textSecondary)

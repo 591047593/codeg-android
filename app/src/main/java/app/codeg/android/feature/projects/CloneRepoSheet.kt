@@ -36,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -51,6 +50,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.DirectoryEntry
 import app.codeg.android.core.model.GitCredentials
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Clone-a-repository sheet. Port of iOS `CloneRepoView`. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,7 +97,7 @@ fun CloneRepoSheet(
                 CodegTextField(username, { username = it }, label = stringResource(R.string.clone_username_optional))
                 SecretField(password, { password = it }, label = stringResource(R.string.clone_password_token_optional))
                 if (targetDir.isNotEmpty()) {
-                    Text(stringResource(R.string.clone_clones_into, targetDir), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary)
+                    Text(stringResource(R.string.clone_clones_into, targetDir), fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary)
                 }
                 error?.let {
                     Text(it, fontSize = 13.sp, color = colors.danger, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(10.dp))

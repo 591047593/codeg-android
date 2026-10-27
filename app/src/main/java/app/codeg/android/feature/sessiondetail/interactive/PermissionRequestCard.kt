@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +43,7 @@ import app.codeg.android.core.designsystem.diff.DiffView
 import app.codeg.android.core.designsystem.markdown.MarkdownContent
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.PermissionOption
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** A tool-permission approval card shown above the composer. Port of iOS `PermissionRequestCard`. */
 @Composable
@@ -129,7 +129,7 @@ private fun PermissionBody(parsed: ParsedPermission) {
     }
     parsed.command?.let { cmd ->
         CodeBlock(code = cmd, language = "bash")
-        parsed.cwd?.let { Text("cwd: $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary) }
+        parsed.cwd?.let { Text("cwd: $it", fontSize = 11.sp, fontFamily = CodegMono, color = colors.textTertiary) }
     }
     if (parsed.diffFiles.isNotEmpty()) DiffView(parsed.diffFiles)
     parsed.planMarkdown?.let { MarkdownContent(it) }
@@ -151,7 +151,7 @@ private fun PermissionBody(parsed: ParsedPermission) {
                         Text(
                             ap.tool,
                             fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = CodegMono,
                             color = colors.accent,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
@@ -167,7 +167,7 @@ private fun PermissionBody(parsed: ParsedPermission) {
     parsed.modeTarget?.let { Text("→ $it", fontSize = 12.sp, color = colors.textSecondary) }
     if (parsed.url != null || parsed.query != null || (parsed.prompt != null && parsed.command == null)) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            parsed.url?.let { Text(it, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = colors.textSecondary) }
+            parsed.url?.let { Text(it, fontSize = 12.sp, fontFamily = CodegMono, color = colors.textSecondary) }
             parsed.query?.let { Text(it, fontSize = 12.sp, color = colors.textSecondary) }
             if (parsed.command == null) parsed.prompt?.let { Text(it, fontSize = 12.sp, color = colors.textSecondary) }
         }

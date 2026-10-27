@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +61,7 @@ import app.codeg.android.core.model.GitChange
 import app.codeg.android.core.model.GitStatusEntry
 import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * Working-tree changes (git_status) with a per-file working diff, a commit
@@ -217,7 +217,7 @@ private fun ChangeRow(entry: GitStatusEntry, onClick: () -> Unit, onLongClick: (
     ListItem(
         headlineContent = { Text(entry.path.substringAfterLast('/'), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = sub.takeIf { it.isNotEmpty() }?.let {
-            { Text(it, fontFamily = FontFamily.Monospace, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            { Text(it, fontFamily = CodegMono, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         },
         leadingContent = { GitChangeBadge(entry.change) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary, supportingColor = colors.textTertiary),

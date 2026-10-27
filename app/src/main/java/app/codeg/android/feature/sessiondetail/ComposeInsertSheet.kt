@@ -40,6 +40,7 @@ import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.AvailableCommandInfo
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.model.QuickMessage
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Draft transforms for the compose "+" inserts. Port of iOS `ComposeInsertModel`. */
 object ComposeInsert {
@@ -145,7 +146,7 @@ private fun InsertList(empty: Boolean, emptyText: String, content: androidx.comp
 private fun InsertRow(title: String, subtitle: String, mono: Boolean = false, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onClick() }.padding(horizontal = 10.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, fontFamily = if (mono) CodegMono else FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (subtitle.isNotEmpty()) Text(subtitle, fontSize = 12.sp, color = colors.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }

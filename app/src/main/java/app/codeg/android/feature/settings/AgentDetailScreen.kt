@@ -53,7 +53,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +88,7 @@ import app.codeg.android.core.model.clineProviders
 import app.codeg.android.core.model.codexReasoningEffortOptions
 import app.codeg.android.core.model.hermesProvider
 import app.codeg.android.core.model.hermesProviders
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * Per-agent configuration editor — a native Material 3 port of the iOS
@@ -195,7 +195,7 @@ private fun AgentHeader(state: AgentDetailState, onToggle: (Boolean) -> Unit) {
             }
         }
         agent.configFilePath?.takeIf { it.isNotBlank() }?.let { path ->
-            Text(path, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(path, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -627,7 +627,7 @@ private fun CursorSection(state: AgentDetailState, vm: AgentsViewModel) {
             ) {
                 Text(
                     command,
-                    fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.textPrimary,
+                    fontFamily = CodegMono, fontSize = 12.sp, color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
                 CopyButton(command)
@@ -775,9 +775,9 @@ private fun RuleEditor(
                 OutlinedTextField(
                     value = rule,
                     onValueChange = { v -> onChange(rules.toMutableList().also { it[index] = v }) },
-                    placeholder = { Text(placeholder, fontFamily = FontFamily.Monospace, fontSize = 13.sp) },
+                    placeholder = { Text(placeholder, fontFamily = CodegMono, fontSize = 13.sp) },
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = CodegMono, fontSize = 13.sp),
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     colors = dropdownColors(colors),
                     modifier = Modifier.weight(1f),
@@ -840,7 +840,7 @@ private fun ReadonlyRow(label: String, value: String) {
     val colors = CodegTheme.colors
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, fontSize = 12.sp, color = colors.textTertiary)
-        Text(value, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, fontFamily = CodegMono, fontSize = 12.sp, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -999,7 +999,7 @@ private fun AdvancedSection(state: AgentDetailState, vm: AgentsViewModel) {
         ) {
             Column {
                 Text(stringResource(R.string.agents_advanced), fontSize = 14.sp, color = colors.textPrimary)
-                Text(label, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary)
+                Text(label, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary)
             }
             Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(20.dp).rotate(rotation))
         }
@@ -1008,7 +1008,7 @@ private fun AdvancedSection(state: AgentDetailState, vm: AgentsViewModel) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = vm::editRawConfig,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = CodegMono, fontSize = 12.sp),
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
                     colors = OutlinedTextFieldDefaults.colors(

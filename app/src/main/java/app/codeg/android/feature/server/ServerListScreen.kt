@@ -39,13 +39,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.GlassRow
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,7 +159,7 @@ private fun ServerRow(
                     profile.baseUrl,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = CodegMono,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }

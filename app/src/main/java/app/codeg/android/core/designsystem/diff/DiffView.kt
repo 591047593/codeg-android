@@ -24,12 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val AddedFg = Color(0xFF8CE69E)
 private val DeletedFg = Color(0xFFF58585)
@@ -68,7 +68,7 @@ private fun DiffFileView(file: DiffFile, collapseAfter: Int) {
             ModeBadge(file.mode)
             Text(
                 text = shortPath(file.path),
-                fontFamily = FontFamily.Monospace,
+                fontFamily = CodegMono,
                 fontSize = 11.5.sp,
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
@@ -116,14 +116,14 @@ private fun DiffRowView(row: DiffRow) {
         Gutter(row.newLine)
         Text(
             text = sign,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = CodegMono,
             fontSize = 12.sp,
             color = fg,
             modifier = Modifier.width(14.dp).padding(start = 4.dp),
         )
         Text(
             text = if (row.text.isEmpty()) " " else row.text,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = CodegMono,
             fontSize = 12.sp,
             lineHeight = 16.sp,
             color = if (row.kind == DiffRow.Kind.CONTEXT) colors.textPrimary else fg,
@@ -136,7 +136,7 @@ private fun DiffRowView(row: DiffRow) {
 private fun Gutter(line: Int?) {
     Text(
         text = line?.toString() ?: "",
-        fontFamily = FontFamily.Monospace,
+        fontFamily = CodegMono,
         fontSize = 10.sp,
         color = CodegTheme.colors.textTertiary,
         modifier = Modifier.width(34.dp).padding(start = 6.dp),

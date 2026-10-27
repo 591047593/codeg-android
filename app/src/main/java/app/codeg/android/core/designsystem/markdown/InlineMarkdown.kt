@@ -6,12 +6,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * Inline-Markdown → [AnnotatedString] (the Compose analogue of iOS
@@ -74,7 +74,7 @@ private fun parseInline(
                 if (end > i) {
                     flushPlain()
                     builder.withStyle(
-                        SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg, color = codeColor),
+                        SpanStyle(fontFamily = CodegMono, background = codeBg, color = codeColor),
                     ) { append(raw.substring(i + 1, end)) }
                     i = end + 1
                 } else {

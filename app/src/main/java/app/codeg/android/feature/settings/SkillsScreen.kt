@@ -55,7 +55,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +75,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentSkillItem
 import app.codeg.android.core.model.AgentType
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Editor target: a new skill, or an existing one to edit/view. */
 private sealed interface SkillEditTarget {
@@ -263,7 +263,7 @@ private fun SkillRow(skill: AgentSkillItem, onClick: () -> Unit, onDelete: () ->
         skill.description?.takeIf { it.isNotEmpty() }?.let {
             Text(it, fontSize = 13.sp, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Text(skill.path, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(skill.path, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -353,7 +353,7 @@ private fun SkillEditorDialog(
                 if (existing == null) {
                     CodegTextField(skillId, { skillId = it }, label = stringResource(R.string.skills_skill_id), placeholder = stringResource(R.string.skills_skill_id_placeholder), mono = true)
                 } else {
-                    Text("ID: ${skillId}", fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = colors.textSecondary)
+                    Text("ID: ${skillId}", fontSize = 13.sp, fontFamily = CodegMono, color = colors.textSecondary)
                 }
                 when {
                     loadingContent -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

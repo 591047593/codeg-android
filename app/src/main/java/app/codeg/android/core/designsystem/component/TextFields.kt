@@ -17,11 +17,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** A labelled single-line text field themed to the app palette. */
 @Composable
@@ -42,7 +42,7 @@ fun CodegTextField(
         label = { Text(label) },
         placeholder = placeholder?.let { { Text(it) } },
         singleLine = singleLine,
-        textStyle = if (mono) TextStyle(fontFamily = FontFamily.Monospace) else TextStyle.Default,
+        textStyle = if (mono) TextStyle(fontFamily = CodegMono) else TextStyle.Default,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = modifier.fillMaxWidth(),
         colors = fieldColors(),
@@ -63,7 +63,7 @@ fun SecretField(
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
-        textStyle = TextStyle(fontFamily = FontFamily.Monospace),
+        textStyle = TextStyle(fontFamily = CodegMono),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {

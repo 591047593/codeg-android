@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +64,7 @@ import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.LocalMcpServer
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private const val SPEC_TEMPLATE = "{\n  \"type\": \"stdio\",\n  \"command\": \"\",\n  \"args\": []\n}"
 
@@ -151,7 +151,7 @@ private fun McpRow(s: LocalMcpServer, onEdit: () -> Unit, onDelete: () -> Unit) 
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(s.id, fontSize = 15.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(s.spec.toString(), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(s.spec.toString(), fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (s.apps.isNotEmpty()) Text(s.apps.joinToString(", "), fontSize = 11.sp, color = colors.accent)
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

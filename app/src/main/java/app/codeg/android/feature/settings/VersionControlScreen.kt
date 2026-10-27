@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val Ok = androidx.compose.ui.graphics.Color(0xFF85D18F)
 
@@ -50,7 +50,7 @@ fun VersionControlContent(viewModel: VersionControlViewModel = hiltViewModel()) 
                     Text(if (ui.detect.installed) stringResource(R.string.vcs_git_installed) else stringResource(R.string.vcs_git_not_found), fontSize = 14.sp, color = colors.textPrimary)
                     ui.detect.version?.let { Text(it, fontSize = 12.sp, color = colors.textTertiary) }
                 }
-                ui.detect.path?.let { Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary) }
+                ui.detect.path?.let { Text(it, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary) }
             }
             CodegTextField(ui.customPath, viewModel::onPath, label = stringResource(R.string.vcs_custom_git_path), mono = true)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

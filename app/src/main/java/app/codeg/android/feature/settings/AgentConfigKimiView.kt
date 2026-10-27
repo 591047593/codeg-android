@@ -38,7 +38,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,6 +63,7 @@ import app.codeg.android.core.network.displayMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private val WarnAmber = Color(0xFFF0A030)
 private val SuccessGreen = Color(0xFF4CBC75)
@@ -309,7 +309,7 @@ fun AgentConfigKimiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
             OutlinedTextField(
                 value = rawConfig,
                 onValueChange = { rawConfig = it },
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                textStyle = TextStyle(fontFamily = CodegMono, fontSize = 12.sp),
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
                 colors = OutlinedTextFieldDefaults.colors(

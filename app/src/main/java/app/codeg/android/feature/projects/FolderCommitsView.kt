@@ -40,7 +40,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +62,7 @@ import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
 import java.time.Instant
 import java.time.OffsetDateTime
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 /**
  * A folder's commit history (git_log) plus a sync header (branch → remote, with
@@ -161,10 +161,10 @@ private fun SyncHeader(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(Icons.AutoMirrored.Rounded.CallSplit, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(14.dp))
-            Text(branch ?: "—", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, fontFamily = FontFamily.Monospace)
+            Text(branch ?: "—", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, fontFamily = CodegMono)
             if (trackingRemote != null) {
                 Text("→", fontSize = 12.sp, color = colors.textTertiary)
-                Text(trackingRemote, fontSize = 12.sp, color = colors.textSecondary, fontFamily = FontFamily.Monospace)
+                Text(trackingRemote, fontSize = 12.sp, color = colors.textSecondary, fontFamily = CodegMono)
             }
             Box(Modifier.weight(1f))
             if (!hasRemote) {
@@ -227,7 +227,7 @@ private fun CommitRow(entry: GitLogEntry, onClick: () -> Unit) {
                 if (entry.totalAdditions > 0) Text("+${entry.totalAdditions}", fontSize = 11.sp, color = Color_Add)
                 if (entry.totalDeletions > 0) Text("−${entry.totalDeletions}", fontSize = 11.sp, color = colors.danger)
                 Box(Modifier.weight(1f))
-                Text(entry.hash, fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = colors.textTertiary, modifier = Modifier.clip(RoundedCornerShape(50)).background(colors.textPrimary.copy(alpha = 0.06f)).padding(horizontal = 6.dp, vertical = 1.dp))
+                Text(entry.hash, fontFamily = CodegMono, fontSize = 10.sp, color = colors.textTertiary, modifier = Modifier.clip(RoundedCornerShape(50)).background(colors.textPrimary.copy(alpha = 0.06f)).padding(horizontal = 6.dp, vertical = 1.dp))
             }
         },
         trailingContent = entry.pushed?.let { pushed ->
@@ -256,7 +256,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
                     entry.pushed?.let { Icon(if (it) Icons.Rounded.Cloud else Icons.Rounded.CloudOff, null, tint = colors.textTertiary, modifier = Modifier.size(13.dp)) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(entry.fullHash, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    Text(entry.fullHash, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                     CopyButton(entry.fullHash)
                 }
             }
@@ -272,7 +272,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
                     val files = UnifiedDiff.parse(r.getOrDefault(""))
                     if (files != null) DiffView(files)
                     else Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        for (f in entry.files) Text("${f.status}  ${f.path}   +${f.additions} −${f.deletions}", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textSecondary)
+                        for (f in entry.files) Text("${f.status}  ${f.path}   +${f.additions} −${f.deletions}", fontFamily = CodegMono, fontSize = 11.sp, color = colors.textSecondary)
                     }
                 }
             }

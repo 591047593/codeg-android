@@ -17,11 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 private const val NoticeAsset = "NOTICE_BUNDLE.txt"
 private const val LinesPerChunk = 80
@@ -61,7 +61,7 @@ fun OpenSourceLicensesScreen() {
                     text = chunk,
                     color = colors.textSecondary,
                     style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = CodegMono,
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                     ),

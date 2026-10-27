@@ -43,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -64,6 +63,7 @@ import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.ExpertInstallStatus
 import app.codeg.android.core.model.ExpertLinkState
 import app.codeg.android.core.model.ExpertListItem
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @Composable
 fun ExpertsContent(viewModel: ExpertsViewModel = hiltViewModel()) {
@@ -193,7 +193,7 @@ private fun ExpertDetailDialog(
                 expert.metadata.desc().takeIf { it.isNotEmpty() }?.let {
                     Text(it, fontSize = 14.sp, color = colors.textSecondary)
                 }
-                Text("# ${expert.metadata.id}", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("# ${expert.metadata.id}", fontSize = 12.sp, fontFamily = CodegMono, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
                 // Per-agent link matrix.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

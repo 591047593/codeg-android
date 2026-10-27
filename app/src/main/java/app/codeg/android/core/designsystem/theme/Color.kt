@@ -5,18 +5,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 
 /**
- * User-selectable accent palettes, ported from the iOS `AccentPalette`. Each has
- * a dark-mode and light-mode fill. The default is [ORANGE], matching iOS.
+ * User-selectable accent palettes.
+ *
+ * The ids and colours are taken from the codeg web client's theme presets
+ * (`src/lib/theme-presets.ts` + `[data-theme="..."]` in `globals.css`, converted from
+ * OKLCH), so a user moving between the desktop client and this app sees the same
+ * accent under the same name.
+ *
+ * The web client's five *neutral* presets (neutral / zinc / slate / stone / gray) are
+ * deliberately absent: their `--primary` is near-black or near-white and their
+ * `--accent` is a flat grey, which works as a page tint on desktop but leaves every
+ * button, selected tab and link indistinguishable on a phone. Only the presets that
+ * carry an actual hue are offered here.
  */
 enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
-    MINT("mint", Color(0xFF66E0B3), Color(0xFF0F946B)),
-    BLUE("blue", Color(0xFF63A8FF), Color(0xFF0073EB)),
-    INDIGO("indigo", Color(0xFF8F99FC), Color(0xFF4A4FDB)),
-    PURPLE("purple", Color(0xFFC28CFF), Color(0xFF8542D4)),
-    PINK("pink", Color(0xFFFF73B5), Color(0xFFDB297D)),
-    ORANGE("orange", Color(0xFFFF9E4D), Color(0xFFD96B0D)),
-    TEAL("teal", Color(0xFF4DD1DB), Color(0xFF008594)),
-    RED("red", Color(0xFFFF7373), Color(0xFFD13033));
+    RED("red", Color(0xFFFB2C36), Color(0xFFFB2C36)),
+    ROSE("rose", Color(0xFFFF2056), Color(0xFFFF2056)),
+    ORANGE("orange", Color(0xFFF54900), Color(0xFFFF6900)),
+    YELLOW("yellow", Color(0xFFF0B100), Color(0xFFF0B100)),
+    GREEN("green", Color(0xFF00BC7D), Color(0xFF00C950)),
+    BLUE("blue", Color(0xFF2B7FFF), Color(0xFF155DFC)),
+    VIOLET("violet", Color(0xFF7F22FE), Color(0xFF8E51FF));
 
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 
@@ -90,9 +99,23 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     }
 }
 
-/** Black or white text/icon on a filled accent, chosen by luminance (iOS `onColor`). */
+/**
+ * Black or white text/icon on a filled accent.
+ *
+ * The threshold is the luminance at which white and near-black read equally
+ * well, not an arbitrary midpoint: solving `1.05 / (L + 0.05) = (L + 0.05) /
+ * 0.0548` (where 0.0548 is the relative luminance of `#0F0F0F`) gives
+ * `L ≈ 0.19`. Any higher cutoff puts white text on light accents — the
+ * previous 0.6 chose white on the yellow accent, which is a 1.9:1
+ * white-on-yellow that is genuinely unreadable, and under-picked dark text on
+ * orange and green as well.
+ *
+ * With 0.19 every one of the seven bundled accents clears the 4.5:1 WCAG AA
+ * body-text ratio except violet-on-light, which lands at 4.4:1 and is still
+ * well above the 3:1 large-text floor.
+ */
 private fun onAccentColor(accent: Color): Color =
-    if (accent.luminance() > 0.6f) Color(0xFF0F0F0F) else Color.White
+    if (accent.luminance() > 0.19f) Color(0xFF0F0F0F) else Color.White
 
 /** The cool indigo glow used in the app background (iOS `CodegBackground`). */
 val CodegGlowCool = Color(0xFF4D6BF2)

@@ -35,6 +35,28 @@ used by OkHttp 4.12.0 is available in its
 The generated notice bundle includes OkHttp's notice and the full MPL-2.0 text.
 See `config/licenses/EMBEDDED_COMPONENTS.md` for the reviewed component record.
 
+## Bundled typefaces
+
+The app ships two variable fonts as `res/font` resources, so they are not part
+of the Gradle dependency graph and do not appear in the dependency inventory
+above:
+
+| File | Typeface | Upstream | License |
+| --- | --- | --- | --- |
+| `res/font/inter_variable.ttf` | Inter | <https://github.com/rsms/inter> | SIL OFL 1.1 |
+| `res/font/jetbrains_mono_variable.ttf` | JetBrains Mono | <https://github.com/JetBrains/JetBrainsMono> | SIL OFL 1.1 |
+
+Inter is the default interface font and JetBrains Mono is used for code and
+inline commands, matching the fonts the codeg desktop client defaults to. Both
+are redistributed unmodified; their copyright notices and the full SIL Open
+Font License 1.1 text are in `config/licenses/OFL-1.1.txt` and are included in
+the generated notice bundle.
+
+The SIL Open Font License requires that font software be redistributed only
+under that license, so these two files are not covered by this project's
+Apache License 2.0. That restriction applies to the font files themselves: OFL
+places no condition on text rendered with them.
+
 ## Dependencies
 
 Runtime and build dependencies retain their own licenses. Direct dependency
