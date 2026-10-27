@@ -73,10 +73,14 @@ private val SuccessGreen = Color(0xFF85D18F)
 @Composable
 fun ToolCallCard(vm: ToolCallVM, modifier: Modifier = Modifier, nested: Boolean = false) {
     val colors = CodegTheme.colors
-    val autoExpand = vm.state == ToolCallState.RUNNING ||
-        vm.state == ToolCallState.ERROR ||
-        (vm.diffFiles != null && (vm.diffFiles.sumOf { f -> f.hunks.sumOf { it.rows.size } } <= 40))
-    var expanded by remember(vm.id) { mutableStateOf(autoExpand) }
+    // Collapsed by default, with one exception: a failed call opens itself, because the
+    // error is the reason the user is looking at the card. Running calls and small diffs
+    // used to auto-open too, which made an active turn a wall of expanding cards that
+    // pushed the reply out of view. Everything else is one tap away.
+    //
+    // Keyed on isError so a call that fails *while the card is on screen* opens then,
+    // but only the first time: after that `expanded` is the user's to control.
+    var expanded by remember(vm.id, vm.isError) { mutableStateOf(vm.isError) }
     val hasBody = vm.diffFiles != null || !vm.input.isNullOrBlank() || vm.hasOutput
 
     Column(
