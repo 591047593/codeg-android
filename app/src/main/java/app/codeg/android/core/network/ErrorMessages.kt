@@ -7,5 +7,9 @@ fun Throwable.displayMessage(): String = when (this) {
     is ApiError.Transport -> detail
     is ApiError.Server -> serverMessage
     is ApiError.Decoding -> "Unexpected response from the server"
+    // The conversation is too large for this client to load in one piece. Nothing the
+    // user can do about it from here, so say what it means rather than showing the
+    // OOM-triggering request as a generic failure.
+    is ApiError.ResponseTooLarge -> "This conversation is too large to open on this device"
     else -> message ?: "Something went wrong"
 }

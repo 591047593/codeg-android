@@ -4,9 +4,19 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+      largeHeap: a conversation is fetched as one JSON document
+      (`get_folder_conversation` has no paging), so a long session can be tens of
+      megabytes before any parsed objects exist. On the default 192 MB heap that threw
+      OutOfMemoryError inside `bodyAsText()` and killed the process. This raises the
+      ceiling to the platform's larger limit (512 MB on the tested device) so ordinary
+      long sessions open; bodies past MAX_RESPONSE_BYTES are still refused with an error
+      rather than attempted.
+    -->
     <application
         android:name=".CodegApplication"
         android:allowBackup="true"
+        android:largeHeap="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:enableOnBackInvokedCallback="true"

@@ -126,6 +126,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.contentLength
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -156,6 +157,17 @@ import kotlinx.serialization.json.putJsonObject
  *
  * Faithful port of the iOS `CodegClient`.
  */
+/**
+ * Largest response body this client will materialise.
+ *
+ * The app declares `largeHeap`, so the ceiling is the platform's larger limit rather
+ * than the default 192 MB. A body needs roughly twice its own size in String and
+ * decoder allocations before any parsed objects exist — a 30 MB transcript asked for a
+ * 61 MB single allocation — so this is set where the doubling still fits comfortably,
+ * and anything past it is refused with an error instead of crashing the process.
+ */
+private const val MAX_RESPONSE_BYTES = 32L * 1024 * 1024
+
 class CodegClient(
     rawBaseUrl: String,
     private val token: String,
@@ -1002,9 +1014,27 @@ class CodegClient(
             throw ApiError.Transport(e.message ?: "Network error")
         }
 
+        // Refuse an oversized body before reading it.
+        //
+        // `bodyAsText()` materialises the whole body as one String and the decoder
+        // allocates again while assembling it. A 30 MB transcript therefore asked for a
+        // 61 MB single allocation on top of everything else and killed the process with
+        // `OutOfMemoryError: Failed to allocate a 63915000 byte allocation` — a crash the
+        // user cannot act on. Checking the declared length first turns that into a
+        // normal error the screen can show.
+        val declaredLength = response.contentLength() ?: -1L
+        if (declaredLength > MAX_RESPONSE_BYTES) {
+            throw ApiError.ResponseTooLarge(declaredLength)
+        }
+
         // Pull the body off the caller's thread: a large transcript body read is real
         // work, and every caller invokes this from `viewModelScope` (Main).
         val text = withContext(io) { response.bodyAsText() }
+        // A chunked response declares no length; keep the same ceiling after the fact so
+        // the *next* allocation (the JSON parse) is not attempted on an oversized body.
+        if (text.length.toLong() > MAX_RESPONSE_BYTES) {
+            throw ApiError.ResponseTooLarge(text.length.toLong())
+        }
         val code = response.status.value
         if (code !in 200..299) {
             if (code == 401) throw ApiError.Unauthorized

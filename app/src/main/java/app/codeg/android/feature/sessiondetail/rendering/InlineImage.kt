@@ -1,7 +1,5 @@
 package app.codeg.android.feature.sessiondetail.rendering
 
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -19,18 +17,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.codeg.android.core.designsystem.BoundedImageDecoder
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ImageData
+
+/**
+ * Longest side to decode at. The image is drawn at <=320dp tall; at the densest common
+ * phone that is ~1280px, so 1280 is the most that can ever be visible.
+ */
+private const val INLINE_MAX_PX = 1280
 
 /** Decodes a base64 [ImageData] and renders it (max height 320dp), with an optional caption. */
 @Composable
 fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifier) {
     val colors = CodegTheme.colors
+    // Bounded decode: the panel draws this at <=320dp, so decoding a 4000px photo at
+    // full size only cost heap (48 MB per image) without showing any more detail.
     val bitmap = remember(image.data) {
-        runCatching {
-            val bytes = Base64.decode(image.data, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
+        BoundedImageDecoder.decode(image.data, INLINE_MAX_PX)?.asImageBitmap()
     }
     Column(modifier.fillMaxWidth()) {
         if (bitmap != null) {
