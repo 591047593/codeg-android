@@ -131,6 +131,27 @@ class ActivityViewModel @Inject constructor(
         pollJob = null
     }
 
+    /**
+     * Delete a conversation from the activity feed.
+     *
+     * Removed optimistically and put back if the call fails, so the row does not linger
+     * for a round trip. The caller confirms first.
+     */
+    fun delete(conversation: ConversationSummary) {
+        val active = client ?: return
+        val previous = _ui.value.conversations
+        _ui.update { it.copy(conversations = it.conversations.filterNot { c -> c.id == conversation.id }) }
+        viewModelScope.launch {
+            try {
+                active.deleteConversation(conversation.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { state -> state.copy(conversations = previous, error = e.displayMessage()) }
+            }
+        }
+    }
+
     fun refresh() {
         if (_ui.value.refreshing) return
         viewModelScope.launch { fetch(manual = true) }

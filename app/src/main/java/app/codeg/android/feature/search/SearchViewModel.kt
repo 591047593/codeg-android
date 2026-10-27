@@ -119,6 +119,26 @@ class SearchViewModel @Inject constructor(
     fun clearRecent() { viewModelScope.launch { recentStore.clear() } }
 
     /** Re-run the current query after a failure (drives the inline-error Retry button). */
+    /**
+     * Delete a conversation from the search results.
+     *
+     * Removed optimistically and put back if the call fails. The caller confirms first.
+     */
+    fun delete(conversation: ConversationSummary) {
+        val c = client ?: return
+        val previous = _ui.value.results
+        _ui.update { it.copy(results = it.results.filterNot { r -> r.id == conversation.id }) }
+        viewModelScope.launch {
+            try {
+                c.deleteConversation(conversation.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { state -> state.copy(results = previous, error = e.displayMessage()) }
+            }
+        }
+    }
+
     fun retry() { viewModelScope.launch { runSearch(_query.value) } }
 
     private suspend fun runSearch(raw: String) {
