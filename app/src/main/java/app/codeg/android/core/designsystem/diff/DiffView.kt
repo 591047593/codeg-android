@@ -69,7 +69,7 @@ private fun DiffFileView(file: DiffFile, collapseAfter: Int) {
             Text(
                 text = shortPath(file.path),
                 fontFamily = CodegMono,
-                fontSize = 11.5.sp,
+                fontSize = 12.sp,
                 color = colors.textSecondary,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -153,7 +153,7 @@ private fun ModeBadge(mode: DiffFile.Mode) {
     }
     Text(
         text = label,
-        fontSize = 9.sp,
+        fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
         color = color,
         modifier = Modifier

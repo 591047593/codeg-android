@@ -165,7 +165,7 @@ private fun AgentHeader(state: AgentDetailState, onToggle: (Boolean) -> Unit) {
     val colors = CodegTheme.colors
     val agent = state.agent
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(16.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -173,7 +173,7 @@ private fun AgentHeader(state: AgentDetailState, onToggle: (Boolean) -> Unit) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     agent.name.ifEmpty { agent.agentType.displayName },
-                    fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary,
+                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 VersionLine(state)

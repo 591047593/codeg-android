@@ -247,7 +247,7 @@ private fun AgentPickerSection(agents: List<AgentType>, selected: AgentType, onS
                 val isSelected = agent == selected
                 Column(
                     Modifier
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable { onSelect(agent) }
                         .padding(vertical = 6.dp, horizontal = 6.dp)
                         .width(64.dp),
@@ -502,7 +502,7 @@ private fun NewBranchInline(
     val colors = CodegTheme.colors
     if (!show) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onShow() }.padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onShow() }.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(Icons.Rounded.Add, null, tint = colors.accent, modifier = Modifier.size(18.dp))
@@ -516,7 +516,7 @@ private fun NewBranchInline(
                     onClick = onCreate,
                     enabled = name.isNotBlank() && !creating,
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.accent.copy(alpha = 0.16f), contentColor = colors.accent),
                 ) {
                     if (creating) CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(18.dp))
@@ -592,7 +592,7 @@ private fun ConfigOptionSection(option: SessionConfigOption, currentValue: Strin
 
 @Composable
 private fun OptionGroup(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CodegTheme.colors.bg.copy(alpha = 0.4f))) { content() }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CodegTheme.colors.bg.copy(alpha = 0.4f))) { content() }
 }
 
 @Composable

@@ -146,7 +146,7 @@ private fun McpRow(s: LocalMcpServer, onEdit: () -> Unit, onDelete: () -> Unit) 
     var menu by remember { mutableStateOf(false) }
     Box {
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
                 .combinedClickable(onClick = onEdit, onLongClick = { menu = true }).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {

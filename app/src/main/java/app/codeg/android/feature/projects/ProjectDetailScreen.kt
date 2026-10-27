@@ -157,7 +157,7 @@ private fun Header(name: String, path: String, color: Color, branch: String?, ru
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.22f)).border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(12.dp)))
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(color.copy(alpha = 0.22f)).border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(14.dp)))
         Column(Modifier.weight(1f)) {
             Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(path, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)

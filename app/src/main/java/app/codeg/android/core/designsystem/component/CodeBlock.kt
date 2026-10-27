@@ -94,7 +94,7 @@ fun CodeBlock(
             Text(
                 text = shown,
                 fontFamily = CodegMono,
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 lineHeight = 18.sp,
                 color = colors.textPrimary,
             )

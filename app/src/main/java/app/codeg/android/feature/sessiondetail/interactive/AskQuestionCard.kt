@@ -154,7 +154,7 @@ private fun QuestionBlock(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 if (question.multiSelect) stringResource(R.string.ask_badge_multiple) else stringResource(R.string.ask_badge_single),
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textTertiary,
                 modifier = Modifier

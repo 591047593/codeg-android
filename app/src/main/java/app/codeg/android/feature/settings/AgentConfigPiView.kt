@@ -436,7 +436,7 @@ private fun PiResultBanner(banner: PiBanner) {
     val colors = CodegTheme.colors
     val tint = if (banner.isError) colors.danger else SuccessGreen
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(if (banner.isError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))

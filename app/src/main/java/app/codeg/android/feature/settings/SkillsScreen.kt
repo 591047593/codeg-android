@@ -254,7 +254,7 @@ private fun SkillRow(skill: AgentSkillItem, onClick: () -> Unit, onDelete: () ->
             if (skill.readOnly) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.clip(RoundedCornerShape(50)).background(colors.textPrimary.copy(alpha = 0.06f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
                     Icon(Icons.Rounded.Lock, null, tint = colors.textTertiary, modifier = Modifier.size(9.dp))
-                    Text(stringResource(R.string.skills_read_only), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.textTertiary)
+                    Text(stringResource(R.string.skills_read_only), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.textTertiary)
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -271,7 +271,7 @@ private fun SkillRow(skill: AgentSkillItem, onClick: () -> Unit, onDelete: () ->
 private fun RefreshErrorBanner(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(message, fontSize = 12.sp, color = colors.danger, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)

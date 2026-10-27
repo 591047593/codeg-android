@@ -201,7 +201,7 @@ fun ChatChannelsContent(viewModel: ChatChannelsViewModel = hiltViewModel()) {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).clickable { showGlobal = true }.padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp),
                     ) {
-                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(colors.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(colors.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Tune, null, tint = colors.accent, modifier = Modifier.size(20.dp))
                         }
                         Column(Modifier.weight(1f)) {
@@ -312,7 +312,7 @@ private fun ChannelRow(
 private fun ChatRefreshBanner(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(message, fontSize = 12.sp, color = colors.danger, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -478,7 +478,7 @@ private fun ActionButton(title: String, icon: ImageVector, tint: Color, enabled:
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = tint.copy(alpha = 0.14f),
             contentColor = tint,
@@ -572,7 +572,7 @@ private fun WeixinQRDialog(channelId: Int, viewModel: ChatChannelsViewModel, onC
                 if (phase == QrPhase.EXPIRED || phase == QrPhase.FAILED) {
                     FilledTonalButton(
                         onClick = { attempt++ },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.accent.copy(alpha = 0.14f), contentColor = colors.accent),
                     ) {
                         Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))

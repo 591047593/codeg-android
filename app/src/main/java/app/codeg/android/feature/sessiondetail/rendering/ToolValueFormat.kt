@@ -334,7 +334,7 @@ fun ToolFieldInline(label: String, value: String) {
         Text(
             value,
             fontFamily = CodegMono,
-            fontSize = 11.5.sp,
+            fontSize = 12.sp,
             color = colors.textSecondary,
             modifier = Modifier.weight(1f),
         )
@@ -364,7 +364,7 @@ fun PlainTextBlock(text: String) {
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(text, fontFamily = CodegMono, fontSize = 11.5.sp, color = colors.textSecondary)
+        Text(text, fontFamily = CodegMono, fontSize = 12.sp, color = colors.textSecondary)
     }
 }
 
@@ -459,7 +459,7 @@ fun FileBodyView(file: ReadOutputFormat.File, collapsedLineLimit: Int = 60) {
                     Text(
                         line.ifEmpty { " " },
                         fontFamily = CodegMono,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         color = colors.textSecondary,
                         modifier = Modifier.padding(end = 12.dp),
                     )
@@ -502,7 +502,7 @@ fun ToolErrorOutput(output: String) {
             fields.forEach { (key, value) ->
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(key.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.danger.copy(alpha = 0.7f))
-                    Text(value, fontFamily = CodegMono, fontSize = 11.5.sp, color = colors.danger.copy(alpha = 0.92f))
+                    Text(value, fontFamily = CodegMono, fontSize = 12.sp, color = colors.danger.copy(alpha = 0.92f))
                 }
             }
         } else {

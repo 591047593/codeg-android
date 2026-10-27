@@ -90,7 +90,7 @@ fun BranchPickerSheet(viewModel: ProjectDetailViewModel, onDismiss: () -> Unit) 
                     },
                     enabled = newBranch.isNotBlank() && !busy,
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.accent.copy(alpha = 0.16f), contentColor = colors.accent),
                 ) { Icon(Icons.Rounded.Add, stringResource(R.string.branch_create_branch)) }
             }

@@ -158,7 +158,7 @@ fun SettingsIconBadge(
     Box(
         modifier
             .size(size)
-            .clip(RoundedCornerShape(7.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(tint),
         contentAlignment = Alignment.Center,
     ) {

@@ -247,7 +247,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
     val now by rememberNowInstant()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item("header") {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(entry.subject, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
                 if (entry.body.isNotEmpty()) Text(entry.body, fontSize = 13.sp, color = colors.textSecondary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

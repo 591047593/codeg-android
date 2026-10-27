@@ -63,7 +63,7 @@ fun CollapsibleSectionHeader(
         modifier = modifier
             .fillMaxWidth()
             .padding(top = 10.dp) // inter-section gap, kept outside the ripple
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .then(
                 if (collapsible) {
                     Modifier.clickable(onClickLabel = toggleLabel, role = Role.Button, onClick = onToggle)

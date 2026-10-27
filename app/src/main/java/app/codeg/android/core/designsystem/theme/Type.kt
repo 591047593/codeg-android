@@ -86,6 +86,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 24.sp,
         lineHeight = 32.sp,
+        letterSpacing = -0.46.sp,
     ),
     // 20px / 1.4 — codeg `text-xl`. Section headers.
     headlineMedium = TextStyle(
@@ -93,6 +94,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         lineHeight = 28.sp,
+        letterSpacing = -0.34.sp,
     ),
     // 18px / 1.44 — codeg `text-lg`. Dialog and sheet titles.
     titleLarge = TextStyle(
@@ -100,6 +102,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 18.sp,
         lineHeight = 26.sp,
+        letterSpacing = -0.25.sp,
     ),
     // 16px / 1.5 — codeg `text-base`. Prominent labels, list rows.
     titleMedium = TextStyle(
@@ -107,6 +110,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 24.sp,
+        letterSpacing = -0.18.sp,
     ),
     // 14px / 1.43 — codeg `text-sm` at medium weight.
     titleSmall = TextStyle(
@@ -114,6 +118,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+        letterSpacing = -0.08.sp,
     ),
     // 16px / 1.5 — codeg `text-base`. Message body copy.
     bodyLarge = TextStyle(
@@ -121,6 +126,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
+        letterSpacing = -0.18.sp,
     ),
     // 14px / 1.43 — codeg `text-sm`. Secondary copy, descriptions.
     bodyMedium = TextStyle(
@@ -128,6 +134,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+        letterSpacing = -0.08.sp,
     ),
     // 12px / 1.33 — codeg `text-xs`. Metadata, timestamps, captions.
     bodySmall = TextStyle(
@@ -135,6 +142,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 16.sp,
+        letterSpacing = 0.sp,
     ),
     // 14px / 1.43 at medium — codeg `text-sm font-medium`. Buttons, tabs.
     labelLarge = TextStyle(
@@ -142,6 +150,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
+        letterSpacing = -0.08.sp,
     ),
     // 12px / 1.33 — codeg `text-xs font-medium`. Chips, badges.
     labelMedium = TextStyle(
@@ -149,6 +158,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
+        letterSpacing = 0.sp,
     ),
     // 11px / 1.45 — codeg `text-2xs`. The tightest badge text.
     labelSmall = TextStyle(
@@ -156,5 +166,6 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 16.sp,
+        letterSpacing = 0.sp,
     ),
 )

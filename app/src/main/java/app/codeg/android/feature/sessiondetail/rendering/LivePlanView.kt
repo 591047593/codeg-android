@@ -78,7 +78,7 @@ private fun PlanRow(entry: PlanEntry) {
         if (entry.normalizedPriority == PlanEntry.Priority.HIGH) {
             Text(
                 stringResource(R.string.liveplan_priority_high),
-                fontSize = 9.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.danger,
                 modifier = Modifier

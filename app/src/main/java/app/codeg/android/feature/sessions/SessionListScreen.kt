@@ -356,7 +356,7 @@ private fun RefreshErrorBanner(
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
