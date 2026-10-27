@@ -2,7 +2,6 @@ package app.codeg.android.feature.main
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,15 +36,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,7 +49,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import kotlin.math.roundToInt
 import app.codeg.android.R
 import app.codeg.android.app.AppViewModel
 import app.codeg.android.core.datastore.ServerProfile
@@ -95,9 +86,12 @@ private const val ROUTE_EDITOR = "editor"
 private const val ROUTE_NEW_TASK = "conversation_new"
 
 /**
- * Whether the bottom bar — and, by extension, the New Task FAB — is currently
- * shown. Driven by scroll direction in [MainShell] and read by the Chats screen
- * so the FAB collapses to just "+" in lockstep with the bar sliding away.
+ * Whether the Chats screen's New Task FAB is expanded.
+ *
+ * The bottom bar used to slide away on scroll and this carried its state down so the
+ * FAB could collapse in lockstep. The bar no longer hides (see [MainShell]), so the FAB
+ * is always expanded; the local is kept rather than threading a literal through the
+ * screen's signature, and would carry a future collapse animation if one is added.
  */
 val LocalBarsVisible = compositionLocalOf { true }
 
@@ -123,46 +117,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // scrolling back down slides it in and restores the label. The bar lives in this
     // shared Scaffold while the scroll happens in each tab's LazyColumn, so a
     // NestedScrollConnection on the content picks up every tab's scroll for free.
-    var barsVisible by remember { mutableStateOf(true) }
-    val density = LocalDensity.current
-    // 0 = fully shown, 1 = fully hidden. Collapsing the bar's *reported* height (not
-    // just translating it) is what lets the Scaffold hand the freed strip back to the
-    // content, so every tab's list reclaims the space instead of leaving it blank.
-    val barProgress by animateFloatAsState(
-        targetValue = if (barsVisible) 0f else 1f,
-        animationSpec = tween(durationMillis = 280),
-        label = "bottomBarCollapse",
-    )
-    // Accumulate the scroll the list *actually consumed* and flip fully open/closed
-    // once it passes a small threshold, resetting the accumulator on each direction
-    // change so a deliberate nudge toggles but jitter doesn't. Keying off consumed
-    // (not the raw gesture) means a short, non-scrolling list — or over-dragging past
-    // the top/bottom edge — never toggles the bar. Keyed to currentRoute so it resets
-    // per tab.
-    val barConnection = remember(currentRoute, density) {
-        val threshold = with(density) { 6.dp.toPx() }
-        object : NestedScrollConnection {
-            var acc = 0f
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                val dy = consumed.y
-                if (dy == 0f) return Offset.Zero // list didn't move → leave the bar alone
-                if ((dy < 0f && acc > 0f) || (dy > 0f && acc < 0f)) acc = 0f
-                acc += dy
-                if (acc < -threshold && barsVisible) {
-                    barsVisible = false; acc = 0f
-                } else if (acc > threshold && !barsVisible) {
-                    barsVisible = true; acc = 0f
-                }
-                return Offset.Zero // observe only; never consume scroll
-            }
-        }
-    }
-    // Any route change — switching tabs or pushing a full-screen detail — reveals the bar.
-    LaunchedEffect(currentRoute) { barsVisible = true }
+    // The bottom bar is always visible.
+    //
+    // It used to slide away when the list scrolled and come back on a downward scroll.
+    // On a phone that read as a bug rather than a courtesy: scrolling to the end of a
+    // long list hid the bar and it did not come back, so there was no way to switch
+    // tabs without first scrolling the other way. Material's own guidance is that
+    // navigation should not be hidden by scrolling; the vertical space it frees is not
+    // worth a control the user has to hunt for.
+    val barsVisible = true
 
     val onTab: (HomeTab) -> Unit = { tab ->
         nav.navigate(tab.route) {
@@ -208,32 +171,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar && !wide) {
-                CodegBottomBar(
-                    currentRoute,
-                    onTab,
-                    // Report a shrinking height as the bar hides so the Scaffold gives the
-                    // freed strip back to the content (the whole point — reclaim the space);
-                    // the bar is drawn at full height and slid down within, clipped away.
-                    modifier = Modifier
-                        .clipToBounds()
-                        .layout { measurable, constraints ->
-                            val placeable = measurable.measure(constraints)
-                            val full = placeable.height
-                            val reported = (full * (1f - barProgress)).roundToInt().coerceIn(0, full)
-                            layout(placeable.width, reported) {
-                                placeable.placeRelative(0, (full * barProgress).roundToInt())
-                            }
-                        },
-                )
+                CodegBottomBar(currentRoute, onTab)
             }
         },
     ) { padding ->
-        // Only intercept scroll when the bottom bar is actually shown (a tab route on a
-        // narrow screen); the side rail and full-screen routes don't hide-on-scroll.
-        val contentModifier =
-            if (showBottomBar && !wide) Modifier.nestedScroll(barConnection) else Modifier
         androidx.compose.foundation.layout.Row(
-            Modifier.padding(padding).fillMaxSize().then(contentModifier),
+            Modifier.padding(padding).fillMaxSize(),
         ) {
             if (showBottomBar && wide) CodegNavRail(currentRoute, onTab)
             NavHost(
