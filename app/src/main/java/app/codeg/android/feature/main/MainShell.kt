@@ -189,7 +189,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 "settings" -> toTab(HomeTab.SETTINGS)
                 else -> {}
             }
-            is app.codeg.android.core.common.DeepLinkRoute.OpenConversation -> nav.navigate("conversation/${route.id}")
+            is app.codeg.android.core.common.DeepLinkRoute.OpenConversation ->
+                nav.navigate("conversation/${route.id}") { launchSingleTop = true }
             is app.codeg.android.core.common.DeepLinkRoute.OpenProject -> nav.navigate("project/${route.id}")
             is app.codeg.android.core.common.DeepLinkRoute.OpenSettings -> {
                 // Navigate to the tab but leave the link pending: SettingsScreen picks
@@ -271,7 +272,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         selectedId = selectedProfile?.id,
                         onSelectServer = appViewModel::selectServer,
                         onManageServers = { nav.navigate(ROUTE_SERVERS) },
-                        onOpenConversation = { id -> nav.navigate("conversation/$id") },
+                        onOpenConversation = { id ->
+                            // launchSingleTop: a double tap on a row used to push the same
+                            // destination twice, so Back landed on an identical screen.
+                            nav.navigate("conversation/$id") { launchSingleTop = true }
+                        },
                         onNewTask = { nav.navigate(ROUTE_NEW_TASK) },
                     )
                 }
@@ -280,10 +285,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 ProjectListScreen(onOpenFolder = { id -> nav.navigate("project/$id") })
             }
             composable(HomeTab.ACTIVITY.route) {
-                ActivityScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") })
+                ActivityScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })
             }
             composable(HomeTab.SEARCH.route) {
-                SearchScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") })
+                SearchScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })
             }
             composable(HomeTab.SETTINGS.route) {
                 SettingsScreen()
