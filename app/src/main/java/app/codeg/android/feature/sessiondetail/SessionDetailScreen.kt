@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.designsystem.BoundedImageDecoder
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -428,6 +429,12 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
     }
 }
 
+/**
+ * Longest side to decode a staged attachment thumbnail at. The chip is 60dp; 240px
+ * covers a 4x-density screen with room to spare.
+ */
+private const val THUMBNAIL_MAX_PX = 240
+
 /** A horizontal strip of pending image attachments, each removable. */
 @Composable
 private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) -> Unit) {
@@ -440,12 +447,12 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
             // Decoding a multi-megabyte JPEG (base64 → byte[] → Bitmap) is real work;
             // doing it inline in `remember` ran it on the composition thread and
             // stuttered the first frame that showed a freshly picked image.
+            // Bounded decode: this thumbnail is drawn at 60dp, and an attachment can be
+            // several megabytes — decoding it at full resolution allocated tens of MB of
+            // heap per staged image.
             val bitmap by produceState<ImageBitmap?>(initialValue = null, att.id) {
                 value = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val bytes = android.util.Base64.decode(att.base64, android.util.Base64.DEFAULT)
-                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                    }.getOrNull()
+                    BoundedImageDecoder.decode(att.base64, THUMBNAIL_MAX_PX)?.asImageBitmap()
                 }
             }
             Box(Modifier.size(60.dp)) {

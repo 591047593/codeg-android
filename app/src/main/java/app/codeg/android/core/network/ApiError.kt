@@ -25,6 +25,16 @@ sealed class ApiError(message: String) : Exception(message) {
 
     /** The response body could not be decoded into the expected shape. */
     data class Decoding(val detail: String) : ApiError(detail)
+
+    /**
+     * The response body is larger than this client will hold in memory.
+     *
+     * `bodyAsText()` decodes the whole body into a single String, so a very large
+     * transcript (30 MB of JSON produced a 61 MB allocation) threw `OutOfMemoryError` on
+     * the main process instead of failing the request. Refusing the body by its declared
+     * length turns a crash into an error the screen can show.
+     */
+    data class ResponseTooLarge(val bytes: Long) : ApiError("Response too large: ${bytes / (1024 * 1024)} MB")
 }
 
 /** Error envelope returned by the server on non-2xx (`{code, message, ...}`). */
