@@ -65,6 +65,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.designsystem.component.AgentIcon
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -305,7 +306,7 @@ private fun SkillEditorDialog(
         if (existing != null) {
             runCatching { loadContent(existing) }
                 .onSuccess { content = it }
-                .onFailure { error = it.message }
+                .onFailure { error = it.displayMessage() }
             loadingContent = false
         }
     }
@@ -333,7 +334,7 @@ private fun SkillEditorDialog(
                                 scope.launch {
                                     runCatching { onSave(skillId.trim(), skillScope, content, layout) }
                                         .onSuccess { onDismiss() }
-                                        .onFailure { error = it.message; saving = false }
+                                        .onFailure { error = it.displayMessage(); saving = false }
                                 }
                             },
                         ) {
