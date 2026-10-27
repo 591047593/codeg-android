@@ -36,8 +36,8 @@ android {
         applicationId = "app.codeg.android"
         minSdk = 31
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -74,8 +74,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            if (keystorePropsFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
+            // Prefer the project's own release key when keystore.properties exists.
+            // Otherwise fall back to the debug key: an *unsigned* release APK cannot
+            // be installed at all, so tag builds without signing secrets produced an
+            // artifact nobody could use. The debug key keeps the APK installable and
+            // is adequate for a sideloaded development build.
+            signingConfig = if (keystorePropsFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
     }

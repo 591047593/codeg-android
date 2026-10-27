@@ -46,6 +46,7 @@ jobs:
         run: ./gradlew :app:check --no-daemon
 
       - name: Restore release signing key
+        id: signing
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
@@ -53,9 +54,19 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
+          # Signing is optional. With all four secrets present the APK is signed with
+          # the project's release key; without them the build falls back to the debug
+          # key so the release still produces an installable APK. An unsigned APK
+          # cannot be installed at all, which made every tag build fail here.
+          if [[ -z "$KEYSTORE_BASE64" && -z "$STORE_PASSWORD" && -z "$KEY_ALIAS" && -z "$KEY_PASSWORD" ]]; then
+            echo "No release signing secrets configured; falling back to the debug keystore."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           for value in "$KEYSTORE_BASE64" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD"; do
             if [[ -z "$value" ]]; then
-              echo "Android release-signing secrets are not configured." >&2
+              echo "Release signing is partially configured — set all four secrets or none." >&2
               exit 1
             fi
           done
@@ -70,8 +81,9 @@ jobs:
             printf 'keyPassword=%s\n' "$KEY_PASSWORD"
           } > keystore.properties
           chmod 600 keystore.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Build the signed APK
+      - name: Build the APK
         run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Verify and package the APK
@@ -88,8 +100,10 @@ jobs:
           fi
           signature_report=$("$apksigner" verify --verbose --print-certs "$source_apk")
           printf '%s\n' "$signature_report"
+          # A debug-signed APK is a v1/v2-signed APK too, so the same assertion holds
+          # for both paths: the artifact must actually be installable.
           if ! grep -Fqx 'Verified using v2 scheme (APK Signature Scheme v2): true' <<< "$signature_report"; then
-            echo "Release APK is not signed with APK Signature Scheme v2." >&2
+            echo "APK is not signed with APK Signature Scheme v2." >&2
             exit 1
           fi
 
@@ -132,20 +146,44 @@ jobs:
       - name: Prepare draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
+          # State the signing status in the body so nobody has to unpack the APK to
+          # find out, and so a debug-signed development build is never mistaken for a
+          # production-signed one.
+          if [[ "$SIGNED" == "true" ]]; then
+            signing_note="Signed with the project release key."
+          else
+            signing_note="Signed with the Android debug key — a development build, not for store distribution."
+          fi
+          # `sed` strips the block's YAML indentation so the markdown has no leading
+          # spaces (a heredoc inside `run: |` carries the step's indent into the file).
+          sed 's/^          //' > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Codeg for Android $GITHUB_REF_NAME
+
+          Independent fork (二开) of [xintaofei/codeg-android](https://github.com/xintaofei/codeg-android).
+
+          $signing_note
+
+          Install: \`adb install codeg-android-$GITHUB_REF_NAME.apk\`, or copy the APK to the device and open it.
+          Requires Android 12 or later (\`minSdk 31\`). Verify the download against the
+          attached \`.sha256\` file.
+          EOF
+
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --draft \
-              --title "Codeg for Android $GITHUB_REF_NAME"
+              --title "Codeg for Android $GITHUB_REF_NAME" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --draft \
               --title "Codeg for Android $GITHUB_REF_NAME" \
-              --generate-notes
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
       - name: Upload GitHub Release assets

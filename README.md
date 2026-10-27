@@ -8,6 +8,35 @@ The Android application is an API client. Agent execution, conversations,
 project operations, and provider configuration are managed by a Codeg server
 over HTTP and WebSocket APIs.
 
+## About this repository
+
+This is an **independent fork (二开)** of
+[xintaofei/codeg-android](https://github.com/xintaofei/codeg-android), maintained
+here as its own project — it is not a GitHub fork and does not track, merge from,
+or contribute back to the upstream repository. Upstream is credited for the
+original work; all changes after the import live in this repository's history.
+
+Changes made here on top of the imported baseline (see `git log`):
+
+- fixed defects that lost or corrupted data: agent config editing no longer
+  rebuilds an unparseable `config.json`, TOML section/table handling no longer
+  mangles provider blocks, multi-line strings are no longer parsed as keys, and
+  Cline / chat-channel configs keep keys the editor does not model;
+- fixed the live session stream: event cursors can no longer rewind or replay a
+  delta twice, a failed turn is reconciled against the server transcript, and a
+  conversation created from the New Task screen survives process death;
+- fixed inline Markdown (nested emphasis, and underscores inside identifiers),
+  and the reply footer's model/timestamp separator;
+- made each screen follow the selected server instead of a snapshot taken at open
+  time, and surfaced errors that were previously written to state nothing read;
+- added folder removal (workspace / history) using the server endpoints the
+  client never called;
+- performance: tool-output classification, regex compilation and file previews
+  are no longer redone on every recomposition.
+
+Licensed under Apache-2.0, as upstream. See [NOTICE](NOTICE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Project status
 
 The main client flows are implemented and the project is under active
