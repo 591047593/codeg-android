@@ -21,17 +21,22 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -59,6 +65,8 @@ fun SearchScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val recent by viewModel.recent.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
+    // Confirmed before deleting: the transcript goes with it.
+    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -132,12 +140,43 @@ fun SearchScreen(
                         }
                     else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                         items(ui.results, key = { it.id }) { c ->
-                            SessionRow(c, onClick = { viewModel.rememberCurrentQuery(); onOpenConversation(c.id) }, modifier = Modifier.animateItem(), folderName = ui.folderNames[c.folderId])
+                            SessionRow(
+                                c,
+                                onClick = { viewModel.rememberCurrentQuery(); onOpenConversation(c.id) },
+                                modifier = Modifier.animateItem(),
+                                folderName = ui.folderNames[c.folderId],
+                                onDelete = { pendingDelete = c },
+                            )
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { conv ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = colors.bgElevated,
+            title = {
+                Text(stringResource(R.string.sessionactions_delete_session_confirm), color = colors.textPrimary)
+            },
+            text = {
+                Text(stringResource(R.string.sessionactions_delete_session_message), color = colors.textSecondary)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = conv
+                    pendingDelete = null
+                    viewModel.delete(target)
+                }) { Text(stringResource(R.string.common_delete), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
     }
 }
 

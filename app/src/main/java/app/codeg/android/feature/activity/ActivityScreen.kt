@@ -13,9 +13,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
@@ -59,6 +62,8 @@ fun ActivityScreen(
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val sections by viewModel.sections.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    // Confirmed before deleting: the transcript goes with it.
+    var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
     val colors = CodegTheme.colors
 
     // The feed is a 25s poll. Bound to RESUMED, not to the composition: leaving the tab
@@ -131,6 +136,7 @@ fun ActivityScreen(
                                         onClick = { onOpenConversation(row.conversation.id) },
                                         modifier = Modifier.animateItem(),
                                         folderName = row.folderName,
+                                        onDelete = { pendingDelete = row.conversation },
                                     )
                                 }
                             }
@@ -142,6 +148,31 @@ fun ActivityScreen(
                 }
             }
         }
+    }
+
+    pendingDelete?.let { conv ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = colors.bgElevated,
+            title = {
+                Text(stringResource(R.string.sessionactions_delete_session_confirm), color = colors.textPrimary)
+            },
+            text = {
+                Text(stringResource(R.string.sessionactions_delete_session_message), color = colors.textSecondary)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = conv
+                    pendingDelete = null
+                    viewModel.delete(target)
+                }) { Text(stringResource(R.string.common_delete), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
     }
 }
 
