@@ -79,7 +79,11 @@ fun SessionRow(
                 )
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = if (onTogglePin != null) {
+                    // Any menu action makes the row long-pressable — not just pin. Gating
+                    // this on `onTogglePin` meant a screen that passed only `onDelete`
+                    // (the activity feed, search results) bound no long-press at all, so
+                    // its menu could never open.
+                    onLongClick = if (onTogglePin != null || onDelete != null) {
                         { menuOpen = true }
                     } else {
                         null
