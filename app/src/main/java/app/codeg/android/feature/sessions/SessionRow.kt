@@ -150,22 +150,24 @@ fun SessionRow(
 
         if (onTogglePin != null || onDelete != null) {
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            if (conversation.isPinned) {
-                                stringResource(R.string.session_unpin)
-                            } else {
-                                stringResource(R.string.session_pin)
-                            },
-                        )
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
-                    onClick = {
-                        menuOpen = false
-                        onTogglePin()
-                    },
-                )
+                if (onTogglePin != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (conversation.isPinned) {
+                                    stringResource(R.string.session_unpin)
+                                } else {
+                                    stringResource(R.string.session_pin)
+                                },
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onTogglePin?.invoke()
+                        },
+                    )
+                }
                 // Deleting from the list saves a trip through the detail screen's
                 // overflow menu. The caller confirms before acting.
                 if (onDelete != null) {
