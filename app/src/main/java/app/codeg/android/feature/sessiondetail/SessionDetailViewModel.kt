@@ -1475,6 +1475,37 @@ class SessionDetailViewModel @Inject constructor(
 
     fun dismissNotice() = _ui.update { it.copy(notice = null) }
 
+    // region Retry
+
+    // `canRetryLastTurn` is a computed property on [SessionDetailUiState] — see there for
+    // why it is not a getter on the view model.
+
+    /**
+     * Re-send the most recent user turn.
+     *
+     * A failed turn leaves an error in the transcript and nothing else — the only way
+     * forward was to scroll back, copy the prompt out and paste it again. The blocks are
+     * right here in [SessionDetailUiState.turns], so the retry is a re-send of the same
+     * text (the server has no regenerate endpoint; a retry is a new turn, and the
+     * per-send `clientMessageId` keeps the server from double-applying a replayed one).
+     *
+     * Attachments are not re-sent: the image blocks live in the turn, but replaying them
+     * would upload the payloads again, and a retry after a transport failure is usually
+     * about the text.
+     */
+    fun retryLastTurn() {
+        if (_ui.value.isInFlight) return
+        val lastUser = _ui.value.turns.lastOrNull { it.role == TurnRole.USER } ?: return
+        val text = lastUser.blocks
+            .filterIsInstance<ContentBlock.Text>()
+            .joinToString("\n") { it.text }
+            .trim()
+        if (text.isEmpty()) return
+        send(text, withAttachments = false)
+    }
+
+    // endregion
+
     // region Composer draft persistence
 
     /**
@@ -2077,7 +2108,21 @@ data class SessionDetailUiState(
     val pendingQuestion: PendingQuestionUi? = null,
     val pendingPlanApproval: PendingPlanApprovalUi? = null,
     val attachments: List<Attachment> = emptyList(),
-)
+) {
+    /**
+     * True when the last turn ended in an error, so the composer can offer "Retry".
+     *
+     * Computed here rather than as a getter on the view model: this state is observed by
+     * composition, so the button appears as soon as the failure lands. A getter would
+     * read a value nothing subscribes to and only refresh on some unrelated change.
+     *
+     * A failed turn surfaces as a *live* error node — `NodeContent.Error` is built from
+     * `LiveTurnState.errorMessage`, never from a block on a persisted turn — so the check
+     * is on [live], and only once the turn has stopped streaming.
+     */
+    val canRetryLastTurn: Boolean
+        get() = !isInFlight && live?.errorMessage != null && turns.any { it.role == TurnRole.USER }
+}
 
 /** What to do with a plan approval's revision notes — see [planFollowUpAction]. */
 /**

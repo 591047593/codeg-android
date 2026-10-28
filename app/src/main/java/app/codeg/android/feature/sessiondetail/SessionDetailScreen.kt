@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Forum
@@ -42,6 +44,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -333,6 +336,11 @@ fun SessionDetailScreen(
                 ) { status ->
                     if (status != null) SendStatusLine(status) else Box(Modifier.fillMaxSize())
                 }
+                // A failed turn used to offer nothing: the error sat in the transcript and
+                // the only way to try again was to scroll back, copy the prompt and paste
+                // it. The text is still in `turns`, so retry is one tap away from the
+                // composer where the user is already looking.
+                if (ui.canRetryLastTurn) RetryBar(onRetry = viewModel::retryLastTurn)
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
                 ComposeBar(
                     text = draft,
@@ -466,6 +474,34 @@ private fun JumpToLatestButton(onClick: () -> Unit) {
             tint = colors.accent,
             modifier = Modifier.size(20.dp),
         )
+    }
+}
+
+@Composable
+private fun RetryBar(onRetry: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.danger.copy(alpha = 0.10f))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Rounded.Refresh, null, tint = colors.danger, modifier = Modifier.size(14.dp))
+        Text(
+            stringResource(R.string.session_turn_failed),
+            fontSize = 12.sp,
+            color = colors.danger,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(
+            onClick = onRetry,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.heightIn(min = 32.dp),
+        ) {
+            Text(stringResource(R.string.common_retry), fontSize = 12.sp, color = colors.accent)
+        }
     }
 }
 
