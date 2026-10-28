@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -106,48 +107,75 @@ fun SessionRow(
                 )
             }
 
-            Text(
-                text = conversation.trimmedTitle ?: stringResource(R.string.session_untitled),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-
-            if (folderName != null) {
+            // Two-line layout: the title, then a quiet metadata line. A single-line row
+            // gave every conversation the same visual weight and carried almost no
+            // information — you could not tell when it last ran, how big it was, or which
+            // model it used without opening it. The metadata line is what makes the list
+            // scannable, and it also separates a row from its section header at a glance.
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = conversation.trimmedTitle ?: stringResource(R.string.session_untitled),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    modifier = Modifier.widthIn(max = 108.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Icon(
-                        Icons.Rounded.Folder,
-                        contentDescription = null,
-                        tint = colors.textTertiary,
-                        modifier = Modifier.size(11.dp),
-                    )
+                    if (folderName != null) {
+                        Icon(
+                            Icons.Rounded.Folder,
+                            contentDescription = null,
+                            tint = colors.textTertiary,
+                            modifier = Modifier.size(10.dp),
+                        )
+                        Text(
+                            text = folderName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 96.dp),
+                        )
+                        MetaDot()
+                    }
+                    conversation.model?.takeIf { it.isNotBlank() }?.let { model ->
+                        Text(
+                            text = model,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 110.dp),
+                        )
+                        MetaDot()
+                    }
                     Text(
-                        text = folderName,
+                        text = when {
+                            conversation.status.isLive -> stringResource(R.string.session_status_live)
+                            else -> RelativeTime.compact(
+                                conversation.updatedAt,
+                                now = now,
+                                justNow = stringResource(R.string.time_just_now),
+                            )
+                        },
                         style = MaterialTheme.typography.labelSmall,
-                        color = colors.textTertiary,
+                        color = if (conversation.status.isLive) colors.accent else colors.textTertiary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
 
             if (conversation.status.isLive) {
                 LivePulse()
-            } else {
-                Text(
-                    text = RelativeTime.compact(
-                        conversation.updatedAt,
-                        now = now,
-                        justNow = stringResource(R.string.time_just_now),
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textTertiary,
+            } else if (conversation.isPinned) {
+                Icon(
+                    Icons.Rounded.PushPin,
+                    contentDescription = null,
+                    tint = colors.textTertiary,
+                    modifier = Modifier.size(13.dp),
                 )
             }
         }
@@ -189,4 +217,16 @@ fun SessionRow(
             }
         }
     }
+}
+
+/** The 2dp separator between metadata items on a session row's second line. */
+@Composable
+private fun MetaDot() {
+    val colors = CodegTheme.colors
+    Box(
+        Modifier
+            .size(2.dp)
+            .clip(CircleShape)
+            .background(colors.textTertiary.copy(alpha = 0.5f)),
+    )
 }

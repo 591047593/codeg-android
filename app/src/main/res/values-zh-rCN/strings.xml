@@ -840,6 +840,7 @@
     <string name="mcp_spec_invalid_json">规格不是有效的 JSON</string>
     <!-- ===== Transient send/turn status line + send notices ===== -->
     <string name="session_status_connecting">正在连接…</string>
+    <string name="session_status_live">进行中</string>
     <string name="session_status_thinking">思考中…</string>
     <string name="session_status_reconnecting">正在重新连接…</string>
     <string name="session_status_reattaching">正在重新附着…</string>

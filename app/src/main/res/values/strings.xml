@@ -853,6 +853,7 @@
     <string name="mcp_spec_invalid_json">Spec is not valid JSON</string>
     <!-- ===== Transient send/turn status line + send notices ===== -->
     <string name="session_status_connecting">Connecting…</string>
+    <string name="session_status_live">Running now</string>
     <string name="session_status_thinking">Thinking…</string>
     <string name="session_status_reconnecting">Reconnecting…</string>
     <string name="session_status_reattaching">Reattaching…</string>
