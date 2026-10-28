@@ -85,5 +85,16 @@ fun buildSessionSections(
         )
     }
 
-    return out
+    // Groups that actually hold something come first; empty folders sink to the bottom.
+    //
+    // The folder order itself is the server's `sortOrder` then name — a stable, user-
+    // chosen ordering that says nothing about activity. Rendering it verbatim meant a
+    // device with a dozen idle folders scattered them *between* the ones in use, so the
+    // screen opened on a wall of empty headings with the one active session buried
+    // somewhere in the middle. Sorting by emptiness keeps the user's ordering within
+    // each band while making the first screen show live content.
+    //
+    // Pinned stays at the very top (it is a cross-folder view, not a folder) and `other`
+    // is a catch-all that is only present when non-empty, so neither is reordered.
+    return out.sortedBy { it.count == 0 }
 }
