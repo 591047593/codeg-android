@@ -38,7 +38,9 @@ class AnsiTextTest {
     @Test
     fun `strip removes multi-parameter and empty codes`() {
         assertEquals("bold red", AnsiText.strip("${ESC}[1;31mbold red${ESC}[m"))
-        assertEquals("x", AnsiText.strip("${ESC}[m x".trim()))
+        // A bare `ESC[m` is a reset; the text around it is untouched, including a
+        // leading space.
+        assertEquals(" x", AnsiText.strip("${ESC}[m x"))
     }
 
     @Test
@@ -54,7 +56,8 @@ class AnsiTextTest {
         val raw = "${ESC}[31mred${ESC}[0m plain ${ESC}[1;34mboldblue${ESC}[0m"
         val spans = AnsiText.parse(raw)
 
-        assertEquals(4, spans.size)
+        // Three runs: a trailing reset with no text after it produces no span of its own.
+        assertEquals(3, spans.size)
         assertEquals("red", spans[0].text)
         assertEquals(AnsiColor.RED, spans[0].fg)
 
@@ -65,7 +68,8 @@ class AnsiTextTest {
         assertEquals(AnsiColor.BLUE, spans[2].fg)
         assertTrue(spans[2].bold)
 
-        assertEquals("", spans[3].text.ifEmpty { "" })
+        // Concatenating the runs reproduces the original visible text exactly.
+        assertEquals("red plain boldblue", spans.joinToString("") { it.text })
     }
 
     @Test
