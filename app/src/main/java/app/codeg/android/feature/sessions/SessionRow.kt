@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +70,11 @@ fun SessionRow(
     // Relative time needs a clock, not `Instant.now()` inside composition (which is
     // non-idempotent and froze the label until something else forced a recomposition).
     val now by rememberNowInstant()
+    // A fixed 26dp avatar next to text that grows with the system font scale ends up
+    // looking like a stray dot at 200% text. Scaling it with the label keeps the row's
+    // proportions intact, which is the whole point of letting the text reflow. Capped so
+    // an extreme accessibility setting cannot push the avatar past the two text lines.
+    val avatarSize = 26.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
 
     Box {
         Row(
@@ -95,12 +101,12 @@ fun SessionRow(
             horizontalArrangement = Arrangement.spacedBy(11.dp),
         ) {
             Box {
-                AgentAvatar(conversation.agentType, size = 26.dp)
+                AgentAvatar(conversation.agentType, size = avatarSize)
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
                         .offset(x = 2.dp, y = 2.dp)
-                        .size(8.dp)
+                        .size(avatarSize * 0.31f)
                         .clip(CircleShape)
                         .background(statusColor(conversation.status))
                         .border(1.5.dp, colors.bg, CircleShape),
@@ -124,33 +130,44 @@ fun SessionRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (folderName != null) {
-                        Icon(
-                            Icons.Rounded.Folder,
-                            contentDescription = null,
-                            tint = colors.textTertiary,
-                            modifier = Modifier.size(10.dp),
-                        )
-                        Text(
-                            text = folderName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 96.dp),
-                        )
-                        MetaDot()
-                    }
-                    conversation.model?.takeIf { it.isNotBlank() }?.let { model ->
-                        Text(
-                            text = model,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.widthIn(max = 110.dp),
-                        )
-                        MetaDot()
+                    // The context (folder, model) yields to the time. It lives in a
+                    // weighted group so at a large system font scale — or with a long
+                    // model name — it shrinks and ellipsizes while the timestamp keeps
+                    // its intrinsic width. The other way round, the time could be
+                    // squeezed out entirely, and it is the field that orders the list.
+                    Row(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (folderName != null) {
+                            Icon(
+                                Icons.Rounded.Folder,
+                                contentDescription = null,
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Text(
+                                text = folderName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 96.dp),
+                            )
+                            MetaDot()
+                        }
+                        conversation.model?.takeIf { it.isNotBlank() }?.let { model ->
+                            Text(
+                                text = model,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 110.dp),
+                            )
+                            MetaDot()
+                        }
                     }
                     Text(
                         text = when {
