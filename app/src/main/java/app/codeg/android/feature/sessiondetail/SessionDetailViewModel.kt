@@ -317,8 +317,7 @@ class SessionDetailViewModel @Inject constructor(
     private fun rebuildTimeline(force: Boolean = false) {
         val snapshot = _ui.value
         val window = snapshot.renderedTurnWindow
-        val turns = if (window >= snapshot.turns.size) snapshot.turns
-        else snapshot.turns.subList(snapshot.turns.size - window, snapshot.turns.size).toList()
+        val turns = snapshot.turns.tailWindow(window)
 
         val signature = TimelineSignature(
             turns = turns,
@@ -1946,3 +1945,25 @@ private data class TimelineSignature(
     val hideTrailingReply: Boolean,
     val window: Int,
 )
+
+/**
+ * The last [window] turns, widened backward so the cut never lands inside a reply.
+ *
+ * `buildPersisted` merges each run of consecutive assistant turns into a single reply
+ * that owns one footer. Cutting at an arbitrary turn index can land inside such a run,
+ * which splits one reply into two — as older turns load, a second token/duration footer
+ * would appear in the middle of a message. The cut is therefore moved back to the
+ * nearest earlier user (or system) turn, which is always a block boundary.
+ *
+ * A window that already covers everything returns the list unchanged.
+ */
+internal fun List<MessageTurn>.tailWindow(window: Int): List<MessageTurn> {
+    if (window >= size) return this
+    val start = (size - window).coerceAtLeast(0)
+    if (start == 0) return this
+    // Walk back to the previous role boundary. Bounded by the list itself: if no
+    // boundary exists before `start` we are at the beginning anyway.
+    var cut = start
+    while (cut > 0 && this[cut].role == TurnRole.ASSISTANT) cut--
+    return if (cut == 0) this else subList(cut, size).toList()
+}

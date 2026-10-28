@@ -6,6 +6,7 @@ import app.codeg.android.core.model.MessageTurn
 import app.codeg.android.core.model.TurnRole
 import app.codeg.android.core.model.TurnUsage
 import app.codeg.android.feature.sessiondetail.LiveSegment
+import app.codeg.android.feature.sessiondetail.tailWindow
 import app.codeg.android.feature.sessiondetail.LiveTurnState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -152,5 +153,94 @@ class TranscriptTimelineTest {
         )
         val nodes = TranscriptTimeline.build(turns, emptyList(), null, agent)
         assertEquals(0, nodes.count { it.content is NodeContent.System })
+    }
+
+    /**
+     * The windowed load path builds a suffix of the turn list and relies on that suffix
+     * producing exactly the tail of the full flatten.
+     *
+     * This is the invariant the whole "open on the newest 120 turns" change rests on: if
+     * a windowed build produced different nodes — because merge boundaries or the
+     * `lastUserId` grouping shifted at the cut — the transcript would silently change
+     * shape as older turns loaded, and a partially-scrolled conversation would not match
+     * the same conversation opened at the bottom. Splitting only at a user turn keeps
+     * every assistant run intact on both sides of the cut.
+     */
+    @Test
+    fun `a windowed build equals the tail of the full build`() {
+        val turns = (1..12).flatMap { i ->
+            listOf(
+                user("u$i", "prompt $i"),
+                assistant("a${i}a", listOf(ContentBlock.Text("reply $i part one"))),
+                assistant("a${i}b", listOf(ContentBlock.Text("reply $i part two"))),
+            )
+        }
+        val full = TranscriptTimeline.buildPersisted(turns, emptyList(), agent)
+
+        for (requested in listOf(3, 6, 9, 12)) {
+            val windowedTurns = turns.tailWindow(requested)
+            val windowed = TranscriptTimeline.buildPersisted(windowedTurns, emptyList(), agent)
+            assertEquals(
+                "requested=$requested should render the same node ids as the matching tail",
+                full.takeLast(windowed.size).map { it.id },
+                windowed.map { it.id },
+            )
+        }
+    }
+
+    /**
+     * Turns at the window boundary must not merge across the cut.
+     *
+     * `buildPersisted` merges each run of consecutive assistant turns into one reply
+     * with one footer. Cutting at an arbitrary turn index can land inside such a run,
+     * which splits one reply into two — as older turns load, a second token/duration
+     * footer would appear in the middle of a message. A cut placed at the run's start
+     * keeps it whole.
+     */
+    @Test
+    fun `cutting at the start of a reply keeps one footer`() {
+        val turns = listOf(
+            user("u1", "hi"),
+            assistant("a1", listOf(ContentBlock.Text("first half"))),
+            assistant("a2", listOf(ContentBlock.Text("second half"))),
+        )
+        // The boundary a windowed load would choose: both assistant turns, nothing split.
+        val windowed = TranscriptTimeline.buildPersisted(
+            turns.drop(1),
+            emptyList(),
+            agent,
+        )
+        assertEquals(
+            "one merged reply means one footer",
+            1,
+            windowed.count { it.content is NodeContent.Footer },
+        )
+    }
+
+    /**
+     * The window is widened backward to a role boundary so a reply is never split.
+     *
+     * This exercises the same rule `SessionDetailViewModel` applies when it slices the
+     * turn list: a suffix that begins on an assistant turn is moved back until it begins
+     * on a user turn.
+     */
+    @Test
+    fun `a suffix starting mid-reply is widened back to the reply boundary`() {
+        val turns = listOf(
+            user("u1", "one"),
+            assistant("a1", listOf(ContentBlock.Text("r1"))),
+            assistant("a2", listOf(ContentBlock.Text("r2"))),
+            user("u2", "two"),
+            assistant("a3", listOf(ContentBlock.Text("r3"))),
+        )
+        // Ask for the last three: that lands on a2, inside u1's reply.
+        val cut = 3
+        var widened = turns.size - cut
+        while (widened > 0 && turns[widened].role == TurnRole.ASSISTANT) widened--
+
+        assertEquals("widened cut starts on a user turn", TurnRole.USER, turns[widened].role)
+        val windowed = TranscriptTimeline.buildPersisted(turns.subList(widened, turns.size), emptyList(), agent)
+        val full = TranscriptTimeline.buildPersisted(turns, emptyList(), agent)
+        assertEquals(full.map { it.id }, windowed.map { it.id })
     }
 }
