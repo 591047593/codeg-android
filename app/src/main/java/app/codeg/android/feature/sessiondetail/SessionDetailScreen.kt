@@ -3,6 +3,7 @@ package app.codeg.android.feature.sessiondetail
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -313,12 +314,22 @@ fun SessionDetailScreen(
                 ) {
                     NoticeBanner(lastNotice, onDismiss = viewModel::dismissNotice)
                 }
-                AnimatedVisibility(
-                    visible = ui.sendStatus != null && ui.isInFlight,
-                    enter = fadeIn(tween(160)),
-                    exit = fadeOut(tween(160)),
-                ) {
-                    SendStatusLine(ui.sendStatus ?: "")
+                // Fixed-height slot, contents cross-faded.
+                //
+                // As an `AnimatedVisibility` this removed its own height when hidden, so
+                // every show/hide moved the composer up or down by a line. Around a
+                // reattach the status flips several times in quick succession
+                // (reattaching → running → gone), and each flip shoved the whole input
+                // area — read on screen as the layout flickering. A permanently reserved
+                // row means the only thing that changes is the text, which is what the
+                // fade is for.
+                val statusVisible = ui.sendStatus != null && ui.isInFlight
+                Crossfade(
+                    targetState = if (statusVisible) ui.sendStatus else null,
+                    animationSpec = tween(140),
+                    modifier = Modifier.fillMaxWidth().height(STATUS_LINE_HEIGHT),
+                ) { status ->
+                    if (status != null) SendStatusLine(status) else Box(Modifier.fillMaxSize())
                 }
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
                 ComposeBar(
@@ -447,15 +458,23 @@ private fun JumpToLatestButton(onClick: () -> Unit) {
 @Composable
 private fun SendStatusLine(status: String) {
     val colors = CodegTheme.colors
-    Text(
-        text = status,
-        fontSize = 12.sp,
-        color = colors.textTertiary,
-        modifier = Modifier
-            .fillMaxWidth()
+    // Fills the reserved [STATUS_LINE_HEIGHT] slot its caller provides and centres its
+    // text in it, so the composer below never shifts when the line appears or disappears.
+    Box(
+        Modifier
+            .fillMaxSize()
             .background(colors.bgElevated.copy(alpha = 0.92f))
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-    )
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = status,
+            fontSize = 12.sp,
+            color = colors.textTertiary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -505,6 +524,16 @@ private const val PREFETCH_TURNS_AT_TOP = 20
  * commit point; `onDispose` writes the final value so closing mid-pause still saves.
  */
 private const val DRAFT_SAVE_DEBOUNCE_MS = 600L
+
+/**
+ * Reserved height of the status line above the composer.
+ *
+ * The line is only sometimes present ("Thinking…", "Running <tool>…", "Reattaching…"),
+ * but the slot it occupies is fixed so the composer never moves. Sizing it to the line's
+ * natural height (12sp text plus 4dp of vertical padding on each side, rounded up) keeps
+ * the text vertically centred without measuring it at runtime.
+ */
+private val STATUS_LINE_HEIGHT = 24.dp
 
 /** A horizontal strip of pending image attachments, each removable. */
 @Composable

@@ -835,7 +835,21 @@ class SessionDetailViewModel @Inject constructor(
             val builder = LiveTurnBuilder()
             liveBuilder = builder
             turnBaseline = windowTotal
-            _ui.update { it.copy(isInFlight = true, sendStatus = appContext.getString(R.string.session_status_reattaching), live = builder.snapshot()) }
+            // Deliberately NOT publishing `live = builder.snapshot()` here.
+            //
+            // An empty builder is `isStreaming = true`, which the timeline renders as a
+            // "Thinking" node. Publishing it before the snapshot arrives therefore painted
+            // a placeholder that was then replaced by the seeded reply, and removed
+            // outright when the connection turned out to be idle — three states in quick
+            // succession, which is the flicker. Only the status line is honest at this
+            // point ("reattaching"); the transcript keeps showing what it already has
+            // until there is real content to put in it.
+            _ui.update {
+                it.copy(
+                    isInFlight = true,
+                    sendStatus = appContext.getString(R.string.session_status_reattaching),
+                )
+            }
             try {
                 openStream(found.connectionId, seedOnAttach = true)
             } catch (e: StreamAttachFailed) {
@@ -1107,7 +1121,18 @@ class SessionDetailViewModel @Inject constructor(
         // actually produced content. A pending-only snapshot (a permission/question with no
         // assistant message yet) seeds nothing, so hiding the transcript there could drop a
         // persisted reply with no live copy to show in its place.
-        _ui.update { it.copy(live = builder.snapshot(), liveFromReattach = !builder.isEmpty) }
+        //
+        // The status line moves off "reattaching" in the same update. Without that it stuck
+        // on that wording until the next tool call happened to refresh it, so a reattached
+        // turn that was merely thinking looked stalled — and the wording the user saw
+        // depended on whether a tool event arrived, not on what the agent was doing.
+        _ui.update {
+            it.copy(
+                live = builder.snapshot(),
+                liveFromReattach = !builder.isEmpty,
+                sendStatus = runningStatus(),
+            )
+        }
         return true
     }
 
