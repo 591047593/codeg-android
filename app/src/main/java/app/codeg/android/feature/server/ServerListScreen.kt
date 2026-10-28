@@ -19,8 +19,6 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -44,6 +42,8 @@ import app.codeg.android.R
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.GlassRow
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.CodegMono
 
@@ -166,15 +166,16 @@ private fun ServerRow(
             IconButton(onClick = { menuOpen = true }) {
                 Icon(Icons.Rounded.MoreVert, contentDescription = null, tint = colors.textTertiary)
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.server_edit)) },
+            CodegMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                CodegMenuItem(
+                    text = stringResource(R.string.server_edit),
                     leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
                     onClick = { menuOpen = false; onEdit() },
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.server_delete), color = colors.danger) },
-                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null, tint = colors.danger) },
+                CodegMenuItem(
+                    text = stringResource(R.string.server_delete),
+                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
+                    danger = true,
                     onClick = { menuOpen = false; onDelete() },
                 )
             }

@@ -24,8 +24,6 @@ import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.HistoryToggleOff
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +62,8 @@ import app.codeg.android.core.designsystem.component.GlassCard
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.LoadingView
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.colorFromHex
 import app.codeg.android.core.model.FolderDetail
@@ -105,14 +105,14 @@ fun ProjectListScreen(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.projects_add))
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.projects_open_folder)) },
+                CodegMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    CodegMenuItem(
+                        text = stringResource(R.string.projects_open_folder),
                         leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null) },
                         onClick = { menuOpen = false; showBrowser = true },
                     )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.projects_clone_repo)) },
+                    CodegMenuItem(
+                        text = stringResource(R.string.projects_clone_repo),
                         leadingIcon = { Icon(Icons.Rounded.CloudDownload, null) },
                         onClick = { menuOpen = false; showClone = true },
                     )
@@ -275,14 +275,14 @@ private fun FolderRow(
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
     }
 
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+        CodegMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             // Only the history removal takes the row out of this list: the list is built
             // from `list_all_folder_details`, and `remove_folder_from_workspace` merely
             // closes an open folder — the row reappears on the next refresh. Verified
             // against the live server: history removal dropped the count 32 -> 31,
             // workspace removal left it at 32.
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.projects_remove_from_list)) },
+            CodegMenuItem(
+                text = stringResource(R.string.projects_remove_from_list),
                 leadingIcon = { Icon(Icons.Rounded.FolderOff, null, tint = colors.textSecondary) },
                 onClick = { menuOpen = false; onRemove() },
             )

@@ -16,8 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -41,6 +39,8 @@ import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.LoadingView
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.QuickMessage
 
@@ -134,8 +134,8 @@ private fun MessageRow(msg: QuickMessage, onEdit: () -> Unit, onDelete: () -> Un
             Text(msg.title, fontSize = 15.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(msg.content, fontSize = 13.sp, color = colors.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_delete)) }, onClick = { menu = false; onDelete() })
+        CodegMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            CodegMenuItem(text = stringResource(R.string.common_delete), danger = true, onClick = { menu = false; onDelete() })
         }
     }
 }

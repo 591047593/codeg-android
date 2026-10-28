@@ -16,8 +16,6 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
@@ -46,6 +44,8 @@ import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.PrimaryButton
 import app.codeg.android.core.designsystem.component.SecretField
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AcpAgentInfo
 import app.codeg.android.core.model.KIMI_MODEL_PLACEHOLDER
@@ -282,9 +282,9 @@ fun AgentConfigKimiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
                         TextButton(onClick = { expanded = true }) {
                             Text(stringResource(R.string.agents_kimi_models_count, models.size), color = colors.textSecondary)
                         }
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        CodegMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             models.forEach { m ->
-                                DropdownMenuItem(text = { Text(m) }, onClick = { modelId = m; expanded = false })
+                                CodegMenuItem(text = m, onClick = { modelId = m; expanded = false })
                             }
                         }
                     }

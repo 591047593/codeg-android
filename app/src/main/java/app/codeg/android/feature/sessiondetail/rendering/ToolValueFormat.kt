@@ -247,7 +247,17 @@ object ToolOutputFormat {
      *  drop a wrapping code fence. */
     fun cleanCommandOutput(source: String): String {
         val unwrapped = commandOutput(source) ?: source
-        return stripMarkdownFence(parseCliEnvelope(unwrapped))
+        // Strip ANSI before the envelope / fence passes: a coloured `git diff` would
+        // otherwise fail to match the fence patterns (the escape bytes sit inside them)
+        // and reach the renderer as raw `\u001B[…m` noise.
+        val plain = stripMarkdownFence(parseCliEnvelope(AnsiText.strip(unwrapped)))
+        // Colour is worth keeping, so when the source had any, drop only the *prefix*
+        // the cleaner removed and re-attach it to the untouched original. The cleaner
+        // only ever removes whole leading lines and a wrapping fence, so the surviving
+        // body is a contiguous tail of the original; locating it by line count keeps
+        // every escape byte inside that body intact.
+        if (!AnsiText.hasAnsi(unwrapped)) return plain
+        return AnsiText.tailAfterDroppedPrefix(unwrapped, plain) ?: plain
     }
 
     /** Classify finalized output so the renderer can pick a JSON block, a diff view,

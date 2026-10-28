@@ -252,8 +252,11 @@ internal fun deriveToolOutputRender(vm: ToolCallVM): ToolOutputRender {
         if (file != null && file.content.isNotBlank()) return ToolOutputRender.ReadFile(file)
     }
     if (vm.isCommand) {
+        // `cleanCommandOutput` drops the CLI envelope and any wrapping fence while
+        // keeping the original escape bytes, so the renderer can draw colour and the
+        // copy button can strip it again.
         val clean = ToolOutputFormat.cleanCommandOutput(out)
-        return if (clean.isNotEmpty()) ToolOutputRender.Command(clean) else ToolOutputRender.Empty
+        return if (clean.isEmpty()) ToolOutputRender.Empty else ToolOutputRender.Command(clean)
     }
     return when (ToolOutputFormat.classify(out)) {
         ToolOutputFormat.Kind.JSON ->
@@ -276,20 +279,19 @@ private fun ToolOutputSection(vm: ToolCallVM) {
     val render = remember(vm.trimmedOutput, vm.bucket, vm.isError) { deriveToolOutputRender(vm) }
     when (render) {
         is ToolOutputRender.ReadFile -> FileBodyView(render.file)
-        is ToolOutputRender.Command -> CodeBlock(code = render.text, language = "console")
+        is ToolOutputRender.Command -> AnsiAwareCode(text = render.text, language = "console")
         is ToolOutputRender.Json -> CodeBlock(code = render.text, language = "json")
         is ToolOutputRender.Diff ->
             render.parsed?.let { DiffView(it) } ?: CodeBlock(code = render.raw, language = "diff")
         is ToolOutputRender.Markdown -> MarkdownContent(render.text)
-        is ToolOutputRender.Log -> CodeBlock(code = render.text, language = "output")
+        is ToolOutputRender.Log -> AnsiAwareCode(text = render.text, language = "output")
         is ToolOutputRender.Error -> ToolErrorOutput(render.text)
         ToolOutputRender.Empty -> Unit
     }
 }
 
 @Composable
-private fun ToolStateIcon(vm: ToolCallVM) {
-    val colors = CodegTheme.colors
+private fun ToolStateIcon(vm: ToolCallVM) {    val colors = CodegTheme.colors
     when (vm.state) {
         ToolCallState.RUNNING, ToolCallState.INPUT_STREAMING ->
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.accent)
@@ -399,4 +401,33 @@ private fun groupSummary(context: Context, items: List<ToolCallVM>): String {
 private fun JsonObject.str(key: String): String? {
     val prim = this[key] as? JsonPrimitive ?: return null
     return if (prim.isString) prim.content else null
+}
+
+/**
+ * A code block that renders ANSI colour codes when the text carries them.
+ *
+ * Terminal output arrives coloured more often than not (`ls --color`, `git diff
+ * --color`, test runners, docker), and before this the escape bytes were shown
+ * literally — `\u001B[31mERROR\u001B[0m` instead of a red ERROR. The parse runs only
+ * when an ESC byte is actually present, so ordinary output keeps the plain-text path.
+ *
+ * The unstyled [text] is still what the copy button receives: copying a coloured log
+ * must produce clean characters, never escape sequences.
+ */
+@Composable
+private fun AnsiAwareCode(text: String, language: String?) {
+    val colors = CodegTheme.colors
+    if (!AnsiText.hasAnsi(text)) {
+        CodeBlock(code = text, language = language)
+        return
+    }
+    val stripped = remember(text) { AnsiText.strip(text) }
+    val annotated = remember(text, colors.isDark) {
+        AnsiText.toAnnotatedString(
+            spans = AnsiText.parse(text),
+            color = { slot -> colors.ansi.getOrNull(slot.paletteIndex) ?: colors.textPrimary },
+            defaultColor = colors.textPrimary,
+        )
+    }
+    CodeBlock(code = stripped, language = language, annotated = annotated)
 }

@@ -24,8 +24,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -61,6 +59,8 @@ import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.LoadingView
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.LocalMcpServer
@@ -154,8 +154,8 @@ private fun McpRow(s: LocalMcpServer, onEdit: () -> Unit, onDelete: () -> Unit) 
             Text(s.spec.toString(), fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (s.apps.isNotEmpty()) Text(s.apps.joinToString(", "), fontSize = 11.sp, color = colors.accent)
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.common_delete)) }, onClick = { menu = false; onDelete() })
+        CodegMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            CodegMenuItem(text = stringResource(R.string.common_delete), danger = true, onClick = { menu = false; onDelete() })
         }
     }
 }

@@ -19,8 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PushPin
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +39,8 @@ import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.statusColor
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ConversationSummary
 import androidx.compose.ui.res.stringResource
@@ -198,17 +198,13 @@ fun SessionRow(
         }
 
         if (onTogglePin != null || onDelete != null) {
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            CodegMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 if (onTogglePin != null) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                if (conversation.isPinned) {
-                                    stringResource(R.string.session_unpin)
-                                } else {
-                                    stringResource(R.string.session_pin)
-                                },
-                            )
+                    CodegMenuItem(
+                        text = if (conversation.isPinned) {
+                            stringResource(R.string.session_unpin)
+                        } else {
+                            stringResource(R.string.session_pin)
                         },
                         leadingIcon = { Icon(Icons.Rounded.PushPin, contentDescription = null) },
                         onClick = {
@@ -220,11 +216,10 @@ fun SessionRow(
                 // Deleting from the list saves a trip through the detail screen's
                 // overflow menu. The caller confirms before acting.
                 if (onDelete != null) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.common_delete), color = colors.danger) },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.DeleteOutline, contentDescription = null, tint = colors.danger)
-                        },
+                    CodegMenuItem(
+                        text = stringResource(R.string.common_delete),
+                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, contentDescription = null) },
+                        danger = true,
                         onClick = {
                             menuOpen = false
                             onDelete()

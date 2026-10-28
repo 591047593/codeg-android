@@ -57,6 +57,42 @@ data class CodegColors(
     val accent: Color,
     val onAccent: Color,
     val accentDim: Color,
+) {
+    /**
+     * Palette for ANSI SGR colour codes in terminal output.
+     *
+     * These are deliberately *not* literal VGA values. A pure `#FF0000` on the light
+     * background fails contrast, and a pure `#FFFFFF` on dark is invisible against the
+     * code surface, so each slot is a tonally-shifted pair chosen to stay legible in its
+     * own mode — the same approach the desktop client takes with its `--ansi-*` tokens.
+     * Indexed by [app.codeg.android.feature.sessiondetail.rendering.AnsiColor].
+     */
+    val ansi: List<Color>
+        get() = if (isDark) ANSI_DARK else ANSI_LIGHT
+}
+
+/** Dark-mode ANSI palette: light, slightly desaturated so text stays readable. */
+private val ANSI_DARK = listOf(
+    Color(0xFF6B7280), // black  — a dark terminal's "black" is really grey
+    Color(0xFFF87171), // red
+    Color(0xFF4ADE80), // green
+    Color(0xFFFBBF24), // yellow
+    Color(0xFF60A5FA), // blue
+    Color(0xFFC084FC), // magenta
+    Color(0xFF22D3EE), // cyan
+    Color(0xFFE5E7EB), // white
+)
+
+/** Light-mode ANSI palette: the same hues darkened to survive a pale background. */
+private val ANSI_LIGHT = listOf(
+    Color(0xFF374151), // black
+    Color(0xFFB91C1C), // red
+    Color(0xFF15803D), // green
+    Color(0xFFA16207), // yellow
+    Color(0xFF1D4ED8), // blue
+    Color(0xFF7E22CE), // magenta
+    Color(0xFF0E7490), // cyan
+    Color(0xFF4B5563), // white — a light terminal's "white" is really grey
 )
 
 /** Build the colour set for the given mode + accent (iOS `Theme.swift` values). */

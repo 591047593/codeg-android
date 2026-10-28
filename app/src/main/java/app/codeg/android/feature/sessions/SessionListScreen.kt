@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -64,6 +63,8 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
+import app.codeg.android.core.designsystem.component.CodegMenu
+import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.colorFromHex
 import app.codeg.android.core.model.ConversationSummary
@@ -430,7 +431,7 @@ private fun ServerSwitcher(
                 modifier = Modifier.size(20.dp),
             )
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        CodegMenu(expanded = open, onDismissRequest = { open = false }) {
             servers.forEach { server ->
                 DropdownMenuItem(
                     text = { Text(server.name) },
@@ -451,8 +452,8 @@ private fun ServerSwitcher(
                 )
             }
             HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.home_manage_servers)) },
+            CodegMenuItem(
+                text = stringResource(R.string.home_manage_servers),
                 leadingIcon = { Icon(Icons.Rounded.Dns, contentDescription = null) },
                 onClick = {
                     open = false

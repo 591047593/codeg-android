@@ -54,10 +54,19 @@ fun CodeBlock(
     modifier: Modifier = Modifier,
     language: String? = null,
     collapseAfter: Int = 20,
+    /**
+     * Styled body for text that carries its own colours (ANSI terminal output).
+     *
+     * When non-null it overrides [code] for display, while [code] still supplies the
+     * plain text for [CopyButton] — copying must yield clean text, never escape bytes.
+     * [AnnotatedString] line spans are not re-split for the collapse toggle, so a caller
+     * passing this is expected to have already capped its length upstream.
+     */
+    annotated: androidx.compose.ui.text.AnnotatedString? = null,
 ) {
     val colors = CodegTheme.colors
     val lines = remember(code) { code.split("\n") }
-    val collapsible = lines.size > collapseAfter
+    val collapsible = annotated == null && lines.size > collapseAfter
     var expanded by remember(code) { mutableStateOf(false) }
     val shown = if (collapsible && !expanded) {
         lines.take(collapseAfter).joinToString("\n")
@@ -91,13 +100,23 @@ fun CodeBlock(
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
-            Text(
-                text = shown,
-                fontFamily = CodegMono,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                color = colors.textPrimary,
-            )
+            if (annotated != null) {
+                Text(
+                    text = annotated,
+                    fontFamily = CodegMono,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    color = colors.textPrimary,
+                )
+            } else {
+                Text(
+                    text = shown,
+                    fontFamily = CodegMono,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    color = colors.textPrimary,
+                )
+            }
         }
         if (collapsible) {
             Text(
