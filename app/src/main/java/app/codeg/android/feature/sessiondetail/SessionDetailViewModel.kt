@@ -62,6 +62,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
+import app.codeg.android.core.common.DispatcherProvider
+import app.codeg.android.feature.sessiondetail.timeline.TimelineNode
+import app.codeg.android.feature.sessiondetail.timeline.TranscriptTimeline
+import kotlinx.coroutines.withContext
 
 /** WS `detached` reason meaning the ACP connection itself is gone (terminal — a
  *  socket reopen can't recover it). Any other reason is a transient socket drop. */
@@ -99,6 +103,7 @@ class SessionDetailViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
     private val applicationScope: ApplicationScope,
+    private val dispatchers: DispatcherProvider,
 ) : ViewModel() {
 
     /** A new task may be pre-seeded with a folder (e.g. a worktree a branch switch opened). */
@@ -148,6 +153,10 @@ class SessionDetailViewModel @Inject constructor(
     /** The post-turn transcript reconcile. Tracked so a new send / cancel can cancel it,
      *  preventing an orphaned reconcile from a finished turn wiping a freshly-started one. */
     private var reconcileJob: Job? = null
+    /** Bumped per flatten; a finishing job whose generation is stale discards its result. */
+    private var timelineGeneration = 0
+    /** Inputs of the last flatten, so an unchanged state does not rebuild the list. */
+    private var lastTimelineSignature: TimelineSignature? = null
     /** Revision notes waiting to be sent as a follow-up prompt after a plan-approval
      *  "request changes" (see [answerPlanApproval]), bound to the turn that produced
      *  the approval so no other turn can ever deliver them. */
@@ -237,8 +246,12 @@ class SessionDetailViewModel @Inject constructor(
                             currentBranch = currentBranch,
                             isDraftEditable = false,
                             error = null,
+                            // Open long transcripts on their most recent turns only; the
+                            // rest is flattened on demand as the user scrolls up.
+                            renderedTurnWindow = INITIAL_TURN_WINDOW,
                         )
                     }
+                    rebuildTimeline()
                     // Reattach when the server reports the turn live — via an explicit
                     // in-flight user turn id or the conversation status (iOS parity).
                     if (detail.inFlightUserTurnId != null || detail.summary.status.isLive) reattachIfLive()
@@ -283,10 +296,102 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    // region Timeline flattening
+
+    /**
+     * Flatten the current turn window into timeline nodes, off the main thread.
+     *
+     * Flattening is linear in transcript size: every assistant turn is merged, split
+     * into markdown blocks, and turned into per-block nodes with tool calls mapped to
+     * view models. For a conversation with thousands of turns that is milliseconds to
+     * tens of milliseconds of pure CPU, and it used to run inside `remember { }` in
+     * composition — so it landed on the frame that was trying to show the screen. On a
+     * 3532-turn transcript the first frame waited for the whole history.
+     *
+     * The work now runs on [DispatcherProvider.default] and the result is published as
+     * state, so composition only reads a list that is already built.
+     *
+     * [force] rebuilds even when the inputs look unchanged — used after an edit that
+     * mutates a turn in place, where reference equality would not notice.
+     */
+    private fun rebuildTimeline(force: Boolean = false) {
+        val snapshot = _ui.value
+        val window = snapshot.renderedTurnWindow
+        val turns = if (window >= snapshot.turns.size) snapshot.turns
+        else snapshot.turns.subList(snapshot.turns.size - window, snapshot.turns.size).toList()
+
+        val signature = TimelineSignature(
+            turns = turns,
+            pending = snapshot.pendingUserTurns,
+            agent = snapshot.agent,
+            hideTrailingReply = snapshot.liveFromReattach && snapshot.live != null,
+            window = window,
+        )
+        if (!force && signature == lastTimelineSignature) return
+        lastTimelineSignature = signature
+
+        // Supersede rather than cancel. A rebuild that is already inside buildPersisted
+        // has done most of its work; cancelling it throws that away and the replacement
+        // starts from zero. Bumping a generation lets the older job finish and lets its
+        // result be dropped at the end — the newer job wins without restarting the world.
+        val generation = ++timelineGeneration
+        viewModelScope.launch {
+            val nodes = withContext(dispatchers.default) {
+                TranscriptTimeline.buildPersisted(
+                    turns = turns,
+                    pending = snapshot.pendingUserTurns,
+                    agent = snapshot.agent,
+                    hideTrailingAssistantReply = signature.hideTrailingReply,
+                )
+            }
+            if (generation != timelineGeneration) return@launch
+            _ui.update {
+                it.copy(
+                    persistedNodes = nodes,
+                    hasOlderTurns = window < it.turns.size,
+                )
+            }
+        }
+    }
+
+    /**
+     * Grow the rendered window by [CHUNK] turns, called when the user scrolls near the
+     * top of a long transcript.
+     *
+     * The window grows backwards from the newest turn, so the content the user is
+     * looking at never moves: turns are prepended above the current top.
+     *
+     * The arithmetic is done in [Long] on purpose. `renderedTurnWindow` starts at
+     * `Int.MAX_VALUE` (meaning "everything"), and `Int.MAX_VALUE + CHUNK` wraps to a
+     * negative number — which would have produced an empty window and a blank
+     * transcript the first time a very long conversation asked for more turns.
+     */
+    fun loadOlderTurns() {
+        val current = _ui.value
+        val total = current.turns.size
+        if (!current.hasOlderTurns || total == 0) return
+        val grown = (current.renderedTurnWindow.toLong() + CHUNK)
+            .coerceAtMost(total.toLong())
+            .toInt()
+        if (grown <= current.renderedTurnWindow) return
+        _ui.update { it.copy(renderedTurnWindow = grown) }
+        rebuildTimeline()
+    }
+
+    /**
+     * Rebuild after the turn list changed in a way reference equality cannot see
+     * (a turn edited in place, or a window reset). Safe to call from any thread.
+     */
+    private fun invalidateTimeline() {
+        lastTimelineSignature = null
+        rebuildTimeline(force = true)
+    }
+
+    // endregion
+
     // region Send / cancel
 
     fun send(text: String) = send(text, withAttachments = true)
-
     /**
      * Send the composer's draft — or, with [withAttachments] `false`, a prompt the app
      * itself generated (today: the revision notes from a plan-approval "request
@@ -338,6 +443,7 @@ class SessionDetailViewModel @Inject constructor(
                 isDraftEditable = false,
             )
         }
+        rebuildTimeline()
         // Detached from viewModelScope on purpose: leaving the screen while the prompt
         // is still in flight used to cancel the request outright — the conversation row
         // had already been created server-side, so the user was left with an empty
@@ -878,6 +984,7 @@ class SessionDetailViewModel @Inject constructor(
                 _ui.update {
                     it.copy(turns = d.turns, sessionStats = d.sessionStats ?: it.sessionStats, summary = d.summary)
                 }
+                rebuildTimeline()
             }
         }
     }
@@ -1049,6 +1156,7 @@ class SessionDetailViewModel @Inject constructor(
                         )
                     }
                     liveBuilder = null
+                    rebuildTimeline()
                     return@launch
                 }
             }
@@ -1085,6 +1193,7 @@ class SessionDetailViewModel @Inject constructor(
             )
         }
         liveBuilder = null
+        rebuildTimeline()
     }
 
     private fun discardOptimistic(
@@ -1133,6 +1242,7 @@ class SessionDetailViewModel @Inject constructor(
                 isDraftEditable = if (createdConversation) true else it.isDraftEditable,
             )
         }
+        rebuildTimeline()
     }
 
     /** The screen consumes [SessionDetailUiState.restoreDraft] back into the composer once,
@@ -1672,6 +1782,24 @@ data class SessionDetailUiState(
     val availableAgents: List<AgentType> = emptyList(),
     val turns: List<MessageTurn> = emptyList(),
     val pendingUserTurns: List<MessageTurn> = emptyList(),
+    /**
+     * How many trailing turns are currently flattened into the rendered timeline.
+     *
+     * A long-running conversation can carry thousands of turns, and flattening all of
+     * them (markdown block split + tool-call view models) is linear in total transcript
+     * size — a multi-megabyte job that used to run inside composition, so the first
+     * frame waited for the entire history. The screen renders only this trailing window
+     * and grows it when the user scrolls toward the top ([loadOlderTurns]).
+     *
+     * `Int.MAX_VALUE` means "everything is rendered" — the state a short conversation is
+     * in from the start, and the state a long one reaches once the user has scrolled
+     * back to the beginning.
+     */
+    val renderedTurnWindow: Int = Int.MAX_VALUE,
+    /** True while a transcript that exceeded the first window is still partly hidden. */
+    val hasOlderTurns: Boolean = false,
+    /** The flattened timeline for the current window; built off the main thread. */
+    val persistedNodes: List<TimelineNode> = emptyList(),
     val live: LiveTurnState? = null,
     /** The live turn was rebuilt from a reattach snapshot (owns the in-flight reply). */
     val liveFromReattach: Boolean = false,
@@ -1785,4 +1913,36 @@ data class PendingPlanApprovalUi(
     /** The plan, read from Grok's `plan.md`. May be empty — the card then shows an
      *  empty-state notice rather than hiding, since the turn is blocked either way. */
     val planMarkdown: String,
+)
+
+/**
+ * Turns rendered on first open of a long transcript.
+ *
+ * Sized so the common case (a conversation the user is actively working in) fits
+ * entirely and never shows the "earlier turns" affordance, while a transcript with
+ * thousands of turns still paints its first frame immediately. Each chunk also bounds
+ * how much new work one scroll-triggered rebuild does.
+ */
+private const val INITIAL_TURN_WINDOW = 120
+
+/** Turns added per [SessionDetailViewModel.loadOlderTurns] call. */
+private const val CHUNK = 120
+
+/**
+ * The inputs that determine a flattened timeline, compared before rebuilding.
+ *
+ * A data class rather than a set of `if` checks so a change to any input — including
+ * the window size — is caught, and so an unchanged state can skip the flatten entirely.
+ *
+ * The turn lists are compared structurally ([MessageTurn] is a data class), which walks
+ * every block in the window. That is still much cheaper than the flatten it guards: a
+ * rebuild splits markdown and allocates a node per block, while this only compares
+ * fields. It runs at most once per state update, not per frame.
+ */
+private data class TimelineSignature(
+    val turns: List<MessageTurn>,
+    val pending: List<MessageTurn>,
+    val agent: AgentType,
+    val hideTrailingReply: Boolean,
+    val window: Int,
 )

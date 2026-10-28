@@ -187,8 +187,21 @@ object TranscriptTimeline {
         return nodes
     }
 
-    /** Append the in-flight reply to the persisted nodes and terminate the rail's endpoints. */
+    /**
+     * Append the in-flight reply to the persisted nodes and terminate the rail's endpoints.
+     *
+     * The copy is skipped when there is no live turn and the rail is already terminated
+     * on both ends — the state of a settled transcript. [buildPersisted] leaves the rail
+     * unterminated (it does not know which node will be last), so the common case still
+     * copies once; but a live stream redraws this every ~50ms over the whole history, and
+     * that is the path worth keeping cheap.
+     */
     fun withLive(persisted: List<TimelineNode>, live: LiveTurnState?, agent: AgentType): List<TimelineNode> {
+        if (live == null && persisted.isNotEmpty() &&
+            !persisted.first().connectTop && !persisted.last().connectBottom
+        ) {
+            return persisted
+        }
         val nodes = persisted.toMutableList()
         if (live != null) nodes.addAll(liveNodes(live, agent))
         if (nodes.isNotEmpty()) {

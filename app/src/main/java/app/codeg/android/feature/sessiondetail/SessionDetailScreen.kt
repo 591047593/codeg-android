@@ -89,6 +89,7 @@ import app.codeg.android.feature.sessiondetail.timeline.TranscriptTimeline
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * The session detail screen: the transcript rendered as a vertical **timeline**
@@ -141,14 +142,10 @@ fun SessionDetailScreen(
         )
     }
 
-    // Flatten the transcript into timeline nodes. The persisted half is memoized on its
-    // own so the ~50ms live stream only re-runs the cheap live append, not a full re-adapt.
-    // On reattach the live turn (rebuilt from the snapshot) owns the in-flight reply, so
-    // hide the partial copy the server persists into `turns` to avoid a doubled reply.
-    val hideReattachDup = ui.liveFromReattach && ui.live != null
-    val persistedNodes = remember(ui.turns, ui.pendingUserTurns, ui.agent, hideReattachDup) {
-        TranscriptTimeline.buildPersisted(ui.turns, ui.pendingUserTurns, ui.agent, hideReattachDup)
-    }
+    // The persisted half of the timeline is flattened in the ViewModel, off the main
+    // thread — see `SessionDetailViewModel.rebuildTimeline`. Composition only re-runs the
+    // cheap live append, so the ~50ms stream never forces a full re-adapt of the history.
+    val persistedNodes = ui.persistedNodes
     val nodes = remember(persistedNodes, ui.live, ui.agent) {
         TranscriptTimeline.withLive(persistedNodes, ui.live, ui.agent)
     }
@@ -175,13 +172,34 @@ fun SessionDetailScreen(
         if (ui.pendingUserTurns.isNotEmpty()) stick = true
     }
     // Follow new / streamed content while pinned.
-    LaunchedEffect(nodes.size, ui.live, stick) {
+    //
+    // Keyed on the number of turns in the *state*, not on `nodes.size`: the rendered
+    // window also changes the node count, and re-scrolling when older turns are
+    // prepended would yank a user who is deliberately reading history back to the
+    // bottom. A new turn or an in-flight reply still re-pins as before.
+    LaunchedEffect(ui.turns.size, ui.pendingUserTurns.size, ui.live, stick) {
         if (stick && nodes.isNotEmpty()) listState.scrollToItem(nodes.size)
     }
+    // Grow the rendered window as the user approaches the top of a long transcript.
+    // The ViewModel prepends older turns, so the content the user is looking at keeps
+    // its position; `stick` is already false here because they scrolled away from the
+    // bottom.
+    //
+    // Keyed on the *window* as well as `hasOlderTurns`, so each time a chunk lands the
+    // effect restarts and can fire again. Without that, a user who parks at the top would
+    // load exactly one chunk and then stall: `distinctUntilChanged` never re-emits
+    // `true`, and the transit back down to `false` only happens if they scroll away.
+    LaunchedEffect(listState, ui.hasOlderTurns, ui.renderedTurnWindow) {
+        if (!ui.hasOlderTurns) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex <= PREFETCH_TURNS_AT_TOP }
+            .distinctUntilChanged()
+            .collect { nearTop -> if (nearTop) viewModel.loadOlderTurns() }
+    }
     val scrollToId: (String) -> Unit = remember(nodes) {
+        val indexById = nodes.withIndex().associate { (i, n) -> n.id to i }
         { id ->
-            val idx = nodes.indexOfFirst { it.id == id }
-            if (idx >= 0) {
+            val idx = indexById[id]
+            if (idx != null) {
                 stick = false // unpin so the stream doesn't immediately yank us back down
                 scope.launch { listState.animateScrollToItem(idx) }
             }
@@ -434,6 +452,17 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
  * covers a 4x-density screen with room to spare.
  */
 private const val THUMBNAIL_MAX_PX = 240
+
+/**
+ * How close to the top of the loaded window the user must scroll before the next chunk
+ * of older turns is flattened, in items.
+ *
+ * Measured in timeline items rather than turns because that is what the LazyColumn
+ * indexes. 20 items is roughly one screenful of mixed blocks — far enough that the
+ * rebuild finishes before they reach the top, close enough that short transcripts never
+ * trigger it at all.
+ */
+private const val PREFETCH_TURNS_AT_TOP = 20
 
 /** A horizontal strip of pending image attachments, each removable. */
 @Composable
