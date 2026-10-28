@@ -340,9 +340,12 @@ fun SessionDetailScreen(
                     onSend = {
                         viewModel.send(draft)
                         draft = ""
-                        // The text is now a message; leaving it stored would restore it
-                        // into a composer that no longer needs it.
-                        viewModel.clearDraft()
+                        // The stored draft is cleared by the persistence effect below, not
+                        // here: it writes on a debounce, so the empty composer overwrites
+                        // the entry a moment later. Clearing eagerly would also throw the
+                        // text away on a *failed* send — the view model hands it back via
+                        // `restoreDraft`, but if the process died in between there would be
+                        // nothing left to restore.
                     },
                     isInFlight = ui.isInFlight,
                     onStop = viewModel::cancel,
