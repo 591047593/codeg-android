@@ -28,6 +28,7 @@ import app.codeg.android.core.model.hermesProvider
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -113,6 +114,8 @@ class AgentsViewModel @Inject constructor(
                     },
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _ui.update { it.copy(loading = false, error = e.displayMessage()) }
         }
@@ -191,6 +194,8 @@ class AgentsViewModel @Inject constructor(
                         pendingDetailAgent = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(error = e.displayMessage(), pendingDetailAgent = null) }
             }
@@ -314,6 +319,8 @@ class AgentsViewModel @Inject constructor(
                                 cfg.codexConfigToml, cfg.grokConfigToml,
                                 cfg.cursorCliConfigJson, cfg.cursorStructured,
                             )
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             // The two writes are not one transaction. For an agent whose env
                             // and native config are two halves of ONE permission decision, a
@@ -337,6 +344,8 @@ class AgentsViewModel @Inject constructor(
                 }
                 updateDetail { it.copy(saving = false) }
                 onSuccess()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateDetail { it.copy(saving = false, saveError = e.displayMessage()) }
             }

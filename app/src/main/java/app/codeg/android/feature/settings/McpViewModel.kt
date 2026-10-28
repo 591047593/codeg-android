@@ -121,10 +121,24 @@ class McpViewModel @Inject constructor(
 
     fun delete(server: LocalMcpServer) {
         val c = client ?: return
-        val previous = _ui.value.servers
+        // Re-insert only the row that failed so a concurrent change is not rolled back too.
+        val removedIndex = _ui.value.servers.indexOfFirst { it.id == server.id }
         _ui.update { it.copy(servers = it.servers.filterNot { s -> s.id == server.id }) }
         viewModelScope.launch {
-            runCatching { c.mcpRemoveServer(server.id) }.onFailure { e -> _ui.update { it.copy(servers = previous, error = e.displayMessage()) } }
+            runCatching { c.mcpRemoveServer(server.id) }.onFailure { e ->
+                _ui.update { state ->
+                    if (state.servers.any { it.id == server.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            servers = state.servers.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), server)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
+            }
         }
     }
 

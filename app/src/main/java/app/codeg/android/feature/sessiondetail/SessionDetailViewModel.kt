@@ -44,6 +44,7 @@ import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.network.isStaleConnection
 import app.codeg.android.feature.sessiondetail.interactive.ParsedPermission
 import app.codeg.android.feature.sessiondetail.timeline.dropTrailingAssistantRun
+import app.codeg.android.feature.sessiondetail.timeline.mergeWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -162,6 +163,8 @@ class SessionDetailViewModel @Inject constructor(
     private var windowTotal: Int = 0
     /** Guards against issuing overlapping page requests while one is in flight. */
     private var pagingJob: Job? = null
+    /** Wall-clock time before which a failed older-turns page will not be retried. */
+    private var pagingRetryAt: Long = 0L
     /** Guards `load()` against overlapping runs (retry spam, server-switch watcher). */
     private var loadJob: Job? = null
     /** Inputs of the last flatten, so an unchanged state does not rebuild the list. */
@@ -435,6 +438,7 @@ class SessionDetailViewModel @Inject constructor(
      */
     fun loadOlderTurns() {
         if (pagingJob?.isActive == true) return
+        if (System.currentTimeMillis() < pagingRetryAt) return
         val current = _ui.value
         if (!current.hasOlderTurns || current.turns.isEmpty()) return
         val c = client ?: return
@@ -449,10 +453,14 @@ class SessionDetailViewModel @Inject constructor(
         pagingJob = viewModelScope.launch {
             val page = runCatching { c.conversationTurns(id, beforeIndex = before, limit = CHUNK) }
                 .getOrElse { e ->
-                    // A failed page must not wedge the transcript: stop offering "older
-                    // turns" rather than retrying on every scroll nudge, and say so once.
+                    // A failed page must not wedge the transcript, but it must not be
+                    // permanent either: the paging effect re-fires as the user nudges the
+                    // top of the list, so retrying instantly would issue a request per
+                    // frame. Report once, leave `hasOlderTurns` alone so the history is
+                    // still reachable, and suppress further attempts for a short backoff.
                     val message = e.displayMessage()
-                    _ui.update { it.copy(hasOlderTurns = false, notice = message) }
+                    _ui.update { it.copy(notice = message) }
+                    pagingRetryAt = System.currentTimeMillis() + PAGING_RETRY_BACKOFF_MS
                     return@launch
                 }
 
@@ -467,6 +475,8 @@ class SessionDetailViewModel @Inject constructor(
 
             windowOffset = page.turnsOffset
             windowTotal = page.turnsTotal
+            // A landed page proves the endpoint works again; let the next one fire at once.
+            pagingRetryAt = 0L
             _ui.update {
                 it.copy(
                     turns = page.turns + it.turns,
@@ -873,8 +883,11 @@ class SessionDetailViewModel @Inject constructor(
             is AcpEvent.UsageUpdate -> _ui.update {
                 it.copy(
                     sessionStats = (it.sessionStats ?: SessionStats()).copy(
-                        contextWindowUsedTokens = event.used.toInt(),
-                        contextWindowMaxTokens = event.size.toInt(),
+                        // The wire carries Long; the model's fields are Int. Clamp instead
+                        // of `.toInt()`, which would wrap a value past 2^31 into a negative
+                        // and render a nonsensical (negative) context-usage readout.
+                        contextWindowUsedTokens = event.used.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        contextWindowMaxTokens = event.size.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                     ),
                 )
             }
@@ -1089,11 +1102,13 @@ class SessionDetailViewModel @Inject constructor(
         val id = conversationId ?: return
         viewModelScope.launch {
             runCatching { fetchTurnWindow(c, id) }.getOrNull()?.let { d ->
-                windowOffset = d.turnsOffset ?: 0
+                val freshOffset = d.turnsOffset ?: 0
+                val previousOffset = windowOffset
+                windowOffset = freshOffset
                 windowTotal = totalTurnsOf(d)
                 _ui.update {
                     it.copy(
-                        turns = d.turns,
+                        turns = it.turns.mergeWindow(d.turns, freshOffset, previousOffset),
                         sessionStats = d.sessionStats ?: it.sessionStats,
                         summary = d.summary,
                         hasOlderTurns = windowOffset > 0,
@@ -1256,11 +1271,18 @@ class SessionDetailViewModel @Inject constructor(
                     // for whatever turn finalizes next.
                     val orphanedNotes = builder?.let { pendingPlanFollowUp?.notesFor(it.id) }
                     if (orphanedNotes != null) pendingPlanFollowUp = null
-                    windowOffset = detail.turnsOffset ?: 0
+                    val freshOffset = detail.turnsOffset ?: 0
+                    val previousOffset = windowOffset
+                    windowOffset = freshOffset
                     windowTotal = totalTurnsOf(detail)
                     _ui.update {
                         it.copy(
-                            turns = detail.turns,
+                            // Keep the history the user already paged in. The fetch above
+                            // asks for the newest window only, so replacing `turns` wholesale
+                            // would silently discard everything above it — and this runs
+                            // automatically after every turn, so a user who scrolled up
+                            // while a reply was streaming would have their place reset.
+                            turns = it.turns.mergeWindow(detail.turns, freshOffset, previousOffset),
                             sessionStats = detail.sessionStats ?: it.sessionStats,
                             summary = detail.summary,
                             hasOlderTurns = windowOffset > 0,
@@ -2053,6 +2075,15 @@ private const val MIN_TURN_WINDOW = 1
 
 /** Turns requested per [SessionDetailViewModel.loadOlderTurns] call. */
 private const val CHUNK = 120
+
+/**
+ * How long a failed older-turns page suppresses further attempts.
+ *
+ * The paging effect fires on list-scroll state, which changes continuously, so a page
+ * that fails would otherwise be retried on the next frame — turning one transient error
+ * into a request storm against a server that is already struggling.
+ */
+private const val PAGING_RETRY_BACKOFF_MS = 5_000L
 
 /**
  * The inputs that determine a flattened timeline, compared before rebuilding.

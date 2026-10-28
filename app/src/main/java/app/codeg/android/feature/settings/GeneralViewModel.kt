@@ -7,6 +7,7 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
@@ -88,6 +89,8 @@ class GeneralViewModel @Inject constructor(
                         error = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.displayMessage()) }
             }

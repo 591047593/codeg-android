@@ -97,6 +97,7 @@ import app.codeg.android.core.model.ChatChannelInfo
 import app.codeg.android.core.model.ChatChannelMessageLog
 import app.codeg.android.core.model.FieldEdit
 import app.codeg.android.core.model.UpdateChatChannelBody
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -660,6 +661,11 @@ private fun ChatChannelEditorDialog(existing: ChatChannelInfo?, viewModel: ChatC
                     viewModel.create(name.trim(), type, cfg, enabled, dailyEnabled, timeString, tokenToSend)
                 }
                 onDismiss()
+            } catch (e: CancellationException) {
+                // The dialog was dismissed / the composition left while the save was in
+                // flight. That is not a failed save: rethrow so the exception keeps its
+                // cancellation semantics instead of pinning an error onto a gone screen.
+                throw e
             } catch (e: Exception) {
                 error = e.displayMessage(); saving = false
             }

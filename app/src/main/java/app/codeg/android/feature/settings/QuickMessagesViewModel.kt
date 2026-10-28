@@ -97,13 +97,25 @@ class QuickMessagesViewModel @Inject constructor(
 
     fun delete(message: QuickMessage) {
         val c = client ?: return
-        val previous = _ui.value.messages
+        // Re-insert only the row that failed so a concurrent change is not rolled back too.
+        val removedIndex = _ui.value.messages.indexOfFirst { m -> m.id == message.id }
         _ui.update { it.copy(messages = it.messages.filterNot { m -> m.id == message.id }) }
         viewModelScope.launch {
             try {
                 c.quickMessageDelete(message.id)
             } catch (e: Exception) {
-                _ui.update { it.copy(messages = previous, error = e.displayMessage()) }
+                _ui.update { state ->
+                    if (state.messages.any { m -> m.id == message.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            messages = state.messages.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), message)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
             }
         }
     }

@@ -121,6 +121,39 @@ internal fun List<MessageTurn>.dropTrailingAssistantRun(): List<MessageTurn> {
 }
 
 /**
+ * Replace the tail of the loaded transcript with [fresh], keeping the older turns already
+ * paged in above it.
+ *
+ * Coordinates: the loaded list covers global turns `[currentOffset, currentOffset + size)`
+ * and the fresh window covers `[freshOffset, freshOffset + fresh.size)`. The post-turn
+ * reconcile asks only for the newest window, so `fresh` is a suffix of the conversation;
+ * assigning it straight to state would drop everything above it, and since this runs after
+ * every turn, a user scrolling back through history would be reset to the newest window
+ * each time a reply landed.
+ *
+ * What is safe to keep is exactly the region strictly above `freshOffset` — that is,
+ * `this[0, freshOffset - currentOffset)`. Everything from `freshOffset` on comes from the
+ * server. That join is legal only when the loaded list actually reaches `freshOffset`: if
+ * the fresh window starts at or below the loaded one, or begins past where the loaded list
+ * ends (a gap — an edit, delete or compaction above the window), there is no contiguous
+ * prefix and the fresh window alone is the honest answer.
+ */
+internal fun List<MessageTurn>.mergeWindow(
+    fresh: List<MessageTurn>,
+    freshOffset: Int,
+    currentOffset: Int,
+): List<MessageTurn> {
+    val keep = freshOffset - currentOffset
+    // Nothing above the fresh window, or the fresh window already starts at/below what is
+    // loaded: the server's copy covers it entirely.
+    if (keep <= 0) return fresh
+    // A gap: the loaded list ends before the fresh window begins, so turns between the two
+    // are unknown and cannot be bridged.
+    if (keep > size) return fresh
+    return subList(0, keep) + fresh
+}
+
+/**
  * Flattens a conversation into an ordered `[TimelineNode]`. User/system turns map
  * 1:1; runs of consecutive assistant turns merge into one reply (codeg persists a
  * logical reply as several turns) that expands into part nodes + a single footer.

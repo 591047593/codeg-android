@@ -102,10 +102,24 @@ class ModelProvidersViewModel @Inject constructor(
 
     fun delete(provider: ModelProviderInfo) {
         val c = client ?: return
-        val previous = _ui.value.providers
+        // Re-insert only the row that failed so a concurrent change is not rolled back too.
+        val removedIndex = _ui.value.providers.indexOfFirst { p -> p.id == provider.id }
         _ui.update { it.copy(providers = it.providers.filterNot { p -> p.id == provider.id }) }
         viewModelScope.launch {
-            runCatching { c.deleteModelProvider(provider.id) }.onFailure { e -> _ui.update { it.copy(providers = previous, error = e.displayMessage()) } }
+            runCatching { c.deleteModelProvider(provider.id) }.onFailure { e ->
+                _ui.update { state ->
+                    if (state.providers.any { p -> p.id == provider.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            providers = state.providers.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), provider)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
+            }
         }
     }
 

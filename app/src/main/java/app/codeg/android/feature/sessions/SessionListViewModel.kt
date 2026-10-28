@@ -251,7 +251,13 @@ class SessionListViewModel @Inject constructor(
      */
     fun delete(conversation: ConversationSummary) {
         val active = client ?: return
+        // Capture only this row's index so a failure re-inserts THAT row instead of
+        // restoring a snapshot of the whole list. Restoring the captured list undoes
+        // anything that landed meanwhile — a concurrent delete, a pin, a refresh that
+        // added a new conversation, or a server switch — which is the same defect the
+        // pin path above already avoids by reverting a single field.
         val previous = _ui.value.conversations
+        val removedIndex = previous.indexOfFirst { it.id == conversation.id }
         _ui.update { it.copy(conversations = it.conversations.filterNot { c -> c.id == conversation.id }) }
         viewModelScope.launch {
             try {
@@ -260,9 +266,23 @@ class SessionListViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Put the row back: the list is the only place it was removed from, and
-                // a refresh may not run before the user acts again.
-                _ui.update { state -> state.copy(conversations = previous, error = e.displayMessage()) }
+                _ui.update { state ->
+                    // Only touch the list if it still belongs to the same server, and only
+                    // re-insert the row that actually failed — and only if it is still
+                    // missing, so a refresh that already brought it back is left alone.
+                    if (client !== active) {
+                        state
+                    } else if (state.conversations.any { it.id == conversation.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            conversations = state.conversations.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), conversation)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
             }
         }
     }

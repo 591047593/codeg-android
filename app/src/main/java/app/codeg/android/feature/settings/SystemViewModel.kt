@@ -8,6 +8,7 @@ import app.codeg.android.core.model.AppUpdateCheckResult
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -66,6 +67,8 @@ class SystemViewModel @Inject constructor(
                 client = c
                 val proxy = c.getSystemProxySettings()
                 _ui.update { it.copy(loading = false, proxyEnabled = proxy.enabled, proxyUrl = proxy.proxyUrl ?: "", error = null) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.displayMessage()) }
             }
@@ -83,6 +86,8 @@ class SystemViewModel @Inject constructor(
             try {
                 c.updateSystemProxySettings(s.proxyEnabled, s.proxyUrl.trim().ifEmpty { null })
                 _ui.update { it.copy(savingProxy = false) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(savingProxy = false, error = e.displayMessage()) }
             }
@@ -95,6 +100,8 @@ class SystemViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _ui.update { it.copy(checking = false, updateResult = c.checkAppUpdate()) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(checking = false, error = e.displayMessage()) }
             }

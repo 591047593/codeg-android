@@ -139,7 +139,10 @@ class ActivityViewModel @Inject constructor(
      */
     fun delete(conversation: ConversationSummary) {
         val active = client ?: return
-        val previous = _ui.value.conversations
+        // Re-insert only the row that failed. Restoring a captured list would also undo
+        // anything that landed meanwhile — a concurrent delete, or the poll loop's own
+        // refresh replacing the feed — which is the same trap the session list avoids.
+        val removedIndex = _ui.value.conversations.indexOfFirst { it.id == conversation.id }
         _ui.update { it.copy(conversations = it.conversations.filterNot { c -> c.id == conversation.id }) }
         viewModelScope.launch {
             try {
@@ -147,7 +150,18 @@ class ActivityViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { state -> state.copy(conversations = previous, error = e.displayMessage()) }
+                _ui.update { state ->
+                    if (client !== active || state.conversations.any { it.id == conversation.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            conversations = state.conversations.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), conversation)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
             }
         }
     }

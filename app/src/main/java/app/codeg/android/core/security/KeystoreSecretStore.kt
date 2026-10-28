@@ -40,6 +40,11 @@ class KeystoreSecretStore @Inject constructor(
         val encoded = prefs.getString(key, null) ?: return null
         return runCatching {
             val blob = Base64.decode(encoded, Base64.NO_WRAP)
+            // A truncated or corrupted blob must read as "no secret", not crash. The
+            // range access below throws on a short array, and `runCatching` would catch
+            // it, but checking first keeps the failure explicit and lets a broken entry
+            // be distinguished from a decryption failure (which means the key is gone).
+            if (blob.size <= GCM_IV_LENGTH) return@runCatching null
             val iv = blob.copyOfRange(0, GCM_IV_LENGTH)
             val ciphertext = blob.copyOfRange(GCM_IV_LENGTH, blob.size)
             val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -52,22 +57,34 @@ class KeystoreSecretStore @Inject constructor(
         prefs.edit().remove(key).apply()
     }
 
-    private fun secretKey(): SecretKey {
+    /**
+     * The one AES key all secrets are sealed with, created on first use.
+     *
+     * Synchronised on the class because generation is not idempotent: two concurrent
+     * first calls would each generate a key under the same alias, the second would
+     * replace the first, and every secret written in between would become permanently
+     * undecryptable. `put`/`get` are called from `Dispatchers.IO` and several screens
+     * touch the store during startup, so this race is reachable in normal use.
+     */
+    private fun secretKey(): SecretKey = synchronized(KEY_LOCK) {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        val existing = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+        if (existing != null) {
+            existing.secretKey
+        } else {
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+            generator.init(
+                KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build(),
             )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return generator.generateKey()
+            generator.generateKey()
+        }
     }
 
     private companion object {
@@ -77,5 +94,7 @@ class KeystoreSecretStore @Inject constructor(
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val GCM_IV_LENGTH = 12
         const val GCM_TAG_BITS = 128
+        /** Guards first-use key generation; see [secretKey]. */
+        private val KEY_LOCK = Any()
     }
 }

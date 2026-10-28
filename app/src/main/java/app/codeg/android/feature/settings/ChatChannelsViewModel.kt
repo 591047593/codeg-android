@@ -16,6 +16,7 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -83,6 +84,8 @@ class ChatChannelsViewModel @Inject constructor(
                 val channels = c.listChatChannels()
                 _ui.update { it.copy(phase = ChatChannelsPhase.LOADED, channels = channels, refreshError = null) }
                 loadStatuses()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (_ui.value.channels.isEmpty()) _ui.update { it.copy(phase = ChatChannelsPhase.FAILED, error = e.displayMessage()) }
                 else _ui.update { it.copy(refreshError = e.displayMessage()) }
@@ -121,6 +124,8 @@ class ChatChannelsViewModel @Inject constructor(
                 }
                 val updated = c.updateChatChannel(UpdateChatChannelBody(id = channel.id, enabled = on))
                 _ui.update { it.copy(channels = it.channels.map { ch -> if (ch.id == channel.id) updated else ch }) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(channels = it.channels.map { ch -> if (ch.id == channel.id) ch.withEnabled(previous) else ch }, refreshError = e.displayMessage()) }
             } finally {
@@ -136,6 +141,8 @@ class ChatChannelsViewModel @Inject constructor(
         if (!token.isNullOrEmpty()) {
             try {
                 c.saveChatChannelToken(created.id, token)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 runCatching { c.deleteChatChannel(created.id) } // keep create atomic
                 load()
@@ -156,14 +163,29 @@ class ChatChannelsViewModel @Inject constructor(
 
     fun delete(channel: ChatChannelInfo) {
         val c = client ?: return
-        val previous = _ui.value.channels
+        // Re-insert only the row that failed so a concurrent change is not rolled back too.
+        val removedIndex = _ui.value.channels.indexOfFirst { it.id == channel.id }
         _ui.update { it.copy(channels = it.channels.filterNot { ch -> ch.id == channel.id }) }
         viewModelScope.launch {
             try {
                 c.deleteChatChannel(channel.id)
                 _ui.update { it.copy(toast = appContext.getString(R.string.cc_toast_deleted, channel.name)) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(channels = previous, toast = appContext.getString(R.string.cc_toast_delete_failed, e.displayMessage())) }
+                _ui.update { state ->
+                    val restored = if (state.channels.any { it.id == channel.id }) {
+                        state.channels
+                    } else {
+                        state.channels.toMutableList().apply {
+                            add(removedIndex.coerceIn(0, size), channel)
+                        }
+                    }
+                    state.copy(
+                        channels = restored,
+                        toast = appContext.getString(R.string.cc_toast_delete_failed, e.displayMessage()),
+                    )
+                }
             }
         }
     }
@@ -218,6 +240,8 @@ class ChatChannelsViewModel @Inject constructor(
                 val messages = runCatching { c.listChatChannelMessages(id, 50) }.getOrDefault(emptyList())
                 updateDetail { if (it.channelId == id) it.copy(messages = messages) else it }
                 if (poll) pollUntilSettled(id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateDetail { it.copy(actionError = e.displayMessage()) }
             } finally {
@@ -241,6 +265,8 @@ class ChatChannelsViewModel @Inject constructor(
             try {
                 c.deleteChatChannelToken(id)
                 updateDetail { it.copy(hasToken = false, toast = appContext.getString(R.string.cc_token_removed)) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 updateDetail { it.copy(actionError = e.displayMessage()) }
             }

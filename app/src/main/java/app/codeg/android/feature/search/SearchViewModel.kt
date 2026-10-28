@@ -126,7 +126,9 @@ class SearchViewModel @Inject constructor(
      */
     fun delete(conversation: ConversationSummary) {
         val c = client ?: return
-        val previous = _ui.value.results
+        // Re-insert only the row that failed, so a concurrent search or delete that
+        // landed while this request was in flight is not rolled back with it.
+        val removedIndex = _ui.value.results.indexOfFirst { r -> r.id == conversation.id }
         _ui.update { it.copy(results = it.results.filterNot { r -> r.id == conversation.id }) }
         viewModelScope.launch {
             try {
@@ -134,7 +136,18 @@ class SearchViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { state -> state.copy(results = previous, error = e.displayMessage()) }
+                _ui.update { state ->
+                    if (state.results.any { r -> r.id == conversation.id }) {
+                        state.copy(error = e.displayMessage())
+                    } else {
+                        state.copy(
+                            results = state.results.toMutableList().apply {
+                                add(removedIndex.coerceIn(0, size), conversation)
+                            },
+                            error = e.displayMessage(),
+                        )
+                    }
+                }
             }
         }
     }

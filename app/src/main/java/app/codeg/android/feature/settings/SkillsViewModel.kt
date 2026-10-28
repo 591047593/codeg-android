@@ -10,6 +10,7 @@ import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -80,6 +81,8 @@ class SkillsViewModel @Inject constructor(
                 val selected = _ui.value.selectedAgent.takeIf { agents.contains(it) } ?: agents.firstOrNull()
                 _ui.update { it.copy(phase = SkillsPhase.LOADED, agents = agents, selectedAgent = selected, error = null) }
                 selected?.let { loadSkills(it) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(phase = SkillsPhase.FAILED, error = e.displayMessage()) }
             }
@@ -105,6 +108,8 @@ class SkillsViewModel @Inject constructor(
                 val loaded = c.listAgentSkills(agent)
                 if (token != loadToken) return@launch // superseded by a newer selection
                 _ui.update { it.copy(skillsLoading = false, result = loaded, resultAgent = agent, refreshError = null) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (token != loadToken) return@launch
                 _ui.update { it.copy(skillsLoading = false, refreshError = e.displayMessage()) }
@@ -131,6 +136,8 @@ class SkillsViewModel @Inject constructor(
             try {
                 c.deleteAgentSkill(agent, skill.scope, skill.id)
                 if (agent == _ui.value.selectedAgent) loadSkills(agent)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Don't surface A's failure on B's view if the user switched mid-delete.
                 if (agent == _ui.value.selectedAgent) _ui.update { it.copy(refreshError = e.displayMessage()) }

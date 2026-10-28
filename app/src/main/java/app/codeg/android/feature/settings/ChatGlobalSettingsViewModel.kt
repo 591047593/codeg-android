@@ -9,6 +9,7 @@ import app.codeg.android.core.model.WebhookConfig
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -80,6 +81,8 @@ class ChatGlobalSettingsViewModel @Inject constructor(
                         error = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.displayMessage()) }
             }

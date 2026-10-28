@@ -192,4 +192,55 @@ class TranscriptTimelineTest {
             )
         }
     }
+
+    /**
+     * The post-turn reconcile fetches only the newest window. If the user paged older
+     * turns in while a reply was streaming, replacing the list with that window would
+     * silently discard them — every turn would reset the scrollback to 120 turns.
+     */
+    @Test
+    fun `merging a fresh window keeps the older turns already paged in`() {
+        // Loaded covers global turns 0..9; the new window starts at 6, so turns 0..5 are
+        // strictly above it and survive, and 6.. come from the server.
+        val loaded = (0 until 10).map { user("u$it", "p$it") }
+        val fresh = (6 until 12).map { user("u$it", "p$it") }
+        val merged = loaded.mergeWindow(fresh, freshOffset = 6, currentOffset = 0)
+        assertEquals(loaded.subList(0, 6) + fresh, merged)
+        assertEquals((0 until 12).map { "u$it" }, merged.map { it.id })
+    }
+
+    @Test
+    fun `merging keeps the prefix when the window is scrolled one page back`() {
+        // Windowed at 60 with 120 loaded (60..179); the fresh window restarts at 120
+        // because the conversation grew by 60 turns. The 60 turns above it must survive.
+        val loaded = (60 until 180).map { user("u$it", "p$it") }
+        val fresh = (120 until 181).map { user("u$it", "p$it") }
+        val merged = loaded.mergeWindow(fresh, freshOffset = 120, currentOffset = 60)
+        assertEquals(loaded.take(60) + fresh, merged)
+        assertEquals((60 until 181).map { "u$it" }, merged.map { it.id })
+    }
+
+    @Test
+    fun `merging a window that covers everything adopts the fresh window`() {
+        // The fresh window starts at 0 — it is the whole transcript, so there is no prefix
+        // above it and keeping a stale one would duplicate turns.
+        val loaded = listOf(user("u0", "a"), user("u1", "b"))
+        val fresh = listOf(user("u0", "a"), user("u1", "b"), user("u2", "c"))
+        assertEquals(fresh, loaded.mergeWindow(fresh, freshOffset = 0, currentOffset = 0))
+    }
+
+    @Test
+    fun `merging across a gap does not splice a stale prefix onto the window`() {
+        // Loaded 40..49, but the fresh window starts at 55: turns 50..54 are unknown, so
+        // joining them would silently hide a discontinuity. The window wins alone.
+        val loaded = (40 until 50).map { user("u$it", "p$it") }
+        val fresh = (55 until 65).map { user("u$it", "p$it") }
+        assertEquals(fresh, loaded.mergeWindow(fresh, freshOffset = 55, currentOffset = 40))
+    }
+
+    @Test
+    fun `merging nothing loaded adopts the fresh window`() {
+        val fresh = (5 until 8).map { user("u$it", "p$it") }
+        assertEquals(fresh, emptyList<MessageTurn>().mergeWindow(fresh, 5, 5))
+    }
 }
