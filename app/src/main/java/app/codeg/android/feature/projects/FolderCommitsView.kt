@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -72,6 +73,7 @@ import app.codeg.android.core.designsystem.theme.CodegMono
 @Composable
 fun FolderCommitsView(viewModel: ProjectDetailViewModel, client: CodegClient, rootPath: String) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current
     var commit by remember { mutableStateOf<GitLogEntry?>(null) }
     BackHandler(enabled = commit != null) { commit = null }
 
@@ -122,7 +124,7 @@ fun FolderCommitsView(viewModel: ProjectDetailViewModel, client: CodegClient, ro
                     if (!isRepo) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { EmptyState(Icons.Rounded.History, stringResource(R.string.commits_not_a_git_repo), stringResource(R.string.commits_not_a_git_repo_message)) }
                     } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { InlineError(Icons.Rounded.History, stringResource(R.string.commits_load_failed), e?.displayMessage() ?: stringResource(R.string.commits_error), onRetry = { result = null }) }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { InlineError(Icons.Rounded.History, stringResource(R.string.commits_load_failed), e?.displayMessage(appContext) ?: stringResource(R.string.commits_error), onRetry = { result = null }) }
                     }
                 }
                 else -> {

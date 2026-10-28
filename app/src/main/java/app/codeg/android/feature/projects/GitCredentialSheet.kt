@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,6 +69,7 @@ fun GitCredentialSheet(
     prompt: GitCredentialPrompt,
 ) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
 
@@ -109,7 +111,7 @@ fun GitCredentialSheet(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    error = e.displayMessage()
+                    error = e.displayMessage(appContext)
                     submitting = false
                 }
             }

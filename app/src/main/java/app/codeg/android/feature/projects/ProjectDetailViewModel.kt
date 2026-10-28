@@ -111,7 +111,7 @@ class ProjectDetailViewModel @Inject constructor(
                 _ui.update {
                     it.copy(
                         loading = false,
-                        error = e.displayMessage(),
+                        error = e.displayMessage(appContext),
                         folder = null,
                         client = null,
                         branch = null,
@@ -138,7 +138,7 @@ class ProjectDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.gitCheckout(path, branch); c.getGitBranch(path) }
                 .onSuccess { resolved -> _ui.update { it.copy(branch = resolved ?: branch) }; onResult(null) }
-                .onFailure { onResult(it.displayMessage()) }
+                .onFailure { onResult(it.displayMessage(appContext)) }
         }
     }
 
@@ -148,7 +148,7 @@ class ProjectDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.gitNewBranch(path, name.trim()); c.getGitBranch(path) }
                 .onSuccess { resolved -> _ui.update { it.copy(branch = resolved ?: name.trim()) }; onResult(null) }
-                .onFailure { onResult(it.displayMessage()) }
+                .onFailure { onResult(it.displayMessage(appContext)) }
         }
     }
 
@@ -289,9 +289,9 @@ class ProjectDetailViewModel @Inject constructor(
                 // On cancel, withCredentialRetry rethrows the auth error — surface it
                 // calmly (a warning, no reload) rather than as a red failure.
                 val kind = if (e.isAuthFailure) GitBannerKind.WARNING else GitBannerKind.ERROR
-                _ui.update { it.copy(gitBanner = GitBanner(kind, e.displayMessage())) }
+                _ui.update { it.copy(gitBanner = GitBanner(kind, e.displayMessage(appContext))) }
             } catch (e: Exception) {
-                _ui.update { it.copy(gitBanner = GitBanner(GitBannerKind.ERROR, e.displayMessage())) }
+                _ui.update { it.copy(gitBanner = GitBanner(GitBannerKind.ERROR, e.displayMessage(appContext))) }
             } finally {
                 _ui.update { it.copy(gitBusy = false, gitBusyTitle = null) }
             }

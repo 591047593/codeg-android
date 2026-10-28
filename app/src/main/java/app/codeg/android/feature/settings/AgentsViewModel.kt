@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -27,6 +28,7 @@ import app.codeg.android.core.model.UpdatePiConfigBody
 import app.codeg.android.core.model.hermesProvider
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,6 +51,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AgentsViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -117,7 +121,7 @@ class AgentsViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+            _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
         }
     }
 
@@ -139,7 +143,7 @@ class AgentsViewModel @Inject constructor(
                     applyEnabled(agent.agentType, enabled)
                 }.onFailure { e ->
                     applyEnabled(agent.agentType, wasEnabled)
-                    _ui.update { it.copy(error = e.displayMessage()) }
+                    _ui.update { it.copy(error = e.displayMessage(appContext)) }
                 }
             }
         }
@@ -197,7 +201,7 @@ class AgentsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(error = e.displayMessage(), pendingDetailAgent = null) }
+                _ui.update { it.copy(error = e.displayMessage(appContext), pendingDetailAgent = null) }
             }
         }
     }
@@ -347,7 +351,7 @@ class AgentsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateDetail { it.copy(saving = false, saveError = e.displayMessage()) }
+                updateDetail { it.copy(saving = false, saveError = e.displayMessage(appContext)) }
             }
         }
     }

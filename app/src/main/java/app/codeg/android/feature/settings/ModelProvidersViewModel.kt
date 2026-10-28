@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -8,6 +9,7 @@ import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.ModelProviderInfo
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -23,6 +25,8 @@ import javax.inject.Inject
 /** CRUD for custom model providers (OpenAI-compatible endpoints), grouped by agent. */
 @HiltViewModel
 class ModelProvidersViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -68,7 +72,7 @@ class ModelProvidersViewModel @Inject constructor(
                 client = c
                 _ui.update { it.copy(loading = false, providers = c.listModelProviders(), error = null) }
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -95,7 +99,7 @@ class ModelProvidersViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(error = e.displayMessage()) }
+                _ui.update { it.copy(error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -109,13 +113,13 @@ class ModelProvidersViewModel @Inject constructor(
             runCatching { c.deleteModelProvider(provider.id) }.onFailure { e ->
                 _ui.update { state ->
                     if (state.providers.any { p -> p.id == provider.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             providers = state.providers.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), provider)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }

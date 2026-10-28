@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -54,6 +55,7 @@ import app.codeg.android.core.designsystem.theme.CodegMono
 @Composable
 fun FolderFilesView(client: CodegClient, rootPath: String) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     var stack by remember { mutableStateOf(listOf(rootPath)) }
     var previewPath by remember { mutableStateOf<String?>(null) }
 
@@ -75,7 +77,7 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
     when {
         r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(message = stringResource(R.string.common_loading)) }
         r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null })
+            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null })
         }
         else -> {
             // Sorting on every recomposition (scroll, selection, theme) re-ran an
@@ -130,6 +132,7 @@ private fun FileRow(item: DirectoryItem, onClick: () -> Unit) {
 @Composable
 private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val rel = if (absPath.startsWith("$rootPath/")) absPath.removePrefix("$rootPath/") else absPath.substringAfterLast('/')
     var result by remember(absPath) { mutableStateOf<Result<String>?>(null) }
     LaunchedEffect(absPath) { result = runCatching { client.readFilePreview(rootPath, rel).content } }
@@ -143,7 +146,7 @@ private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) 
         when {
             r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
             r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null })
+                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null })
             }
             else -> {
                 val content = r.getOrDefault("")

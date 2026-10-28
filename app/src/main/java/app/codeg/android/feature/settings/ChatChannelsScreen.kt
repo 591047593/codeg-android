@@ -65,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -614,6 +615,7 @@ private fun normalizedObjectJson(raw: String): String? {
 @Composable
 private fun ChatChannelEditorDialog(existing: ChatChannelInfo?, viewModel: ChatChannelsViewModel, onDismiss: () -> Unit) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val scope = rememberCoroutineScope()
     val isEdit = existing != null
 
@@ -667,7 +669,7 @@ private fun ChatChannelEditorDialog(existing: ChatChannelInfo?, viewModel: ChatC
                 // cancellation semantics instead of pinning an error onto a gone screen.
                 throw e
             } catch (e: Exception) {
-                error = e.displayMessage(); saving = false
+                error = e.displayMessage(appContext); saving = false
             }
         }
     }

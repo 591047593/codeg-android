@@ -871,4 +871,19 @@
     <string name="mcp_delete_title">Delete MCP server</string>
     <string name="mcp_id_taken">That id is already used by another MCP server</string>
     <string name="mcp_rename_incomplete">Renamed, but the old entry %1$s could not be removed: %2$s</string>
+
+    <!--
+      Network / API failures shown to the user. These used to be hardcoded English
+      inside ErrorMessages.kt, so a Chinese build showed English for every error the
+      app could produce. Each one names what failed and what the user can do next,
+      instead of echoing a raw SocketTimeoutException at them.
+    -->
+    <string name="err_unauthorized">The server rejected this token. Open Manage servers and re-enter it.</string>
+    <string name="err_turn_in_progress">This session is still answering. Wait for it to finish, or stop it first.</string>
+    <string name="err_decoding">The server sent a response this version can\'t read. Check that app and server versions match.</string>
+    <string name="err_response_too_large">This conversation is too large to open on this device.</string>
+    <string name="err_network">Can\'t reach the server. Check that it is running and that this device is on the same network.</string>
+    <string name="err_timeout">The server took too long to respond. Try again.</string>
+    <string name="err_server">Server error (%1$d): %2$s</string>
+    <string name="err_unknown">Something went wrong: %1$s</string>
 </resources>

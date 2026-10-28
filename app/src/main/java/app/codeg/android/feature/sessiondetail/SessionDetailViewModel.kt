@@ -8,6 +8,7 @@ import app.codeg.android.R
 import app.codeg.android.core.common.ApplicationScope
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.SelectorPrefs
+import app.codeg.android.core.datastore.DraftStore
 import app.codeg.android.core.datastore.SelectorPrefsStore
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.AcpEvent
@@ -102,6 +103,7 @@ private const val RECONCILE_ATTEMPTS = 6
 class SessionDetailViewModel @Inject constructor(
     private val repository: ServerRepository,
     private val selectorPrefs: SelectorPrefsStore,
+    private val draftStore: DraftStore,
     private val savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
     private val applicationScope: ApplicationScope,
@@ -283,6 +285,9 @@ class SessionDetailViewModel @Inject constructor(
                         )
                     }
                     rebuildTimeline()
+                    // The composer's stored draft can only be looked up once the id is
+                    // known, so it is fetched after the transcript.
+                    loadDraft()
                     // Reattach when the server reports the turn live — via an explicit
                     // in-flight user turn id or the conversation status (iOS parity).
                     if (detail.inFlightUserTurnId != null || detail.summary.status.isLive) reattachIfLive()
@@ -322,7 +327,7 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -458,7 +463,7 @@ class SessionDetailViewModel @Inject constructor(
                     // top of the list, so retrying instantly would issue a request per
                     // frame. Report once, leave `hasOlderTurns` alone so the history is
                     // still reachable, and suppress further attempts for a short backoff.
-                    val message = e.displayMessage()
+                    val message = e.displayMessage(appContext)
                     _ui.update { it.copy(notice = message) }
                     pagingRetryAt = System.currentTimeMillis() + PAGING_RETRY_BACKOFF_MS
                     return@launch
@@ -601,7 +606,7 @@ class SessionDetailViewModel @Inject constructor(
         } catch (e: ApiError.TurnInProgress) {
             discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = appContext.getString(R.string.session_turn_in_progress))
         } catch (e: Exception) {
-            discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = e.displayMessage())
+            discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = e.displayMessage(appContext))
         }
     }
 
@@ -1004,7 +1009,7 @@ class SessionDetailViewModel @Inject constructor(
                 .onFailure { e ->
                     _ui.update {
                         it.copy(
-                            notice = e.displayMessage(),
+                            notice = e.displayMessage(appContext),
                             // New attempt id: the restored card must not inherit the dead
                             // card's "submitting" state, or its buttons stay disabled.
                             pendingPermission = pending.copy(attempt = pending.attempt + 1),
@@ -1023,7 +1028,7 @@ class SessionDetailViewModel @Inject constructor(
                 .onFailure { e ->
                     _ui.update {
                         it.copy(
-                            notice = e.displayMessage(),
+                            notice = e.displayMessage(appContext),
                             pendingQuestion = pending.copy(attempt = pending.attempt + 1),
                         )
                     }
@@ -1075,7 +1080,7 @@ class SessionDetailViewModel @Inject constructor(
                 .onFailure { e ->
                     _ui.update {
                         it.copy(
-                            notice = e.displayMessage(),
+                            notice = e.displayMessage(appContext),
                             pendingPlanApproval = pending.copy(attempt = pending.attempt + 1),
                         )
                     }
@@ -1422,6 +1427,47 @@ class SessionDetailViewModel @Inject constructor(
 
     fun dismissNotice() = _ui.update { it.copy(notice = null) }
 
+    // region Composer draft persistence
+
+    /**
+     * The stored draft for this screen, loaded once after the conversation id is known.
+     *
+     * Published through state rather than returned from a suspend call so the screen can
+     * collect it: `load()` sets the id, and the draft can only be keyed once that has
+     * happened.
+     */
+    fun loadDraft() {
+        viewModelScope.launch {
+            val text = runCatching { draftStore.current(conversationId) }.getOrDefault("")
+            if (text.isNotBlank()) _ui.update { it.copy(restoredPersistedDraft = text) }
+        }
+    }
+
+    /** The screen consumed [SessionDetailUiState.restoredPersistedDraft]. */
+    fun consumePersistedDraft() {
+        if (_ui.value.restoredPersistedDraft != null) {
+            _ui.update { it.copy(restoredPersistedDraft = null) }
+        }
+    }
+
+    /**
+     * Persist the composer's text so it survives process death and conversation switches.
+     *
+     * Called from the screen on every edit (debounced there) and on leaving the screen.
+     * Runs on `applicationScope` so a save issued while the screen is being destroyed
+     * still lands.
+     */
+    fun saveDraft(text: String) {
+        val id = conversationId
+        applicationScope.launch { runCatching { draftStore.save(id, text) } }
+    }
+
+    /** Drop the stored draft — the text became a sent message. */
+    fun clearDraft() {
+        val id = conversationId
+        applicationScope.launch { runCatching { draftStore.clear(id) } }
+    }
+
     // endregion
 
     // region Live emit coalescing (~50ms, matching iOS LiveTextRun)
@@ -1477,7 +1523,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.renameConversation(id, trimmed) }
                 .onSuccess { repository.notifyConversationsChanged() }
-                .onFailure { e -> _ui.update { it.copy(summary = previous, notice = e.displayMessage()) } }
+                .onFailure { e -> _ui.update { it.copy(summary = previous, notice = e.displayMessage(appContext)) } }
         }
     }
 
@@ -1492,7 +1538,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.setPinned(id, pin) }
                 .onSuccess { repository.notifyConversationsChanged() }
-                .onFailure { e -> _ui.update { it.copy(summary = summary, notice = e.displayMessage()) } }
+                .onFailure { e -> _ui.update { it.copy(summary = summary, notice = e.displayMessage(appContext)) } }
         }
     }
 
@@ -1504,7 +1550,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.setStatus(id, status.wire) }
                 .onSuccess { repository.notifyConversationsChanged() }
-                .onFailure { e -> _ui.update { it.copy(summary = previous, notice = e.displayMessage()) } }
+                .onFailure { e -> _ui.update { it.copy(summary = previous, notice = e.displayMessage(appContext)) } }
         }
     }
 
@@ -1515,7 +1561,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.deleteConversation(id) }
                 .onSuccess { repository.notifyConversationsChanged(); onDeleted() }
-                .onFailure { e -> _ui.update { it.copy(notice = e.displayMessage()) } }
+                .onFailure { e -> _ui.update { it.copy(notice = e.displayMessage(appContext)) } }
         }
     }
 
@@ -1621,7 +1667,7 @@ class SessionDetailViewModel @Inject constructor(
             }
             list
         } catch (e: Exception) {
-            _ui.update { it.copy(notice = e.displayMessage()) }
+            _ui.update { it.copy(notice = e.displayMessage(appContext)) }
             null
         }
     }
@@ -1670,7 +1716,7 @@ class SessionDetailViewModel @Inject constructor(
             // git refuses a branch already checked out by another worktree. Recover
             // the way the web's resolve step would — locate it and open a session there.
             recoverFromWorktreeCheckout(c, branch, root, e)?.let { return it }
-            _ui.update { it.copy(notice = e.displayMessage()) }
+            _ui.update { it.copy(notice = e.displayMessage(appContext)) }
             return BranchSwitchOutcome.Failed
         }
         return if (root.id == active.id) {
@@ -1690,7 +1736,7 @@ class SessionDetailViewModel @Inject constructor(
         runCatching { c.resolveWorktreeFolder(root.path, branch) }.getOrNull()?.path?.let { path ->
             return openWorktreeSession(c, path, root)
         }
-        worktreePathFromError(error.displayMessage())?.let { path ->
+        worktreePathFromError(error.displayMessage(appContext))?.let { path ->
             return openWorktreeSession(c, path, root)
         }
         return null
@@ -1723,7 +1769,7 @@ class SessionDetailViewModel @Inject constructor(
             _ui.update { it.copy(currentBranch = trimmed) }
             true
         } catch (e: Exception) {
-            _ui.update { it.copy(notice = e.displayMessage()) }
+            _ui.update { it.copy(notice = e.displayMessage(appContext)) }
             false
         }
     }
@@ -1970,6 +2016,14 @@ data class SessionDetailUiState(
     val notice: String? = null,
     /** Set when a failed send returns the user's typed text to the composer (consumed once). */
     val restoreDraft: String? = null,
+    /**
+     * Composer text recovered from [DraftStore] — the draft that survived the process.
+     *
+     * Distinct from [restoreDraft] (a failed send handing text back within this screen):
+     * this one arrives once on open, and the screen only applies it when the composer is
+     * still empty.
+     */
+    val restoredPersistedDraft: String? = null,
     val error: String? = null,
     val pendingPermission: PendingPermissionUi? = null,
     val pendingQuestion: PendingQuestionUi? = null,

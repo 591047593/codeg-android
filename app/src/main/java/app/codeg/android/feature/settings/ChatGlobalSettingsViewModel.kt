@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -8,6 +9,7 @@ import app.codeg.android.core.model.ChatEventCatalog
 import app.codeg.android.core.model.WebhookConfig
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -24,6 +26,8 @@ import javax.inject.Inject
  *  forwarded-event filter, and global outbound webhooks. Mirrors iOS `ChatGlobalSettingsView`. */
 @HiltViewModel
 class ChatGlobalSettingsViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -84,7 +88,7 @@ class ChatGlobalSettingsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -103,7 +107,7 @@ class ChatGlobalSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.setChatCommandPrefix(clean) }
                 .onFailure { e ->
-                    _ui.update { it.copy(commandPrefix = previous, error = e.displayMessage()) }
+                    _ui.update { it.copy(commandPrefix = previous, error = e.displayMessage(appContext)) }
                 }
         }
     }
@@ -115,7 +119,7 @@ class ChatGlobalSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.setChatMessageLanguage(code) }
                 .onFailure { e ->
-                    _ui.update { it.copy(language = previous, error = e.displayMessage()) }
+                    _ui.update { it.copy(language = previous, error = e.displayMessage(appContext)) }
                 }
         }
     }
@@ -130,7 +134,7 @@ class ChatGlobalSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { c.setChatEventFilter(list) }
                 .onFailure { e ->
-                    _ui.update { it.copy(enabledEvents = previous, error = e.displayMessage()) }
+                    _ui.update { it.copy(enabledEvents = previous, error = e.displayMessage(appContext)) }
                 }
         }
     }
@@ -160,7 +164,7 @@ class ChatGlobalSettingsViewModel @Inject constructor(
         val previous = _ui.value.webhooks
         _ui.update { it.copy(webhooks = next) }
         viewModelScope.launch {
-            runCatching { c.setChatEventWebhooks(next) }.onFailure { e -> _ui.update { it.copy(webhooks = previous, error = e.displayMessage()) } }
+            runCatching { c.setChatEventWebhooks(next) }.onFailure { e -> _ui.update { it.copy(webhooks = previous, error = e.displayMessage(appContext)) } }
         }
     }
 

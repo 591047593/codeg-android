@@ -73,7 +73,7 @@ class McpViewModel @Inject constructor(
                 client = c
                 _ui.update { it.copy(loading = false, servers = c.mcpScanLocal().sortedBy { s -> s.id.lowercase() }, error = null) }
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -97,7 +97,7 @@ class McpViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                return@launch onResult(e.displayMessage())
+                return@launch onResult(e.displayMessage(appContext))
             }
             // The upsert landed; a failed cleanup after a rename leaves a duplicate but
             // must not be reported as success — say so instead of silently ignoring it.
@@ -109,7 +109,7 @@ class McpViewModel @Inject constructor(
                         appContext.getString(
                             R.string.mcp_rename_incomplete,
                             originalId,
-                            cleanup.exceptionOrNull()?.displayMessage().orEmpty(),
+                            cleanup.exceptionOrNull().displayMessage(appContext).orEmpty(),
                         ),
                     )
                 }
@@ -128,13 +128,13 @@ class McpViewModel @Inject constructor(
             runCatching { c.mcpRemoveServer(server.id) }.onFailure { e ->
                 _ui.update { state ->
                     if (state.servers.any { it.id == server.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             servers = state.servers.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), server)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }

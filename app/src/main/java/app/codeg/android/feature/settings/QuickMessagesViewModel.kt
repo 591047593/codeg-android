@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -7,6 +8,7 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.QuickMessage
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -22,6 +24,8 @@ import javax.inject.Inject
 /** CRUD for reusable Quick Messages (the canonical server-settings list pattern). */
 @HiltViewModel
 class QuickMessagesViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -70,7 +74,7 @@ class QuickMessagesViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -90,7 +94,7 @@ class QuickMessagesViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(error = e.displayMessage()) }
+                _ui.update { it.copy(error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -106,13 +110,13 @@ class QuickMessagesViewModel @Inject constructor(
             } catch (e: Exception) {
                 _ui.update { state ->
                     if (state.messages.any { m -> m.id == message.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             messages = state.messages.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), message)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }

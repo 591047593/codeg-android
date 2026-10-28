@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -77,6 +78,7 @@ fun CommitSheet(
     onCommitted: (push: Boolean) -> Unit,
 ) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val scope = rememberCoroutineScope()
 
     var entries by remember { mutableStateOf<List<GitStatusEntry>?>(null) }
@@ -105,7 +107,7 @@ fun CommitSheet(
                     result.filter { it.change != GitChange.UNTRACKED }.map { it.path }.toSet()
                 }
             }
-            .onFailure { loadError = it.displayMessage() }
+            .onFailure { loadError = it.displayMessage(appContext) }
     }
 
     androidx.compose.runtime.LaunchedEffect(rootPath) { load() }
@@ -127,7 +129,7 @@ fun CommitSheet(
                 throw e
             } catch (e: Exception) {
                 committing = false
-                commitError = e.displayMessage()
+                commitError = e.displayMessage(appContext)
             }
         }
     }

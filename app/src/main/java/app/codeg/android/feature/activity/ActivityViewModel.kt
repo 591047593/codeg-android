@@ -152,13 +152,13 @@ class ActivityViewModel @Inject constructor(
             } catch (e: Exception) {
                 _ui.update { state ->
                     if (client !== active || state.conversations.any { it.id == conversation.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             conversations = state.conversations.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), conversation)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }
@@ -184,7 +184,7 @@ class ActivityViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, refreshing = false, error = if (it.hasLoaded) it.error else e.displayMessage()) }
+            _ui.update { it.copy(loading = false, refreshing = false, error = if (it.hasLoaded) it.error else e.displayMessage(appContext)) }
         }
     }
 

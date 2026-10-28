@@ -87,8 +87,8 @@ class ChatChannelsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (_ui.value.channels.isEmpty()) _ui.update { it.copy(phase = ChatChannelsPhase.FAILED, error = e.displayMessage()) }
-                else _ui.update { it.copy(refreshError = e.displayMessage()) }
+                if (_ui.value.channels.isEmpty()) _ui.update { it.copy(phase = ChatChannelsPhase.FAILED, error = e.displayMessage(appContext)) }
+                else _ui.update { it.copy(refreshError = e.displayMessage(appContext)) }
             }
         }
     }
@@ -127,7 +127,7 @@ class ChatChannelsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(channels = it.channels.map { ch -> if (ch.id == channel.id) ch.withEnabled(previous) else ch }, refreshError = e.displayMessage()) }
+                _ui.update { it.copy(channels = it.channels.map { ch -> if (ch.id == channel.id) ch.withEnabled(previous) else ch }, refreshError = e.displayMessage(appContext)) }
             } finally {
                 _ui.update { it.copy(togglingEnabled = it.togglingEnabled - channel.id) }
             }
@@ -183,7 +183,7 @@ class ChatChannelsViewModel @Inject constructor(
                     }
                     state.copy(
                         channels = restored,
-                        toast = appContext.getString(R.string.cc_toast_delete_failed, e.displayMessage()),
+                        toast = appContext.getString(R.string.cc_toast_delete_failed, e.displayMessage(appContext)),
                     )
                 }
             }
@@ -243,7 +243,7 @@ class ChatChannelsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateDetail { it.copy(actionError = e.displayMessage()) }
+                updateDetail { it.copy(actionError = e.displayMessage(appContext)) }
             } finally {
                 updateDetail { it.copy(busy = false) }
             }
@@ -268,7 +268,7 @@ class ChatChannelsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateDetail { it.copy(actionError = e.displayMessage()) }
+                updateDetail { it.copy(actionError = e.displayMessage(appContext)) }
             }
         }
     }

@@ -588,7 +588,7 @@ private fun CursorSection(state: AgentDetailState, vm: AgentsViewModel) {
             modelsLoading = true
             runCatching { vm.cursorListModels(probeKey) }
                 .onSuccess { models = it.models; modelsError = it.error }
-                .onFailure { modelsError = it.displayMessage() }
+                .onFailure { modelsError = it.displayMessage(context) }
             modelsLoading = false
         }
     }

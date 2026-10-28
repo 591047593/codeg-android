@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -89,6 +90,8 @@ import app.codeg.android.feature.sessiondetail.timeline.TranscriptTimeline
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
@@ -97,7 +100,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * ACP connection, streams the reply, and reconciles against the server transcript
  * on completion. Port of the iOS `SessionDetailView`.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun SessionDetailScreen(
     onBack: () -> Unit,
@@ -123,6 +126,29 @@ fun SessionDetailScreen(
             if (draft.isBlank()) draft = restored
             viewModel.consumeRestoredDraft()
         }
+    }
+
+    // The draft that survived the process (and switching between conversations). Applied
+    // only into an empty composer, so a `rememberSaveable`-restored draft — the fresher
+    // of the two — is never overwritten by the stored one.
+    LaunchedEffect(ui.restoredPersistedDraft) {
+        ui.restoredPersistedDraft?.let { stored ->
+            if (draft.isBlank()) draft = stored
+            viewModel.consumePersistedDraft()
+        }
+    }
+
+    // Persist the composer as the user types, debounced: a keystroke-per-write would hit
+    // the preferences file hundreds of times for one sentence. `snapshotFlow` restarts on
+    // each change and the delay settles it; the final value is also written on dispose
+    // below, so nothing is lost when the screen closes mid-debounce.
+    LaunchedEffect(Unit) {
+        snapshotFlow { draft }
+            .debounce(DRAFT_SAVE_DEBOUNCE_MS)
+            .collect { viewModel.saveDraft(it) }
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.saveDraft(draft) }
     }
 
     if (showOptions) AgentOptionsSheet(
@@ -301,6 +327,9 @@ fun SessionDetailScreen(
                     onSend = {
                         viewModel.send(draft)
                         draft = ""
+                        // The text is now a message; leaving it stored would restore it
+                        // into a composer that no longer needs it.
+                        viewModel.clearDraft()
                     },
                     isInFlight = ui.isInFlight,
                     onStop = viewModel::cancel,
@@ -467,6 +496,15 @@ private const val THUMBNAIL_MAX_PX = 240
  * trigger it at all.
  */
 private const val PREFETCH_TURNS_AT_TOP = 20
+
+/**
+ * How long the composer must be idle before its text is written to disk.
+ *
+ * The draft is persisted so it survives process death, but writing on every keystroke
+ * would hit the preferences file hundreds of times per sentence. A pause is the natural
+ * commit point; `onDispose` writes the final value so closing mid-pause still saves.
+ */
+private const val DRAFT_SAVE_DEBOUNCE_MS = 600L
 
 /** A horizontal strip of pending image attachments, each removable. */
 @Composable

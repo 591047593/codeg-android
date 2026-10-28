@@ -191,7 +191,7 @@ class SessionListViewModel @Inject constructor(
             throw e
         } catch (e: Exception) {
             if (token != fetchGeneration) return
-            _ui.update { it.copy(isLoading = false, isRefreshing = false, error = e.displayMessage()) }
+            _ui.update { it.copy(isLoading = false, isRefreshing = false, error = e.displayMessage(appContext)) }
         } finally {
             // A change notification that arrived while this fetch was running applies now.
             if (pendingRefresh) drainPendingRefresh()
@@ -235,7 +235,7 @@ class SessionListViewModel @Inject constructor(
                             conversations = state.conversations.map {
                                 if (it.id == conversation.id) it.copy(pinnedAt = previousPinnedAt) else it
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }
@@ -273,13 +273,13 @@ class SessionListViewModel @Inject constructor(
                     if (client !== active) {
                         state
                     } else if (state.conversations.any { it.id == conversation.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             conversations = state.conversations.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), conversation)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }

@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -10,6 +11,7 @@ import app.codeg.android.core.model.ExpertLinkState
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -30,6 +32,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class ExpertsViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -80,8 +84,8 @@ class ExpertsViewModel @Inject constructor(
                 }.getOrDefault(emptyList())
                 _ui.update { it.copy(phase = ExpertsPhase.LOADED, experts = experts, agents = agents, refreshError = null) }
             } catch (e: Exception) {
-                if (_ui.value.experts.isEmpty()) _ui.update { it.copy(phase = ExpertsPhase.FAILED, error = e.displayMessage()) }
-                else _ui.update { it.copy(refreshError = e.displayMessage()) }
+                if (_ui.value.experts.isEmpty()) _ui.update { it.copy(phase = ExpertsPhase.FAILED, error = e.displayMessage(appContext)) }
+                else _ui.update { it.copy(refreshError = e.displayMessage(appContext)) }
             }
         }
     }
@@ -106,7 +110,7 @@ class ExpertsViewModel @Inject constructor(
                 _ui.update { st ->
                     val d = st.detail
                     if (d == null || d.expert.id != expert.id) st
-                    else st.copy(detail = d.copy(loading = false, error = e.displayMessage()))
+                    else st.copy(detail = d.copy(loading = false, error = e.displayMessage(appContext)))
                 }
             }
         }
@@ -160,7 +164,7 @@ class ExpertsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                updateDetailFor(expertId) { it.copy(error = e.displayMessage()) }
+                updateDetailFor(expertId) { it.copy(error = e.displayMessage(appContext)) }
                 // Re-sync real state — but only if that expert's dialog is still open,
                 // otherwise this would resurrect a dialog the user closed.
                 if (_ui.value.detail?.expert?.id == expertId) reSyncDetail(detail.expert)

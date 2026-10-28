@@ -81,14 +81,14 @@ class ProjectsViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, refreshing = false, error = e.displayMessage()) }
+            _ui.update { it.copy(loading = false, refreshing = false, error = e.displayMessage(appContext)) }
         }
     }
 
     fun openFolder(path: String, onResult: (String?) -> Unit) {
         val c = client ?: return onResult("No server selected")
         viewModelScope.launch {
-            val err = runCatching { c.openFolder(path) }.exceptionOrNull()?.displayMessage()
+            val err = runCatching { c.openFolder(path) }.exceptionOrNull()?.displayMessage(appContext)
             if (err == null) fetch(initial = false)
             onResult(err)
         }
@@ -108,7 +108,7 @@ class ProjectsViewModel @Inject constructor(
         val c = client ?: return onResult(appContext.getString(R.string.server_none_selected))
         viewModelScope.launch {
             val err = runCatching { c.removeFolderFromHistory(folder.path) }
-                .exceptionOrNull()?.displayMessage()
+                .exceptionOrNull()?.displayMessage(appContext)
             if (err == null) {
                 _ui.update { it.copy(folders = it.folders.filterNot { f -> f.id == folder.id }) }
                 repository.notifyFoldersChanged()
@@ -139,7 +139,7 @@ class ProjectsViewModel @Inject constructor(
             fetch(initial = false)
             null
         } catch (e: Exception) {
-            e.displayMessage()
+            e.displayMessage(appContext)
         }
     }
 }

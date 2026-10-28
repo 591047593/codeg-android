@@ -1,5 +1,6 @@
 package app.codeg.android.feature.server
 
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,6 +11,7 @@ import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
@@ -20,6 +22,8 @@ import javax.inject.Inject
 /** Add/edit form state for a server profile, plus the Test Connection probe. */
 @HiltViewModel
 class ServerEditorViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -77,7 +81,7 @@ class ServerEditorViewModel @Inject constructor(
                 val health = repository.transientClient(url, token.trim()).health()
                 TestState.Success(health.version)
             } catch (e: Exception) {
-                TestState.Failure(e.displayMessage())
+                TestState.Failure(e.displayMessage(appContext))
             }
         }
     }
@@ -113,7 +117,7 @@ class ServerEditorViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 saving = false
-                saveError = e.displayMessage()
+                saveError = e.displayMessage(appContext)
                 return@launch
             }
             if (editingId == null) repository.select(id)

@@ -858,4 +858,14 @@
     <string name="mcp_delete_title">删除 MCP 服务器</string>
     <string name="mcp_id_taken">该 id 已被另一个 MCP 服务器占用</string>
     <string name="mcp_rename_incomplete">已重命名，但无法删除旧条目 %1$s：%2$s</string>
+
+    <!-- 网络 / API 失败提示（见 values/strings.xml 的说明）。 -->
+    <string name="err_unauthorized">服务器拒绝了这个令牌。请打开“管理服务器”重新输入。</string>
+    <string name="err_turn_in_progress">该会话仍在回复中。请等待它结束，或先停止。</string>
+    <string name="err_decoding">服务器返回了此版本无法识别的响应。请确认应用与服务端版本匹配。</string>
+    <string name="err_response_too_large">该会话过大，无法在此设备上打开。</string>
+    <string name="err_network">无法连接到服务器。请确认服务端正在运行，且本设备与它在同一网络。</string>
+    <string name="err_timeout">服务器响应超时，请重试。</string>
+    <string name="err_server">服务器错误（%1$d）：%2$s</string>
+    <string name="err_unknown">出错了：%1$s</string>
 </resources>

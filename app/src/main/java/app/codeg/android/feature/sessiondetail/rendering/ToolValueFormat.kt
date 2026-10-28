@@ -535,9 +535,18 @@ fun ToolErrorOutput(output: String) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.ErrorOutline, null, tint = colors.danger, modifier = Modifier.size(13.dp))
-            Text(stringResource(R.string.tool_error_output), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.danger)
+            Text(
+                stringResource(R.string.tool_error_output),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.danger,
+                modifier = Modifier.padding(start = 5.dp).weight(1f),
+            )
+            // An error string is the thing a user pastes into a search or a bug report;
+            // every other output shape already offers a copy, this one did not.
+            CopyButton(output)
         }
         if (fields != null) {
             fields.forEach { (key, value) ->

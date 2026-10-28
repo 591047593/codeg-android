@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -84,6 +85,7 @@ private data class KimiBanner(val text: String, val isError: Boolean)
 @Composable
 fun AgentConfigKimiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // Seed the editable state ONCE from the projected config (later saves refresh only
@@ -134,7 +136,7 @@ fun AgentConfigKimiView(agent: AcpAgentInfo, viewModel: AgentsViewModel) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                banner = KimiBanner(e.displayMessage(), true)
+                banner = KimiBanner(e.displayMessage(appContext), true)
             }
             saving = false
         }

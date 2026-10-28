@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -290,6 +291,7 @@ private fun SkillEditorDialog(
     onDismiss: () -> Unit,
 ) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val scope = rememberCoroutineScope()
     val existing = (target as? SkillEditTarget.Edit)?.skill
     val isReadOnly = existing?.readOnly == true
@@ -306,7 +308,7 @@ private fun SkillEditorDialog(
         if (existing != null) {
             runCatching { loadContent(existing) }
                 .onSuccess { content = it }
-                .onFailure { error = it.displayMessage() }
+                .onFailure { error = it.displayMessage(appContext) }
             loadingContent = false
         }
     }
@@ -334,7 +336,7 @@ private fun SkillEditorDialog(
                                 scope.launch {
                                     runCatching { onSave(skillId.trim(), skillScope, content, layout) }
                                         .onSuccess { onDismiss() }
-                                        .onFailure { error = it.displayMessage(); saving = false }
+                                        .onFailure { error = it.displayMessage(appContext); saving = false }
                                 }
                             },
                         ) {

@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -77,6 +78,7 @@ fun FolderChangesView(
     onCommit: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current
     var diffFile by remember { mutableStateOf<String?>(null) }
     BackHandler(enabled = diffFile != null) { diffFile = null }
 
@@ -111,7 +113,7 @@ fun FolderChangesView(
                     if (e is ApiError.Server && e.code == "not_a_git_repository") {
                         Centered { EmptyState(Icons.Rounded.Difference, stringResource(R.string.commits_not_a_git_repo), stringResource(R.string.commits_not_a_git_repo_message)) }
                     } else {
-                        Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_load_failed), e?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null }) }
+                        Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_load_failed), e?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null }) }
                     }
                 }
                 else -> {
@@ -227,12 +229,13 @@ private fun ChangeRow(entry: GitStatusEntry, onClick: () -> Unit, onLongClick: (
 
 @Composable
 private fun WorkingDiff(client: CodegClient, rootPath: String, file: String) {
+    val appContext = LocalContext.current
     var result by remember(file) { mutableStateOf<Result<String>?>(null) }
     LaunchedEffect(file) { result = runCatching { client.gitDiff(rootPath, file) } }
     val r = result
     when {
         r == null -> Centered { LoadingView(stringResource(R.string.common_loading)) }
-        r.isFailure -> Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_diff_load_failed), r.exceptionOrNull()?.displayMessage() ?: stringResource(R.string.files_error), onRetry = { result = null }) }
+        r.isFailure -> Centered { InlineError(Icons.Rounded.Difference, stringResource(R.string.changes_diff_load_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null }) }
         else -> {
             val files = UnifiedDiff.parse(r.getOrDefault(""))
             if (files == null) Centered { EmptyState(Icons.Rounded.Difference, stringResource(R.string.changes_no_diff_title), stringResource(R.string.changes_no_diff_message)) }

@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -7,6 +8,7 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.AppUpdateCheckResult
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -22,6 +24,8 @@ import javax.inject.Inject
 /** System settings: HTTP proxy + server update check. */
 @HiltViewModel
 class SystemViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -70,7 +74,7 @@ class SystemViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -89,7 +93,7 @@ class SystemViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(savingProxy = false, error = e.displayMessage()) }
+                _ui.update { it.copy(savingProxy = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -103,7 +107,7 @@ class SystemViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(checking = false, error = e.displayMessage()) }
+                _ui.update { it.copy(checking = false, error = e.displayMessage(appContext)) }
             }
         }
     }

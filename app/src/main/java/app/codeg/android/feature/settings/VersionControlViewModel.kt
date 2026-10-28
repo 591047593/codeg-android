@@ -1,5 +1,6 @@
 package app.codeg.android.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -8,6 +9,7 @@ import app.codeg.android.core.model.GitDetectResult
 import app.codeg.android.core.model.GitHubAccount
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -25,6 +27,8 @@ import javax.inject.Inject
 /** Version Control: git installation/custom-path + linked GitHub accounts (read). */
 @HiltViewModel
 class VersionControlViewModel @Inject constructor(
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
     private val repository: ServerRepository,
 ) : ViewModel() {
 
@@ -76,7 +80,7 @@ class VersionControlViewModel @Inject constructor(
                 }
                 _ui.update { it.copy(loading = false, detect = detect, customPath = settings ?: "", accounts = accounts, error = null) }
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.displayMessage()) }
+                _ui.update { it.copy(loading = false, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -97,7 +101,7 @@ class VersionControlViewModel @Inject constructor(
                 // A swallowed failure left `testResult` null, which the screen renders
                 // identically to "nothing tested yet" — the button appeared to do
                 // nothing at all. Surface it.
-                _ui.update { it.copy(testing = false, testResult = null, error = e.displayMessage()) }
+                _ui.update { it.copy(testing = false, testResult = null, error = e.displayMessage(appContext)) }
             }
         }
     }
@@ -115,7 +119,7 @@ class VersionControlViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _ui.update { it.copy(saving = false, error = e.displayMessage()) }
+                _ui.update { it.copy(saving = false, error = e.displayMessage(appContext)) }
             }
         }
     }

@@ -3,6 +3,7 @@ package app.codeg.android.core.designsystem.markdown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +43,14 @@ fun MarkdownContent(raw: String, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        for (block in blocks) SingleBlockView(block)
+        // Long-press to select and copy. A coding assistant's replies are mostly text a
+        // user wants to lift out — a path, an error, half a diff — and without this the
+        // only copyable content in the whole transcript was a fenced code block, which
+        // carries its own copy button. Wrapping the whole column rather than each block
+        // keeps a drag selecting across paragraph boundaries.
+        SelectionContainer {
+            for (block in blocks) SingleBlockView(block)
+        }
     }
 }
 

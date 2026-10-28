@@ -1,5 +1,6 @@
 package app.codeg.android.feature.search
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
@@ -8,6 +9,7 @@ import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,8 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val repository: ServerRepository,
     private val recentStore: RecentSearchesStore,
+    /** Needed only to resolve the localized failure strings in [displayMessage]. */
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -138,13 +142,13 @@ class SearchViewModel @Inject constructor(
             } catch (e: Exception) {
                 _ui.update { state ->
                     if (state.results.any { r -> r.id == conversation.id }) {
-                        state.copy(error = e.displayMessage())
+                        state.copy(error = e.displayMessage(appContext))
                     } else {
                         state.copy(
                             results = state.results.toMutableList().apply {
                                 add(removedIndex.coerceIn(0, size), conversation)
                             },
-                            error = e.displayMessage(),
+                            error = e.displayMessage(appContext),
                         )
                     }
                 }
@@ -175,7 +179,7 @@ class SearchViewModel @Inject constructor(
             throw e
         } catch (e: Exception) {
             if (generation != searchGeneration) return
-            _ui.update { it.copy(searching = false, error = e.displayMessage()) }
+            _ui.update { it.copy(searching = false, error = e.displayMessage(appContext)) }
         }
     }
 }
