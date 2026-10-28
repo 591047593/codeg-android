@@ -127,6 +127,10 @@ fun ActivityScreen(
                                     count = section.count,
                                     collapsed = isCollapsed,
                                     onToggle = { toggle(section.id) },
+                                    // An empty group has nothing to reveal, so it must not
+                                    // present itself as tappable — the Chats list already
+                                    // passed this and the two screens share the component.
+                                    collapsible = section.count > 0,
                                     modifier = Modifier.animateItem(),
                                 )
                             }
