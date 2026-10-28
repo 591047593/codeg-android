@@ -109,7 +109,7 @@ class McpViewModel @Inject constructor(
                         appContext.getString(
                             R.string.mcp_rename_incomplete,
                             originalId,
-                            cleanup.exceptionOrNull().displayMessage(appContext).orEmpty(),
+                            cleanup.exceptionOrNull()?.displayMessage(appContext).orEmpty(),
                         ),
                     )
                 }

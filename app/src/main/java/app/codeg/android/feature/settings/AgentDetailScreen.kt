@@ -556,6 +556,7 @@ private fun GrokSection(state: AgentDetailState, vm: AgentsViewModel) {
 @Composable
 private fun CursorSection(state: AgentDetailState, vm: AgentsViewModel) {
     val colors = CodegTheme.colors
+    val context = LocalContext.current
     val d = state.draft
     val custom = d.cursorAuthMode == CursorAuthMethod.CUSTOM
 
