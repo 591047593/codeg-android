@@ -74,6 +74,9 @@ private fun parseInline(
     var i = 0
     val n = raw.length
     val plain = StringBuilder()
+    // Set once a `[` fails to find its closing `)`: no later bracket can succeed either,
+    // so the link branch is skipped from then on and the scan stays linear.
+    var linksExhausted = false
 
     fun flushPlain() {
         if (plain.isNotEmpty()) {
@@ -143,7 +146,7 @@ private fun parseInline(
             }
 
             // Link [text](url).
-            c == '[' -> {
+            c == '[' && !linksExhausted -> {
                 val close = raw.indexOf(']', i + 1)
                 if (close > i && close + 1 < n && raw[close + 1] == '(') {
                     val urlEnd = raw.indexOf(')', close + 2)
@@ -158,6 +161,11 @@ private fun parseInline(
                         builder.pop()
                         i = urlEnd + 1
                     } else {
+                        // No `)` after this `]`: nothing later in this run can form a
+                        // link either, so stop treating `[` as a link opener. Without
+                        // this, a paragraph of `[a](` (no closing paren) re-scans to the
+                        // end for every `[` — O(n²) in composition: 512 KB measured 1.5 s.
+                        linksExhausted = true
                         plain.append(c); i++
                     }
                 } else {

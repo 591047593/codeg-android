@@ -51,10 +51,15 @@ fun PermissionRequestCard(
     parsed: ParsedPermission,
     options: List<PermissionOption>,
     onRespond: (String) -> Unit,
+    /** Rises when this request is re-surfaced after a failed response — see below. */
+    attempt: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    var submitting by remember(parsed.jsonPreview) { mutableStateOf<String?>(null) }
+    // Keyed on the view model's attempt id, not on the request content: a failed response
+    // re-surfaces the *same* request, so a content key would leave `submitting` set and
+    // every button disabled with no way out but leaving the screen.
+    var submitting by remember(parsed.jsonPreview, attempt) { mutableStateOf<String?>(null) }
     val accent = colors.accent
 
     Column(

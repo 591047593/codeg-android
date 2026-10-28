@@ -1001,7 +1001,16 @@ class SessionDetailViewModel @Inject constructor(
         _ui.update { it.copy(pendingPermission = null) }
         viewModelScope.launch {
             runCatching { client?.respondPermission(conn, pending.requestId, optionId) }
-                .onFailure { e -> _ui.update { it.copy(notice = e.displayMessage(), pendingPermission = pending) } }
+                .onFailure { e ->
+                    _ui.update {
+                        it.copy(
+                            notice = e.displayMessage(),
+                            // New attempt id: the restored card must not inherit the dead
+                            // card's "submitting" state, or its buttons stay disabled.
+                            pendingPermission = pending.copy(attempt = pending.attempt + 1),
+                        )
+                    }
+                }
         }
     }
 
@@ -1011,7 +1020,14 @@ class SessionDetailViewModel @Inject constructor(
         _ui.update { it.copy(pendingQuestion = null) }
         viewModelScope.launch {
             runCatching { client?.answerQuestion(conn, pending.questionId, answer) }
-                .onFailure { e -> _ui.update { it.copy(notice = e.displayMessage(), pendingQuestion = pending) } }
+                .onFailure { e ->
+                    _ui.update {
+                        it.copy(
+                            notice = e.displayMessage(),
+                            pendingQuestion = pending.copy(attempt = pending.attempt + 1),
+                        )
+                    }
+                }
         }
     }
 
@@ -1056,7 +1072,14 @@ class SessionDetailViewModel @Inject constructor(
                             _ui.update { it.copy(notice = appContext.getString(R.string.plan_approval_notes_dropped)) }
                     }
                 }
-                .onFailure { e -> _ui.update { it.copy(notice = e.displayMessage(), pendingPlanApproval = pending) } }
+                .onFailure { e ->
+                    _ui.update {
+                        it.copy(
+                            notice = e.displayMessage(),
+                            pendingPlanApproval = pending.copy(attempt = pending.attempt + 1),
+                        )
+                    }
+                }
         }
     }
 
@@ -2028,12 +2051,25 @@ data class PendingPermissionUi(
     val requestId: String,
     val parsed: app.codeg.android.feature.sessiondetail.interactive.ParsedPermission,
     val options: List<app.codeg.android.core.model.PermissionOption>,
+    /**
+     * Bumped every time this same request is re-surfaced after a failed response.
+     *
+     * The card keeps its "submitting" flag in `remember`, keyed on this value: on failure
+     * the view model restores the *same* request (identical [requestId]/[parsed]), so a
+     * content-derived key would not change and the card would come back with its buttons
+     * permanently disabled — the one state the user cannot escape without leaving the
+     * screen. A monotonically rising attempt id makes the restored card start clean.
+     */
+    val attempt: Int = 0,
 )
 
 /** A `question_request` awaiting answers. */
 data class PendingQuestionUi(
     val questionId: String,
     val questions: List<app.codeg.android.core.model.QuestionSpec>,
+    /** Bumped when the same question is re-surfaced after a failed answer; see
+     *  [PendingPermissionUi.attempt] for why the card's local state keys on it. */
+    val attempt: Int = 0,
 )
 
 /**
@@ -2050,6 +2086,9 @@ data class PendingPlanApprovalUi(
     /** The plan, read from Grok's `plan.md`. May be empty — the card then shows an
      *  empty-state notice rather than hiding, since the turn is blocked either way. */
     val planMarkdown: String,
+    /** Bumped when the same approval is re-surfaced after a failed decision; see
+     *  [PendingPermissionUi.attempt] for why the card's local state keys on it. */
+    val attempt: Int = 0,
 )
 
 /**

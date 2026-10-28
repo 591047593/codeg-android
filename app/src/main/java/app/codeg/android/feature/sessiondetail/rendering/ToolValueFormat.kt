@@ -144,19 +144,33 @@ object ToolOutputFormat {
     // path, which runs on every recomposition. Compiling a Regex allocates a Pattern
     // and parses the expression; `looksLikeMarkdown` alone compiled up to eight of
     // them per call. As `object` state they are built once for the process.
-    private val leadingFence = Regex("^\\s*```[\\w-]*\\s*\\n?")
-    private val trailingFence = Regex("\\n?\\s*```\\s*$")
+    //
+    // Backtracking, not matching, is the hazard here. `\n?\s*```\s*$` legitimately needs
+    // to cross newlines (`\s` includes `\n`), but the nested greedy quantifiers let each
+    // start position rescan to the end of the document: measured on 8 000 indented blank
+    // lines (32 KB), `find()` took ~2.5 s on the composition thread — an ANR reachable
+    // from ordinary command output. Possessive quantifiers keep the same language and the
+    // same matches while making each attempt give nothing back, which is what removes the
+    // quadratic behaviour (33 ms on the same input).
+    private val leadingFence = Regex("^\\s*+```[\\w-]*+\\s*+\\n?")
     private val diffHunkHeader = Regex("(?m)^@@ ")
 
-    /** Markdown signals, ≥2 of which mean "render as markdown" (iOS heuristic). */
+    /**
+     * Markdown signals, ≥2 of which mean "render as markdown" (iOS heuristic).
+     *
+     * The line-anchored ones use `[^\S\n]` (horizontal whitespace only). They never
+     * needed to cross a line — `(?m)^` already anchors per line — but `\s*` after the
+     * anchor could still run past the newline into the next line on every start
+     * position, which is quadratic on blank-line-heavy output.
+     */
     private val markdownSignals = listOf(
-        Regex("(?m)^#{1,6}\\s"),
-        Regex("(?m)^\\s*[-*+]\\s"),
-        Regex("(?m)^\\s*\\d+\\.\\s"),
+        Regex("(?m)^[^\\S\\n]*#{1,6}[^\\S\\n]"),
+        Regex("(?m)^[^\\S\\n]*[-*+][^\\S\\n]"),
+        Regex("(?m)^[^\\S\\n]*\\d+\\.[^\\S\\n]"),
         Regex("\\*\\*[^*]+\\*\\*"),
         Regex("\\[[^\\]]+\\]\\([^)]+\\)"),
         Regex("```"),
-        Regex("(?m)^>\\s"),
+        Regex("(?m)^>[^\\S\\n]"),
         Regex("(?m)^\\|.+\\|$"),
     )
 
@@ -194,12 +208,39 @@ object ToolOutputFormat {
         return lines.subList(index, lines.size).joinToString("\n")
     }
 
-    /** Remove a single leading / trailing Markdown code fence (```sh … ```). */
+    /** Remove a single leading / trailing Markdown code fence (```sh … ```).
+     *
+     * The trailing strip is done by scanning backwards over the tail rather than by
+     * running `trailingFence` over the whole document. The regex form
+     * (`\n?\s*```\s*$`) is quadratic in the length of a whitespace run — 156 KB of
+     * indented blank lines took ~24 s — because `find()` retries at every position and
+     * each attempt scans forward to `$`. Only the tail can ever match, so the scan is
+     * bounded to the last non-whitespace producer plus the run that follows it.
+     */
     fun stripMarkdownFence(text: String): String {
         var result = text
         leadingFence.find(result)?.let { result = result.removeRange(it.range) }
-        trailingFence.find(result)?.let { result = result.removeRange(it.range) }
+        trailingFenceRange(result)?.let { result = result.removeRange(it) }
         return result
+    }
+
+    /**
+     * Range of a trailing fence plus the whitespace/newline run that precedes it, or
+     * null when the text does not end with one.
+     *
+     * Equivalent to what `\n?\s*```\s*$` matched, computed in one backwards pass: skip
+     * the trailing whitespace (`\s*$`), require ``` there, then extend left over the
+     * whitespace run and at most one additional newline (`\n?\s*`).
+     */
+    private fun trailingFenceRange(text: String): IntRange? {
+        var end = text.length
+        while (end > 0 && text[end - 1].isWhitespace()) end--
+        if (end < 3 || !text.startsWith("```", end - 3)) return null
+        var start = end - 3
+        while (start > 0 && text[start - 1].isWhitespace()) start--
+        // `\n?\s*` allowed one extra newline beyond the whitespace run already eaten.
+        if (start > 0 && text[start - 1] == '\n') start--
+        return start until text.length
     }
 
     /** Full command-output pipeline: unwrap a JSON envelope, strip CLI metadata,

@@ -57,12 +57,16 @@ fun AskQuestionCard(
     questions: List<QuestionSpec>,
     onSubmit: (QuestionAnswer) -> Unit,
     onSkip: () -> Unit,
+    /** Rises when this question is re-surfaced after a failed answer — see below. */
+    attempt: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
     val selections = remember(questions) { mutableStateMapOf<String, Set<String>>() }
     val otherText = remember(questions) { mutableStateMapOf<String, String>() }
-    var submitting by remember(questions) { mutableStateOf(false) }
+    // Keyed on the attempt id as well as the content: a failed answer restores the same
+    // question, so a content-only key would leave `submitting` true and the card dead.
+    var submitting by remember(questions, attempt) { mutableStateOf(false) }
 
     fun answered(q: QuestionSpec): Boolean {
         val sel = selections[q.id].orEmpty()

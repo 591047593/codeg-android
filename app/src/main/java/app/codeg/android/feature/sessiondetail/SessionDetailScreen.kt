@@ -256,6 +256,7 @@ fun SessionDetailScreen(
                         parsed = p.parsed,
                         options = p.options,
                         onRespond = viewModel::respondPermission,
+                        attempt = p.attempt,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
@@ -264,6 +265,7 @@ fun SessionDetailScreen(
                         questions = q.questions,
                         onSubmit = viewModel::answerQuestion,
                         onSkip = viewModel::dismissQuestion,
+                        attempt = q.attempt,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
@@ -271,6 +273,7 @@ fun SessionDetailScreen(
                     PlanApprovalCard(
                         planMarkdown = p.planMarkdown,
                         onAnswer = viewModel::answerPlanApproval,
+                        attempt = p.attempt,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }

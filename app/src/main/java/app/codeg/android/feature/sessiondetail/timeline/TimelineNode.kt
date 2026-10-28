@@ -154,6 +154,31 @@ internal fun List<MessageTurn>.mergeWindow(
 }
 
 /**
+ * Drop later nodes that repeat an earlier node's id.
+ *
+ * Node ids become `LazyColumn` keys, and a duplicate key is a hard crash ("Key … was
+ * already used"). Tool nodes are keyed by the server's `tool_use_id`, which `merge()`
+ * carries across the consecutive assistant turns it folds together — so a server that
+ * re-emits one id (a split reply, a re-sync after reconnect, a repeated block) produces
+ * two identical keys. Keeping the first occurrence is right either way: the second copy
+ * describes the same call.
+ *
+ * Ids are otherwise unique by construction (turn ids for user/system nodes, position for
+ * anonymous text/tool parts), so this is a guard rather than a routine rewrite, and it is
+ * a no-op — same list instance — on every transcript that is already well formed.
+ */
+internal fun List<TimelineNode>.distinctByNodeId(): List<TimelineNode> {
+    val seen = HashSet<String>(size)
+    var duplicate = false
+    for (node in this) if (!seen.add(node.id)) { duplicate = true; break }
+    if (!duplicate) return this
+    val out = ArrayList<TimelineNode>(size)
+    val kept = HashSet<String>(size)
+    for (node in this) if (kept.add(node.id)) out.add(node)
+    return out
+}
+
+/**
  * Flattens a conversation into an ordered `[TimelineNode]`. User/system turns map
  * 1:1; runs of consecutive assistant turns merge into one reply (codeg persists a
  * logical reply as several turns) that expands into part nodes + a single footer.
@@ -217,7 +242,7 @@ object TranscriptTimeline {
         for (turn in pending) {
             nodes.add(TimelineNode(turn.id, NodeContent.User(turn), agent, startsGroup = true))
         }
-        return nodes
+        return nodes.distinctByNodeId()
     }
 
     /**
@@ -236,7 +261,16 @@ object TranscriptTimeline {
             return persisted
         }
         val nodes = persisted.toMutableList()
-        if (live != null) nodes.addAll(liveNodes(live, agent))
+        // The live reply can repeat a key the persisted window already holds (the server
+        // persisting a turn we are still streaming), and a duplicate LazyColumn key is a
+        // crash. Checked only when a live turn exists: the settled path above returns
+        // early, and this runs ~20x/s while streaming, so the no-live case must stay free.
+        // One HashSet pass over the persisted ids keeps it O(n) rather than O(n·m).
+        if (live != null) {
+            val known = HashSet<String>(nodes.size * 2)
+            for (n in nodes) known.add(n.id)
+            for (n in liveNodes(live, agent)) if (known.add(n.id)) nodes.add(n)
+        }
         if (nodes.isNotEmpty()) {
             nodes[0] = nodes[0].copy(connectTop = false)
             nodes[nodes.lastIndex] = nodes[nodes.lastIndex].copy(connectBottom = false)

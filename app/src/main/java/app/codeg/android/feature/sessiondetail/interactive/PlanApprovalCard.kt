@@ -61,11 +61,15 @@ import app.codeg.android.core.model.PlanApprovalDecision
 fun PlanApprovalCard(
     planMarkdown: String,
     onAnswer: (PlanApprovalDecision, String?) -> Unit,
+    /** Rises when this approval is re-surfaced after a failed decision — see below. */
+    attempt: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
     val plan = planMarkdown.trim()
-    var submitting by remember(planMarkdown) { mutableStateOf(false) }
+    // Keyed on the attempt id as well as the content: a failed decision restores the same
+    // approval, so a content-only key would leave `submitting` true and every button dead.
+    var submitting by remember(planMarkdown, attempt) { mutableStateOf(false) }
     var changesOpen by remember(planMarkdown) { mutableStateOf(false) }
     var feedback by remember(planMarkdown) { mutableStateOf("") }
     val notes = feedback.trim()
