@@ -91,7 +91,9 @@ fun ReasoningBlock(
             exit = shrinkVertically(tween(180)) + fadeOut(tween(120)),
         ) {
             Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
-                MarkdownContent(text)
+                // Keyed on [stateKey] so the incremental parser tracks this block across
+                // streamed deltas instead of re-parsing the whole trace each flush.
+                MarkdownContent(text, incrementalKey = stateKey)
             }
         }
     }

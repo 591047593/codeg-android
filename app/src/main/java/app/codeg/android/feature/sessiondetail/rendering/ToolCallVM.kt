@@ -91,7 +91,11 @@ data class ToolCallVM(
 /** One ordered piece of a rendered assistant turn (static subset; live variants added in M4). */
 sealed interface RenderPart {
     data class Text(val text: String) : RenderPart
-    data class Reasoning(val text: String) : RenderPart
+    /**
+     * A thinking block. [stableId] is the segment's own identity when the part came from
+     * the live stream; node ids fall back to the positional index when it is absent.
+     */
+    data class Reasoning(val text: String, val stableId: String? = null) : RenderPart
     data class Tool(val vm: ToolCallVM) : RenderPart
     data class ToolGroup(val items: List<ToolCallVM>, val streaming: Boolean) : RenderPart
     data class Image(val image: ImageData, val caption: String?) : RenderPart
@@ -118,7 +122,11 @@ object MessageRender {
                 is ContentBlock.Text ->
                     if (block.text.isNotBlank()) parts.add(RenderPart.Text(block.text))
                 is ContentBlock.Thinking ->
-                    if (block.text.isNotBlank()) parts.add(RenderPart.Reasoning(block.text))
+                    // Index into the turn's own block list, which is stable: blocks are
+                    // appended, never reordered, so this survives every re-adapt. The node
+                    // id must not fall back to the *part* index, which shifts as adjacent
+                    // tool calls merge into groups.
+                    if (block.text.isNotBlank()) parts.add(RenderPart.Reasoning(block.text, stableId = "b$idx"))
                 is ContentBlock.Image ->
                     parts.add(RenderPart.Image(block.image, null))
                 is ContentBlock.ImageGeneration -> {

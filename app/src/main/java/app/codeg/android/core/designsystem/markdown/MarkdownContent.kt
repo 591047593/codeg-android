@@ -34,11 +34,30 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
  * chat client. Inline spans within each block go through [rememberInlineMarkdown].
  */
 @Composable
-fun MarkdownContent(raw: String, modifier: Modifier = Modifier) {
+fun MarkdownContent(
+    raw: String,
+    modifier: Modifier = Modifier,
+    /**
+     * Incremental-parse key for text that grows while it is displayed — a streaming
+     * reply or a live thinking block.
+     *
+     * Without it every delta re-parsed the whole string through [parseMarkdownBlocks]
+     * and rebuilt every block composable from scratch. For a long reasoning trace flushed
+     * every ~50 ms that is a full re-layout per tick, which reads on screen as the block
+     * continuously scrolling or flickering. [LiveBlockParser] keeps the finalized prefix
+     * and re-parses only the tail, so each flush costs the new text rather than all of it.
+     *
+     * Null (the default) keeps the one-shot path for text that does not change.
+     */
+    incrementalKey: String? = null,
+) {
     // Slot-scoped parse only. The shared [MarkdownCache] is reserved for the persisted
     // node-build path; routing streaming callers (e.g. an auto-expanded ReasoningBlock)
     // through it would churn/evict persisted entries with dead growing-tail prefixes.
-    val blocks = remember(raw) { parseMarkdownBlocks(raw) }
+    val blocks = remember(raw, incrementalKey) {
+        if (incrementalKey != null) LiveBlockParser.parse(incrementalKey, raw)
+        else parseMarkdownBlocks(raw)
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),

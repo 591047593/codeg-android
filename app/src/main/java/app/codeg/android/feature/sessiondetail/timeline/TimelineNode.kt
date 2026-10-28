@@ -321,7 +321,10 @@ object TranscriptTimeline {
         for (seg in live.segments) {
             when (seg) {
                 is LiveSegment.Text -> if (seg.text.isNotBlank()) parts.add(RenderPart.Text(seg.text))
-                is LiveSegment.Thinking -> if (seg.text.isNotBlank()) parts.add(RenderPart.Reasoning(seg.text))
+                // Carry the segment's own id: the node id below must not be derived from
+                // a positional index, which shifts as tool groups merge and split during
+                // streaming.
+                is LiveSegment.Thinking -> if (seg.text.isNotBlank()) parts.add(RenderPart.Reasoning(seg.text, stableId = seg.id))
                 // Same boundary-marker treatment as the persisted path: codex emits the
                 // `Context compacting` → `Context compacted` pair on one id, so the
                 // divider flips from running to settled in place.
@@ -346,7 +349,17 @@ object TranscriptTimeline {
         val base = "$ownerId#$index"
         return when (part) {
             is RenderPart.Text -> textBlockNodes(part.text, base, agent, cached)
-            is RenderPart.Reasoning -> listOf(TimelineNode(base, NodeContent.Reasoning(part.text), agent))
+            // A live thinking block is keyed by its own segment id, never by `base`.
+            //
+            // `index` is the part's position in the grouped list, and `groupConsecutiveTools`
+            // merges and splits runs as a turn streams — so the index of a thinking block
+            // drifts whenever a tool starts or finishes ahead of it. The id changed with it,
+            // which reset both the block's `remember(stateKey)` expand state and its
+            // LazyColumn key: the disclosure replayed its expand animation and the row was
+            // torn down and rebuilt on every such shift, reading as continuous flicker.
+            is RenderPart.Reasoning -> listOf(
+                TimelineNode(part.stableId?.let { "reason-$ownerId-$it" } ?: base, NodeContent.Reasoning(part.text), agent),
+            )
             is RenderPart.Tool -> listOf(TimelineNode("tool-${part.vm.id}", NodeContent.Tool(part.vm), agent))
             is RenderPart.ToolGroup -> {
                 val gid = part.items.firstOrNull()?.let { "toolgroup-${it.id}" } ?: base
