@@ -205,11 +205,19 @@ fun SessionDetailScreen(
     }
     // Follow new / streamed content while pinned.
     //
-    // Keyed on the number of turns in the *state*, not on `nodes.size`: the rendered
-    // window also changes the node count, and re-scrolling when older turns are
-    // prepended would yank a user who is deliberately reading history back to the
-    // bottom. A new turn or an in-flight reply still re-pins as before.
-    LaunchedEffect(ui.turns.size, ui.pendingUserTurns.size, ui.live, stick) {
+    // Keyed on stable counts, never on `ui.live`: that is a fresh data class per streamed
+    // delta, so including it restarted this effect and re-issued a snap scroll ~20×/s for
+    // the whole reply — a scroll on every frame the user was pinned, and a source of the
+    // stutter. The rendered *node* count is the honest signal: it changes when a new block
+    // or tool appears, which is exactly when the view needs to follow, and it also covers
+    // a long single paragraph that grows without adding turns.
+    //
+    // Deliberately not `nodes.size` as the key alone: prepending older turns also changes
+    // it, and re-scrolling then would yank a user who is reading history back down. The
+    // turn count distinguishes the two — a page-in raises `ui.turns.size` while the node
+    // count only shifts by the prepended rows.
+    val followSignal = ui.turns.size to ui.pendingUserTurns.size
+    LaunchedEffect(followSignal, nodes.size, stick) {
         if (stick && nodes.isNotEmpty()) listState.scrollToItem(nodes.size)
     }
     // Grow the loaded window as the user approaches the top of a long transcript. Each
