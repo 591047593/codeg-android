@@ -360,9 +360,15 @@ object TranscriptTimeline {
             is RenderPart.Reasoning -> listOf(
                 TimelineNode(part.stableId?.let { "reason-$ownerId-$it" } ?: base, NodeContent.Reasoning(part.text), agent),
             )
+            // A run of one and a run of many share the same id namespace, keyed by the
+            // *first* call. `groupConsecutiveTools` turns a single call into a group the
+            // moment a second one arrives, and the old `tool-<id>` → `toolgroup-<id>` switch
+            // changed the row's key at that instant: LazyColumn tore the card down and
+            // rebuilt it, which dropped its expand state and flashed. Reusing one prefix
+            // keeps the row identity through the merge; only the content changes.
             is RenderPart.Tool -> listOf(TimelineNode("tool-${part.vm.id}", NodeContent.Tool(part.vm), agent))
             is RenderPart.ToolGroup -> {
-                val gid = part.items.firstOrNull()?.let { "toolgroup-${it.id}" } ?: base
+                val gid = part.items.firstOrNull()?.let { "tool-${it.id}" } ?: base
                 listOf(TimelineNode(gid, NodeContent.ToolGroup(part.items, part.streaming), agent))
             }
             is RenderPart.Image -> listOf(TimelineNode(base, NodeContent.Image(part.image, part.caption), agent))
