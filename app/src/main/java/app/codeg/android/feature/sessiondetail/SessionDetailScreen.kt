@@ -195,9 +195,12 @@ fun SessionDetailScreen(
             .distinctUntilChanged()
             .collect { nearTop -> if (nearTop) viewModel.loadOlderTurns() }
     }
+    // Pre-built id → index map. The previous `indexOfFirst` scanned every node per
+    // click; on a long transcript that is a linear walk on the main thread each time a
+    // citation is tapped.
     val scrollToId: (String) -> Unit = remember(nodes) {
-        val indexById = nodes.withIndex().associate { (i, n) -> n.id to i }
-        { id ->
+        val indexById: Map<String, Int> = nodes.withIndex().associate { (i, n) -> n.id to i }
+        return@remember { id: String ->
             val idx = indexById[id]
             if (idx != null) {
                 stick = false // unpin so the stream doesn't immediately yank us back down
