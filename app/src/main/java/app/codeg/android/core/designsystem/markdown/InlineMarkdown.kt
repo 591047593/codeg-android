@@ -44,8 +44,19 @@ fun inlineMarkdown(
     codeBg: Color,
     codeColor: Color,
 ): AnnotatedString = buildAnnotatedString {
-    parseInline(this, raw, linkColor, codeBg, codeColor)
+    parseInline(this, raw, linkColor, codeBg, codeColor, depth = 0)
 }
+
+/**
+ * How deep inline emphasis may nest before the parser stops recursing.
+ *
+ * [parseInline] recurses per opened span, so input like `**` repeated a few thousand
+ * times drives the stack as deep as the input is long and ends in a `StackOverflowError`
+ * on the Compose render path — an unrecoverable crash from ordinary data (an agent reply
+ * or a pasted document). Real prose never nests past single digits; past this depth the
+ * remaining text is emitted literally, which is what it would have rendered as anyway.
+ */
+private const val MAX_INLINE_DEPTH = 16
 
 private fun parseInline(
     builder: AnnotatedString.Builder,
@@ -53,7 +64,13 @@ private fun parseInline(
     linkColor: Color,
     codeBg: Color,
     codeColor: Color,
+    depth: Int,
 ) {
+    // Past the limit, render the rest as plain text rather than recursing further.
+    if (depth >= MAX_INLINE_DEPTH) {
+        builder.append(raw)
+        return
+    }
     var i = 0
     val n = raw.length
     val plain = StringBuilder()
@@ -89,7 +106,7 @@ private fun parseInline(
                 if (end > i + 1 && !isIntraword(raw, end, c)) {
                     flushPlain()
                     builder.withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
-                        parseInline(builder, raw.substring(i + 2, end), linkColor, codeBg, codeColor)
+                        parseInline(builder, raw.substring(i + 2, end), linkColor, codeBg, codeColor, depth + 1)
                     }
                     i = end + 2
                 } else {
@@ -103,7 +120,7 @@ private fun parseInline(
                 if (end > i + 1) {
                     flushPlain()
                     builder.withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                        parseInline(builder, raw.substring(i + 2, end), linkColor, codeBg, codeColor)
+                        parseInline(builder, raw.substring(i + 2, end), linkColor, codeBg, codeColor, depth + 1)
                     }
                     i = end + 2
                 } else {
@@ -117,7 +134,7 @@ private fun parseInline(
                 if (end > i) {
                     flushPlain()
                     builder.withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        parseInline(builder, raw.substring(i + 1, end), linkColor, codeBg, codeColor)
+                        parseInline(builder, raw.substring(i + 1, end), linkColor, codeBg, codeColor, depth + 1)
                     }
                     i = end + 1
                 } else {
@@ -136,7 +153,7 @@ private fun parseInline(
                         flushPlain()
                         builder.pushStringAnnotation(URL_TAG, url)
                         builder.withStyle(SpanStyle(color = linkColor)) {
-                            parseInline(builder, text, linkColor, codeBg, codeColor)
+                            parseInline(builder, text, linkColor, codeBg, codeColor, depth + 1)
                         }
                         builder.pop()
                         i = urlEnd + 1
