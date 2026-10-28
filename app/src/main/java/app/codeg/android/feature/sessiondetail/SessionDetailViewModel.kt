@@ -22,6 +22,7 @@ import app.codeg.android.core.model.QuickMessage
 import android.content.ContentResolver
 import android.net.Uri
 import app.codeg.android.core.model.ConversationConnectionInfo
+import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.FolderDetail
@@ -245,8 +246,14 @@ class SessionDetailViewModel @Inject constructor(
                     // flatten then cost what is on screen rather than what the conversation
                     // has accumulated — which is what made opening an old conversation slow,
                     // and eventually fail once the transcript passed the response ceiling.
-                    val detail = c.conversationDetail(id, tailTurns = INITIAL_TURN_WINDOW)
+                    val detail = fetchTurnWindow(c, id)
                     windowOffset = detail.turnsOffset ?: 0
+                    // A server that predates the window parameters ignores `tailTurns` and
+                    // answers with the legacy full transcript, which carries no
+                    // `turnsOffset`. That is still a correct — if expensive — load, and it
+                    // must be treated as "everything is loaded": falling back to
+                    // `turns.size` for the total is right there, and `hasOlderTurns` stays
+                    // false so no paging request is aimed at an endpoint it may not have.
                     windowTotal = detail.turnsTotal ?: detail.turns.size
                     agent = detail.summary.agentType
                     externalId = detail.summary.externalId
@@ -264,6 +271,11 @@ class SessionDetailViewModel @Inject constructor(
                             selectedFolderId = folder?.id,
                             currentBranch = currentBranch,
                             isDraftEditable = false,
+                            // Turns above the window exist whenever the server started this
+                            // slice past 0. Without setting this the "older turns" paging
+                            // effect never arms, so everything before the newest window was
+                            // unreachable — the transcript silently began mid-history.
+                            hasOlderTurns = windowOffset > 0,
                             error = null,
                         )
                     }
@@ -311,6 +323,43 @@ class SessionDetailViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Fetch a trailing turn window, shrinking it while the response is still too large.
+     *
+     * A turn count is not a byte count. [INITIAL_TURN_WINDOW] bounds *how many* turns come
+     * back, but a single turn can carry a megabyte of tool output or a pasted file, so a
+     * window of 120 can still exceed the client's response ceiling. Retrying with fewer
+     * turns is the only lever the protocol offers — the ceiling is enforced on the whole
+     * body — and it degrades instead of failing: any window that lands is still a usable
+     * transcript, and older turns page in afterwards.
+     *
+     * Only [ApiError.ResponseTooLarge] is retried. Every other failure is the caller's to
+     * report, and retrying those would just multiply the requests that already failed.
+     */
+    private suspend fun fetchTurnWindow(
+        c: CodegClient,
+        id: Int,
+        preferred: Int = INITIAL_TURN_WINDOW,
+    ): ConversationDetail {
+        var window = preferred
+        while (true) {
+            try {
+                return c.conversationDetail(id, tailTurns = window)
+            } catch (e: ApiError.ResponseTooLarge) {
+                val next = window / 2
+                // Below the floor a single turn is all that can be asked for, and if even
+                // that is too large the conversation cannot be opened on this device at
+                // all — rethrow so the screen shows the real reason.
+                if (next < MIN_TURN_WINDOW) throw e
+                window = next
+            }
+        }
+    }
+
+    /** Turn count the full transcript had when the in-flight turn started. */
+    private fun totalTurnsOf(detail: ConversationDetail): Int =
+        detail.turnsTotal ?: detail.turns.size
 
     // region Timeline flattening
 
@@ -479,7 +528,11 @@ class SessionDetailViewModel @Inject constructor(
         )
         val builder = LiveTurnBuilder()
         liveBuilder = builder
-        turnBaseline = _ui.value.turns.size
+        // The full transcript's turn count, not the loaded window's: only a suffix of the
+        // history is in memory, so `turns.size` would make every reconcile look like it
+        // advanced (any window is smaller than the whole thing) and a window of 120 could
+        // never show an "advanced" turn against a 3000-turn conversation.
+        turnBaseline = windowTotal
         _ui.update {
             it.copy(
                 pendingUserTurns = it.pendingUserTurns + userTurn,
@@ -766,7 +819,7 @@ class SessionDetailViewModel @Inject constructor(
             // streaming; the snapshot's live message + active tools are seeded on arrival.
             val builder = LiveTurnBuilder()
             liveBuilder = builder
-            turnBaseline = _ui.value.turns.size
+            turnBaseline = windowTotal
             _ui.update { it.copy(isInFlight = true, sendStatus = appContext.getString(R.string.session_status_reattaching), live = builder.snapshot()) }
             try {
                 openStream(found.connectionId, seedOnAttach = true)
@@ -914,7 +967,12 @@ class SessionDetailViewModel @Inject constructor(
         val c = client ?: return
         val target = conversationId ?: id
         viewModelScope.launch {
-            val detail = runCatching { c.conversationDetail(target) }.getOrNull() ?: return@launch
+            // Only the header is wanted here (summary + stats), so ask for the smallest
+            // possible window: a first turn's transcript is still being written, and
+            // pulling all of it just to read the title is exactly the transfer this
+            // windowed load exists to avoid.
+            val detail = runCatching { fetchTurnWindow(c, target, preferred = MIN_TURN_WINDOW) }
+                .getOrNull() ?: return@launch
             // Bail if the conversation changed, or a summary arrived, while we fetched.
             if (conversationId != target) return@launch
             _ui.update {
@@ -1030,9 +1088,16 @@ class SessionDetailViewModel @Inject constructor(
         val c = client ?: return
         val id = conversationId ?: return
         viewModelScope.launch {
-            runCatching { c.conversationDetail(id) }.getOrNull()?.let { d ->
+            runCatching { fetchTurnWindow(c, id) }.getOrNull()?.let { d ->
+                windowOffset = d.turnsOffset ?: 0
+                windowTotal = totalTurnsOf(d)
                 _ui.update {
-                    it.copy(turns = d.turns, sessionStats = d.sessionStats ?: it.sessionStats, summary = d.summary)
+                    it.copy(
+                        turns = d.turns,
+                        sessionStats = d.sessionStats ?: it.sessionStats,
+                        summary = d.summary,
+                        hasOlderTurns = windowOffset > 0,
+                    )
                 }
                 rebuildTimeline()
             }
@@ -1173,9 +1238,15 @@ class SessionDetailViewModel @Inject constructor(
             repeat(5) { attempt ->
                 delay(if (attempt == 0) 300 else 600)
                 if (liveBuilder !== builder) return@launch
-                val detail = runCatching { c.conversationDetail(id) }.getOrNull() ?: return@repeat
+                // A window, not the whole transcript: this polls up to five times per
+                // finished turn, and on a long conversation a full fetch here was the
+                // single biggest transfer of the whole send path.
+                val detail = runCatching { fetchTurnWindow(c, id) }.getOrNull() ?: return@repeat
                 val last = detail.turns.lastOrNull()
-                val advanced = detail.turns.size > turnBaseline &&
+                // Compare against the full transcript's count, not the window's size: a
+                // windowed `detail.turns` is only ever a suffix, so `turns.size` can
+                // never exceed `turnBaseline` once the window is smaller than the history.
+                val advanced = totalTurnsOf(detail) > turnBaseline &&
                     last?.role == TurnRole.ASSISTANT && last.blocks.isNotEmpty()
                 if (advanced) {
                     if (liveBuilder !== builder) return@launch
@@ -1185,11 +1256,14 @@ class SessionDetailViewModel @Inject constructor(
                     // for whatever turn finalizes next.
                     val orphanedNotes = builder?.let { pendingPlanFollowUp?.notesFor(it.id) }
                     if (orphanedNotes != null) pendingPlanFollowUp = null
+                    windowOffset = detail.turnsOffset ?: 0
+                    windowTotal = totalTurnsOf(detail)
                     _ui.update {
                         it.copy(
                             turns = detail.turns,
                             sessionStats = detail.sessionStats ?: it.sessionStats,
                             summary = detail.summary,
+                            hasOlderTurns = windowOffset > 0,
                             pendingUserTurns = emptyList(),
                             live = null,
                             liveFromReattach = false,
@@ -1966,6 +2040,16 @@ data class PendingPlanApprovalUi(
  * flatten, layout) is proportional to it rather than to the history length.
  */
 private const val INITIAL_TURN_WINDOW = 120
+
+/**
+ * Smallest window [SessionDetailViewModel.fetchTurnWindow] will shrink to.
+ *
+ * One turn is the atomic unit of the protocol — there is no way to ask for part of a
+ * turn — so once the window reaches a single turn, a response that is still too large
+ * means that one turn (or the conversation record around it) exceeds the ceiling and no
+ * amount of retrying will help. The error is surfaced at that point rather than looping.
+ */
+private const val MIN_TURN_WINDOW = 1
 
 /** Turns requested per [SessionDetailViewModel.loadOlderTurns] call. */
 private const val CHUNK = 120

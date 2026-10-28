@@ -51,8 +51,7 @@ class CodegClientStaticTest {
     }
 
     @Test
-    fun `normalizeBaseUrl does not duplicate a scheme when the host is missing`() {
-        // `trimEnd('/')` alone turned "http://" into "http:", which then looked
+    fun `normalizeBaseUrl does not duplicate a scheme when the host is missing`() {        // `trimEnd('/')` alone turned "http://" into "http:", which then looked
         // scheme-less and was prefixed again into "http://http:".
         assertEquals("http://", CodegClient.normalizeBaseUrl("http://"))
         assertEquals("http://", CodegClient.normalizeBaseUrl("http:///"))
@@ -73,8 +72,7 @@ class CodegClientStaticTest {
     }
 
     @Test
-    fun `decodeAgentList decodes the newest agent types and drops still-unknown ones`() {
-        // code_buddy / kimi_code / pi / grok are now first-class AgentType values, so
+    fun `decodeAgentList decodes the newest agent types and drops still-unknown ones`() {        // code_buddy / kimi_code / pi / grok are now first-class AgentType values, so
         // they decode (grok also carries its own config payload). A genuinely-unknown
         // future wire must still be dropped, not collapsed onto claude_code.
         val json = """
@@ -153,5 +151,36 @@ class CodegClientStaticTest {
         assertEquals("Auto (current, default)", models.models[0].displayLabel)
         // A bare id with no label falls back to the id in the picker.
         assertEquals("gpt-5.3-codex", models.models[1].displayLabel)
+    }
+
+    /**
+     * The response cap is a *byte* ceiling; `String.length` is a character count.
+     *
+     * A transcript of Chinese prose is 1 `char` but 3 UTF-8 bytes per character, so a
+     * char-based check let a body through at roughly three times the ceiling it was
+     * supposed to enforce — which is exactly the oversized decode the cap exists to
+     * refuse. These cases pin the byte arithmetic.
+     */
+    @Test
+    fun `utf8Size counts bytes rather than UTF-16 chars`() {
+        assertEquals(0L, "".utf8Size())
+        assertEquals(5L, "hello".utf8Size())
+        // ASCII stays 1:1, so the common case does not regress.
+        assertEquals("hello".length.toLong(), "hello".utf8Size())
+
+        // 2 bytes per char.
+        assertEquals(2L * 2, "éé".utf8Size())
+        // 3 bytes per char — the CJK case that motivated this.
+        val chinese = "会话太大"
+        assertEquals(chinese.length.toLong() * 3, chinese.utf8Size())
+        assertEquals(4, chinese.length)
+        assertEquals(12L, chinese.utf8Size())
+
+        // 4 bytes for astral code points, counted once per *code point*, not per surrogate
+        // pair (an emoji is 2 chars in UTF-16 but 4 bytes in UTF-8, not 8).
+        assertEquals(4L, "😀".utf8Size())
+
+        // Mixed content adds up per run.
+        assertEquals(1L + 2L + 3L + 4L, "aé中😀".utf8Size())
     }
 }

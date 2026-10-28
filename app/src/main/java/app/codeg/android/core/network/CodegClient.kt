@@ -1069,8 +1069,15 @@ class CodegClient(
         val text = withContext(io) { response.bodyAsText() }
         // A chunked response declares no length; keep the same ceiling after the fact so
         // the *next* allocation (the JSON parse) is not attempted on an oversized body.
-        if (text.length.toLong() > MAX_RESPONSE_BYTES) {
-            throw ApiError.ResponseTooLarge(text.length.toLong())
+        //
+        // Measure UTF-8 bytes, not `String.length`. A Kotlin String is UTF-16, so
+        // `length` counts *chars*: a transcript of Chinese prose (3 bytes per char in
+        // UTF-8, still 1 char in UTF-16) would pass a 32 M char check while carrying
+        // ~96 MB, and the decoder would then be handed a body three times the size this
+        // ceiling exists to refuse.
+        val bodyBytes = text.utf8Size()
+        if (bodyBytes > MAX_RESPONSE_BYTES) {
+            throw ApiError.ResponseTooLarge(bodyBytes)
         }
         val code = response.status.value
         if (code !in 200..299) {
@@ -1194,4 +1201,29 @@ class CodegClient(
             coerceInputValues = true
         }
     }
+}
+
+/**
+ * Size of this string once encoded as UTF-8, without materialising the byte array.
+ *
+ * [CodegClient] caps response bodies by byte count, but a Kotlin `String` is UTF-16:
+ * `length` is a character count, and for non-ASCII text it understates the bytes that
+ * the body actually occupied on the wire. Encoding a 30 MB body just to measure it
+ * would allocate a second copy of the very thing the cap is protecting against, so the
+ * length is computed from the code points instead.
+ */
+internal fun String.utf8Size(): Long {
+    var bytes = 0L
+    var i = 0
+    while (i < length) {
+        val cp = codePointAt(i)
+        bytes += when {
+            cp < 0x80 -> 1
+            cp < 0x800 -> 2
+            cp < 0x10000 -> 3
+            else -> 4
+        }
+        i += Character.charCount(cp)
+    }
+    return bytes
 }
