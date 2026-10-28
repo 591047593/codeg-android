@@ -75,9 +75,25 @@ data class LiveTurnState(
  */
 class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
 
+    /**
+     * A mutable segment that caches its last immutable snapshot.
+     *
+     * [snapshot] runs every ~50 ms while a turn streams. Converting a growing
+     * `StringBuilder` to a `String` copies the whole accumulated text, so a 200 KB reply
+     * was re-copied twenty times a second — and the result was then compared against the
+     * previous state, walking the same text again. [cached] lets an unchanged segment be
+     * reused outright, which also makes the state comparison cheap: identical instances
+     * short-circuit `equals`.
+     */
     private sealed class Seg {
-        class Text(val id: String, val text: StringBuilder) : Seg()
-        class Thinking(val id: String, val text: StringBuilder) : Seg()
+        class Text(val id: String, val text: StringBuilder) : Seg() {
+            var cachedLen = -1
+            var cached: LiveSegment.Text? = null
+        }
+        class Thinking(val id: String, val text: StringBuilder) : Seg() {
+            var cachedLen = -1
+            var cached: LiveSegment.Thinking? = null
+        }
         class Tool(val call: ToolBuilder) : Seg()
     }
 
@@ -90,7 +106,12 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         val rawOutput: StringBuilder,
         var content: String?,
         var meta: JsonObject?,
-    )
+    ) {
+        /** Last emitted immutable view, reused while nothing about this call changed. */
+        var cached: LiveToolCallState? = null
+        var cachedOutLen = -1
+        var cachedStamp: Int = 0
+    }
 
     private val segments = mutableListOf<Seg>()
     private val toolIndex = mutableMapOf<String, ToolBuilder>()
@@ -129,7 +150,13 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
             if (kind.isNotEmpty()) existing.kind = kind
             if (status.isNotEmpty()) existing.status = status
             if (rawInput != null) existing.rawInput = rawInput
-            if (rawOutput != null) { existing.rawOutput.setLength(0); existing.rawOutput.append(rawOutput) }
+            if (rawOutput != null) {
+                // Replace rather than append; same-length different text is invisible to
+                // the snapshot cache's length check, so drop the cached view explicitly.
+                existing.rawOutput.setLength(0)
+                existing.rawOutput.append(rawOutput)
+                existing.cached = null
+            }
             if (content != null) existing.content = content
             // Replace-on-update, matching the server: a payload carrying no `meta` at
             // all preserves what the call was announced with (codex sends the
@@ -174,7 +201,15 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         if (!rawInput.isNullOrEmpty()) call.rawInput = rawInput
         if (content != null) call.content = content
         if (rawOutput != null) {
-            if (append) call.rawOutput.append(rawOutput) else { call.rawOutput.setLength(0); call.rawOutput.append(rawOutput) }
+            if (append) {
+                call.rawOutput.append(rawOutput)
+            } else {
+                // A replace can produce the same length with different text, which the
+                // snapshot cache's length check cannot see — so invalidate it explicitly.
+                call.rawOutput.setLength(0)
+                call.rawOutput.append(rawOutput)
+                call.cached = null
+            }
         }
         if (meta != null) call.meta = meta
     }
@@ -232,20 +267,29 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         id = id,
         segments = segments.map { seg ->
             when (seg) {
-                is Seg.Text -> LiveSegment.Text(seg.id, seg.text.toString())
-                is Seg.Thinking -> LiveSegment.Thinking(seg.id, seg.text.toString())
-                is Seg.Tool -> LiveSegment.Tool(
-                    LiveToolCallState(
-                        id = seg.call.id,
-                        title = seg.call.title,
-                        kind = seg.call.kind,
-                        status = seg.call.status,
-                        rawInput = seg.call.rawInput,
-                        rawOutput = seg.call.rawOutput.toString(),
-                        content = seg.call.content,
-                        meta = seg.call.meta,
-                    ),
-                )
+                // Only re-materialise the string when the builder actually grew since the
+                // last snapshot; otherwise hand back the identical instance.
+                is Seg.Text -> {
+                    if (seg.cachedLen == seg.text.length && seg.cached != null) {
+                        seg.cached!!
+                    } else {
+                        LiveSegment.Text(seg.id, seg.text.toString()).also {
+                            seg.cached = it
+                            seg.cachedLen = seg.text.length
+                        }
+                    }
+                }
+                is Seg.Thinking -> {
+                    if (seg.cachedLen == seg.text.length && seg.cached != null) {
+                        seg.cached!!
+                    } else {
+                        LiveSegment.Thinking(seg.id, seg.text.toString()).also {
+                            seg.cached = it
+                            seg.cachedLen = seg.text.length
+                        }
+                    }
+                }
+                is Seg.Tool -> LiveSegment.Tool(toolSnapshot(seg.call))
             }
         },
         livePlan = livePlan,
@@ -253,6 +297,40 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         stopReason = stopReason,
         errorMessage = errorMessage,
     )
+
+    /**
+     * The immutable view of one tool call, rebuilt only when something about it changed.
+     *
+     * A tool's output grows by appended deltas, so `rawOutput.toString()` copies the whole
+     * accumulated output; a long-running command with its card open would copy megabytes
+     * twenty times a second. The stamp covers the scalar fields (which change far less
+     * often than the output) and the output length catches appends; a shrink is treated as
+     * a change because `updateToolCall` can reset the buffer.
+     */
+    private fun toolSnapshot(call: ToolBuilder): LiveToolCallState {
+        val stamp = (call.title.hashCode() * 31 + call.kind.hashCode()) * 31 +
+            call.status.hashCode() * 31 + (call.rawInput?.hashCode() ?: 0) * 31 +
+            (call.content?.hashCode() ?: 0) * 31 + (call.meta?.hashCode() ?: 0)
+        val outLen = call.rawOutput.length
+        val cached = call.cached
+        if (cached != null && call.cachedStamp == stamp && call.cachedOutLen == outLen) {
+            return cached
+        }
+        return LiveToolCallState(
+            id = call.id,
+            title = call.title,
+            kind = call.kind,
+            status = call.status,
+            rawInput = call.rawInput,
+            rawOutput = call.rawOutput.toString(),
+            content = call.content,
+            meta = call.meta,
+        ).also {
+            call.cached = it
+            call.cachedStamp = stamp
+            call.cachedOutLen = outLen
+        }
+    }
 
     /** Fold this (finished) turn into an immutable assistant [MessageTurn]. */
     fun snapshotAsMessageTurn(): MessageTurn {
