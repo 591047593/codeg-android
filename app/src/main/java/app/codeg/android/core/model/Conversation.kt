@@ -60,11 +60,60 @@ data class ConversationDetail(
     val turns: List<MessageTurn> = emptyList(),
     val sessionStats: SessionStats? = null,
     val inFlightUserTurnId: String? = null,
+    /**
+     * Where [turns] starts within the full transcript.
+     *
+     * Present only when the request asked for a turn window (`tailTurns` / `fromIndex`).
+     * Null means the server returned the legacy full transcript, in which case [turns]
+     * is the whole history and windowed merging is disabled.
+     *
+     * The three window fields are always set together. Every *other* field on this
+     * response — summary counts, stats — describes the full transcript regardless.
+     */
+    val turnsOffset: Int? = null,
+    /** Total number of turns the transcript has, windowed or not. */
+    val turnsTotal: Int? = null,
+    /**
+     * Assistant turns in `full[0, turnsOffset)`.
+     *
+     * Needed to translate a history baseline recorded before the request into window
+     * coordinates; without it the send path cannot tell how many replies predate the
+     * loaded window.
+     */
+    val assistantTurnsBeforeOffset: Int? = null,
+) {
+    /** True when the server returned only part of the transcript. */
+    val isWindowed: Boolean get() = turnsOffset != null
+}
+
+/**
+ * One page of turns from above the loaded window (`get_folder_conversation_turns`).
+ *
+ * The page ends exactly at the requested [turnsOffset], so it can be prepended to the
+ * existing window without a gap or an overlap. [turnsOffset] is where *this page*
+ * starts, which becomes the merged window's new offset.
+ */
+@Serializable
+data class ConversationTurnsPage(
+    val turns: List<MessageTurn> = emptyList(),
+    val turnsOffset: Int = 0,
+    val turnsTotal: Int = 0,
+    val assistantTurnsBeforeOffset: Int = 0,
+    /**
+     * Fingerprint of `full[0, turnsOffset)`.
+     *
+     * The server compares it with the window the client claims to hold. A mismatch
+     * means the transcript above the window was rewritten between requests — a
+     * compaction, an edit, a delete — so the page cannot legally join the loaded
+     * window and prepending it would duplicate or drop turns.
+     */
+    val prefixHash: String = "",
+    /** Fingerprint the client's current window must carry for the join to be legal. */
+    val prefixHashBeforeIndex: String = "",
 )
 
 /** Returned by `acp_find_connection_for_conversation` when a live ACP
- * connection already owns a conversation. */
-@Serializable
+ * connection already owns a conversation. */@Serializable
 data class ConversationConnectionInfo(
     val connectionId: String,
     val eventSeq: Long = 0,

@@ -148,6 +148,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import app.codeg.android.core.model.ConversationDetailBody
+import app.codeg.android.core.model.ConversationTurnsBody
+import app.codeg.android.core.model.ConversationTurnsPage
 
 /**
  * HTTP client for a single codeg server. Cheap to create per selected server;
@@ -239,11 +242,45 @@ class CodegClient(
             ListSerializer(ConversationSummary.serializer()),
         )
 
-    /** Full session detail incl. message history. */
-    suspend fun conversationDetail(id: Int): ConversationDetail =
+    /**
+     * Session detail incl. message history.
+     *
+     * [tailTurns] asks the server for only the newest N turns. The transcript of a
+     * long-running conversation can reach tens of megabytes, and the previous
+     * unconditional full fetch meant the time to open a conversation grew with its
+     * history — eventually past the 32 MB response ceiling, which surfaced to the user
+     * as "load failed". With a window the transfer, the JSON decode, and the subsequent
+     * flatten are all proportional to what is on screen; older turns are paged in with
+     * [conversationTurns] as the user scrolls up.
+     *
+     * The summary and stats on the response always describe the full transcript, so the
+     * header stays correct even when [turns] is a slice.
+     */
+    suspend fun conversationDetail(id: Int, tailTurns: Int? = null): ConversationDetail =
         decode(
-            send("get_folder_conversation", encode(ConversationIdBody(id))),
+            send("get_folder_conversation", encode(ConversationDetailBody(id, tailTurns = tailTurns))),
             ConversationDetail.serializer(),
+        )
+
+    /**
+     * One page of turns immediately above a windowed transcript.
+     *
+     * The light path: no summary, no stats, no live correlation — just the slice plus
+     * the offsets needed to prepend it. [beforeIndex] is the current window's
+     * `turnsOffset`; the returned page ends exactly there, so the two join without a
+     * gap or an overlap.
+     */
+    suspend fun conversationTurns(
+        id: Int,
+        beforeIndex: Int,
+        limit: Int,
+    ): ConversationTurnsPage =
+        decode(
+            send(
+                "get_folder_conversation_turns",
+                encode(ConversationTurnsBody(id, beforeIndex, limit)),
+            ),
+            ConversationTurnsPage.serializer(),
         )
 
     /** Create a conversation row up front and return its id (a bare JSON int). */

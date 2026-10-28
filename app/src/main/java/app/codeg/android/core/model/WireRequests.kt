@@ -43,6 +43,30 @@ data class ListConversationsBody(
 @Serializable
 data class ConversationIdBody(val conversationId: Int)
 
+/**
+ * Body for `get_folder_conversation`, optionally asking for a trailing turn window.
+ *
+ * `tailTurns` and `fromIndex` are mutually exclusive on the server; leave both null for
+ * the legacy full response. Requesting a window keeps the *summary* and stats complete
+ * while shipping only the newest [tailTurns] turns, which is what makes opening a
+ * multi-megabyte transcript cheap: the cost of the call becomes proportional to what is
+ * displayed rather than to how long the conversation has been running.
+ */
+@Serializable
+data class ConversationDetailBody(
+    val conversationId: Int,
+    val tailTurns: Int? = null,
+    val fromIndex: Int? = null,
+)
+
+/** Body for `get_folder_conversation_turns` — one page above the loaded window. */
+@Serializable
+data class ConversationTurnsBody(
+    val conversationId: Int,
+    val beforeIndex: Int,
+    val limit: Int,
+)
+
 @Serializable
 data class CreateConversationBody(
     val folderId: Int,

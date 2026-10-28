@@ -180,16 +180,14 @@ fun SessionDetailScreen(
     LaunchedEffect(ui.turns.size, ui.pendingUserTurns.size, ui.live, stick) {
         if (stick && nodes.isNotEmpty()) listState.scrollToItem(nodes.size)
     }
-    // Grow the rendered window as the user approaches the top of a long transcript.
-    // The ViewModel prepends older turns, so the content the user is looking at keeps
-    // its position; `stick` is already false here because they scrolled away from the
-    // bottom.
+    // Grow the loaded window as the user approaches the top of a long transcript. Each
+    // request pages turns in from the server, so the cost is one chunk no matter how long
+    // the conversation is; `hasOlderTurns` going false ends the effect for good.
     //
-    // Keyed on the *window* as well as `hasOlderTurns`, so each time a chunk lands the
-    // effect restarts and can fire again. Without that, a user who parks at the top would
-    // load exactly one chunk and then stall: `distinctUntilChanged` never re-emits
-    // `true`, and the transit back down to `false` only happens if they scroll away.
-    LaunchedEffect(listState, ui.hasOlderTurns, ui.renderedTurnWindow) {
+    // Keyed on the loaded turn count so each landed page restarts the effect: without
+    // that, a user parked at the top would load exactly one chunk and stall, because
+    // `distinctUntilChanged` never re-emits `true` and nothing else restarts the flow.
+    LaunchedEffect(listState, ui.hasOlderTurns, ui.turns.size) {
         if (!ui.hasOlderTurns) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex <= PREFETCH_TURNS_AT_TOP }
             .distinctUntilChanged()

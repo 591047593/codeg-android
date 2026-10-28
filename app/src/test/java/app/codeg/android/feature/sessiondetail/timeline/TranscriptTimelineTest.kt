@@ -6,7 +6,6 @@ import app.codeg.android.core.model.MessageTurn
 import app.codeg.android.core.model.TurnRole
 import app.codeg.android.core.model.TurnUsage
 import app.codeg.android.feature.sessiondetail.LiveSegment
-import app.codeg.android.feature.sessiondetail.tailWindow
 import app.codeg.android.feature.sessiondetail.LiveTurnState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -156,18 +155,17 @@ class TranscriptTimelineTest {
     }
 
     /**
-     * The windowed load path builds a suffix of the turn list and relies on that suffix
-     * producing exactly the tail of the full flatten.
+     * The server sends a windowed transcript as an exact slice of the full one, and the
+     * client renders it as a suffix.
      *
-     * This is the invariant the whole "open on the newest 120 turns" change rests on: if
-     * a windowed build produced different nodes — because merge boundaries or the
-     * `lastUserId` grouping shifted at the cut — the transcript would silently change
-     * shape as older turns loaded, and a partially-scrolled conversation would not match
-     * the same conversation opened at the bottom. Splitting only at a user turn keeps
-     * every assistant run intact on both sides of the cut.
+     * This is the invariant the whole windowed load rests on: the window is taken from
+     * the server (`tailTurns`), not sliced locally, so what arrives must be the same
+     * turns — in the same order — as the matching tail of the full transcript. If the
+     * server's slice and the client's flatten disagreed at the seam, the visible history
+     * would change shape as older turns paged in.
      */
     @Test
-    fun `a windowed build equals the tail of the full build`() {
+    fun `a server window renders the same nodes as the matching tail`() {
         val turns = (1..12).flatMap { i ->
             listOf(
                 user("u$i", "prompt $i"),
@@ -177,70 +175,21 @@ class TranscriptTimelineTest {
         }
         val full = TranscriptTimeline.buildPersisted(turns, emptyList(), agent)
 
+        // The server's tail window always starts on a turn boundary and, because a reply
+        // is a run of assistant turns, never splits one: ask for suffixes that begin on a
+        // user turn, which is what `turnsOffset` reports after paging.
         for (requested in listOf(3, 6, 9, 12)) {
-            val windowedTurns = turns.tailWindow(requested)
-            val windowed = TranscriptTimeline.buildPersisted(windowedTurns, emptyList(), agent)
+            val start = (turns.size - requested).coerceAtLeast(0)
+            val windowed = TranscriptTimeline.buildPersisted(
+                turns.subList(start, turns.size),
+                emptyList(),
+                agent,
+            )
             assertEquals(
                 "requested=$requested should render the same node ids as the matching tail",
                 full.takeLast(windowed.size).map { it.id },
                 windowed.map { it.id },
             )
         }
-    }
-
-    /**
-     * Turns at the window boundary must not merge across the cut.
-     *
-     * `buildPersisted` merges each run of consecutive assistant turns into one reply
-     * with one footer. Cutting at an arbitrary turn index can land inside such a run,
-     * which splits one reply into two — as older turns load, a second token/duration
-     * footer would appear in the middle of a message. A cut placed at the run's start
-     * keeps it whole.
-     */
-    @Test
-    fun `cutting at the start of a reply keeps one footer`() {
-        val turns = listOf(
-            user("u1", "hi"),
-            assistant("a1", listOf(ContentBlock.Text("first half"))),
-            assistant("a2", listOf(ContentBlock.Text("second half"))),
-        )
-        // The boundary a windowed load would choose: both assistant turns, nothing split.
-        val windowed = TranscriptTimeline.buildPersisted(
-            turns.drop(1),
-            emptyList(),
-            agent,
-        )
-        assertEquals(
-            "one merged reply means one footer",
-            1,
-            windowed.count { it.content is NodeContent.Footer },
-        )
-    }
-
-    /**
-     * The window is widened backward to a role boundary so a reply is never split.
-     *
-     * This exercises the same rule `SessionDetailViewModel` applies when it slices the
-     * turn list: a suffix that begins on an assistant turn is moved back until it begins
-     * on a user turn.
-     */
-    @Test
-    fun `a suffix starting mid-reply is widened back to the reply boundary`() {
-        val turns = listOf(
-            user("u1", "one"),
-            assistant("a1", listOf(ContentBlock.Text("r1"))),
-            assistant("a2", listOf(ContentBlock.Text("r2"))),
-            user("u2", "two"),
-            assistant("a3", listOf(ContentBlock.Text("r3"))),
-        )
-        // Ask for the last three: that lands on a2, inside u1's reply.
-        val cut = 3
-        var widened = turns.size - cut
-        while (widened > 0 && turns[widened].role == TurnRole.ASSISTANT) widened--
-
-        assertEquals("widened cut starts on a user turn", TurnRole.USER, turns[widened].role)
-        val windowed = TranscriptTimeline.buildPersisted(turns.subList(widened, turns.size), emptyList(), agent)
-        val full = TranscriptTimeline.buildPersisted(turns, emptyList(), agent)
-        assertEquals(full.map { it.id }, windowed.map { it.id })
     }
 }

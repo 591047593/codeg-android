@@ -155,6 +155,14 @@ class SessionDetailViewModel @Inject constructor(
     private var reconcileJob: Job? = null
     /** Bumped per flatten; a finishing job whose generation is stale discards its result. */
     private var timelineGeneration = 0
+    /** Where the currently loaded turns start within the full transcript. */
+    private var windowOffset: Int = 0
+    /** How many turns the full transcript has, as reported by the server. */
+    private var windowTotal: Int = 0
+    /** Guards against issuing overlapping page requests while one is in flight. */
+    private var pagingJob: Job? = null
+    /** Guards `load()` against overlapping runs (retry spam, server-switch watcher). */
+    private var loadJob: Job? = null
     /** Inputs of the last flatten, so an unchanged state does not rebuild the list. */
     private var lastTimelineSignature: TimelineSignature? = null
     /** Revision notes waiting to be sent as a follow-up prompt after a plan-approval
@@ -213,8 +221,13 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun load() {
+        // One load at a time. The retry button and the server-switch watcher can both
+        // call this, and two overlapping loads race: whichever response lands last wins,
+        // which can be the older one. It also doubles the transcript transfer at exactly
+        // the moment the network is already the problem.
+        if (loadJob?.isActive == true) return
         _ui.update { it.copy(loading = true, error = null) }
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
                 // Bind to the CURRENT selection on an explicit (re)load; afterwards the
                 // screen stays on that server until reopened (see watchServerSwitch).
@@ -228,7 +241,13 @@ class SessionDetailViewModel @Inject constructor(
 
                 val id = conversationId
                 if (id != null) {
-                    val detail = c.conversationDetail(id)
+                    // Ask for only the newest turns. The transfer, the JSON decode, and the
+                    // flatten then cost what is on screen rather than what the conversation
+                    // has accumulated — which is what made opening an old conversation slow,
+                    // and eventually fail once the transcript passed the response ceiling.
+                    val detail = c.conversationDetail(id, tailTurns = INITIAL_TURN_WINDOW)
+                    windowOffset = detail.turnsOffset ?: 0
+                    windowTotal = detail.turnsTotal ?: detail.turns.size
                     agent = detail.summary.agentType
                     externalId = detail.summary.externalId
                     folder = allFolders.firstOrNull { it.id == detail.summary.folderId }
@@ -246,9 +265,6 @@ class SessionDetailViewModel @Inject constructor(
                             currentBranch = currentBranch,
                             isDraftEditable = false,
                             error = null,
-                            // Open long transcripts on their most recent turns only; the
-                            // rest is flattened on demand as the user scrolls up.
-                            renderedTurnWindow = INITIAL_TURN_WINDOW,
                         )
                     }
                     rebuildTimeline()
@@ -316,15 +332,13 @@ class SessionDetailViewModel @Inject constructor(
      */
     private fun rebuildTimeline(force: Boolean = false) {
         val snapshot = _ui.value
-        val window = snapshot.renderedTurnWindow
-        val turns = snapshot.turns.tailWindow(window)
+        val turns = snapshot.turns
 
         val signature = TimelineSignature(
             turns = turns,
             pending = snapshot.pendingUserTurns,
             agent = snapshot.agent,
             hideTrailingReply = snapshot.liveFromReattach && snapshot.live != null,
-            window = window,
         )
         if (!force && signature == lastTimelineSignature) return
         lastTimelineSignature = signature
@@ -344,37 +358,74 @@ class SessionDetailViewModel @Inject constructor(
                 )
             }
             if (generation != timelineGeneration) return@launch
-            _ui.update {
-                it.copy(
-                    persistedNodes = nodes,
-                    hasOlderTurns = window < it.turns.size,
-                )
-            }
+            // `turns` already holds everything that has been paged in, so the flatten
+            // covers the whole loaded window. Whether older turns exist is a property of
+            // the server-side offset (`hasOlderTurns`), not of this slice — recomputing it
+            // here would overwrite the paging state after every rebuild.
+            _ui.update { it.copy(persistedNodes = nodes) }
         }
     }
 
     /**
-     * Grow the rendered window by [CHUNK] turns, called when the user scrolls near the
-     * top of a long transcript.
+     * Page in the turns directly above the loaded window.
      *
-     * The window grows backwards from the newest turn, so the content the user is
-     * looking at never moves: turns are prepended above the current top.
+     * The work happens on the server (`get_folder_conversation_turns`), so one call costs
+     * one page regardless of how long the conversation is, and the turns already loaded
+     * are reused rather than refetched and re-flattened.
+     */
+    /**
+     * Prepend the page of turns immediately above the loaded window.
      *
-     * The arithmetic is done in [Long] on purpose. `renderedTurnWindow` starts at
-     * `Int.MAX_VALUE` (meaning "everything"), and `Int.MAX_VALUE + CHUNK` wraps to a
-     * negative number — which would have produced an empty window and a blank
-     * transcript the first time a very long conversation asked for more turns.
+     * Paging happens on the server (`get_folder_conversation_turns`), so the work is
+     * proportional to one page rather than to the whole transcript, and the existing
+     * window is reused instead of being refetched and re-flattened.
+     *
+     * Concurrent calls collapse: the LazyColumn can report "near the top" many times in
+     * a row, and issuing a request per report would queue up duplicates that all arrive
+     * with the same `beforeIndex`.
      */
     fun loadOlderTurns() {
+        if (pagingJob?.isActive == true) return
         val current = _ui.value
-        val total = current.turns.size
-        if (!current.hasOlderTurns || total == 0) return
-        val grown = (current.renderedTurnWindow.toLong() + CHUNK)
-            .coerceAtMost(total.toLong())
-            .toInt()
-        if (grown <= current.renderedTurnWindow) return
-        _ui.update { it.copy(renderedTurnWindow = grown) }
-        rebuildTimeline()
+        if (!current.hasOlderTurns || current.turns.isEmpty()) return
+        val c = client ?: return
+        val id = conversationId ?: return
+        val before = windowOffset
+        if (before <= 0) {
+            // Nothing above the window: the transcript is fully loaded.
+            _ui.update { it.copy(hasOlderTurns = false) }
+            return
+        }
+
+        pagingJob = viewModelScope.launch {
+            val page = runCatching { c.conversationTurns(id, beforeIndex = before, limit = CHUNK) }
+                .getOrElse { e ->
+                    // A failed page must not wedge the transcript: stop offering "older
+                    // turns" rather than retrying on every scroll nudge, and say so once.
+                    val message = e.displayMessage()
+                    _ui.update { it.copy(hasOlderTurns = false, notice = message) }
+                    return@launch
+                }
+
+            // The page must butt against the window exactly. `turnsOffset + turns.size`
+            // has to equal the offset we asked from, or the two would overlap or leave a
+            // hole; the server guarantees it, but a mismatch means the transcript changed
+            // underneath us and prepending would corrupt the history.
+            if (page.turnsOffset + page.turns.size != before) {
+                _ui.update { it.copy(hasOlderTurns = false) }
+                return@launch
+            }
+
+            windowOffset = page.turnsOffset
+            windowTotal = page.turnsTotal
+            _ui.update {
+                it.copy(
+                    turns = page.turns + it.turns,
+                    hasOlderTurns = page.turnsOffset > 0,
+                )
+            }
+            rebuildTimeline(force = true)
+        }
     }
 
     /**
@@ -1782,20 +1833,11 @@ data class SessionDetailUiState(
     val turns: List<MessageTurn> = emptyList(),
     val pendingUserTurns: List<MessageTurn> = emptyList(),
     /**
-     * How many trailing turns are currently flattened into the rendered timeline.
+     * True while turns exist above the loaded window and have not been paged in yet.
      *
-     * A long-running conversation can carry thousands of turns, and flattening all of
-     * them (markdown block split + tool-call view models) is linear in total transcript
-     * size — a multi-megabyte job that used to run inside composition, so the first
-     * frame waited for the entire history. The screen renders only this trailing window
-     * and grows it when the user scrolls toward the top ([loadOlderTurns]).
-     *
-     * `Int.MAX_VALUE` means "everything is rendered" — the state a short conversation is
-     * in from the start, and the state a long one reaches once the user has scrolled
-     * back to the beginning.
+     * Set from the server's `turnsOffset` when the conversation opens, cleared when the
+     * window reaches the start of the transcript or a page fails.
      */
-    val renderedTurnWindow: Int = Int.MAX_VALUE,
-    /** True while a transcript that exceeded the first window is still partly hidden. */
     val hasOlderTurns: Boolean = false,
     /** The flattened timeline for the current window; built off the main thread. */
     val persistedNodes: List<TimelineNode> = emptyList(),
@@ -1915,55 +1957,33 @@ data class PendingPlanApprovalUi(
 )
 
 /**
- * Turns rendered on first open of a long transcript.
+ * Turns fetched on first open of a long transcript (`tailTurns`).
  *
- * Sized so the common case (a conversation the user is actively working in) fits
- * entirely and never shows the "earlier turns" affordance, while a transcript with
- * thousands of turns still paints its first frame immediately. Each chunk also bounds
- * how much new work one scroll-triggered rebuild does.
+ * Sized so the common case — a conversation the user is actively working in — comes back
+ * whole and never shows the "earlier turns" affordance, while a transcript with
+ * thousands of turns still transfers and paints only its newest slice. This is the number
+ * that decides the cost of opening a conversation: everything downstream (decode,
+ * flatten, layout) is proportional to it rather than to the history length.
  */
 private const val INITIAL_TURN_WINDOW = 120
 
-/** Turns added per [SessionDetailViewModel.loadOlderTurns] call. */
+/** Turns requested per [SessionDetailViewModel.loadOlderTurns] call. */
 private const val CHUNK = 120
 
 /**
  * The inputs that determine a flattened timeline, compared before rebuilding.
  *
- * A data class rather than a set of `if` checks so a change to any input — including
- * the window size — is caught, and so an unchanged state can skip the flatten entirely.
+ * A data class rather than a set of `if` checks so a change to any input is caught, and
+ * so an unchanged state can skip the flatten entirely.
  *
  * The turn lists are compared structurally ([MessageTurn] is a data class), which walks
- * every block in the window. That is still much cheaper than the flatten it guards: a
- * rebuild splits markdown and allocates a node per block, while this only compares
- * fields. It runs at most once per state update, not per frame.
+ * every block loaded. That is still much cheaper than the flatten it guards: a rebuild
+ * splits markdown and allocates a node per block, while this only compares fields. It
+ * runs at most once per state update, not per frame.
  */
 private data class TimelineSignature(
     val turns: List<MessageTurn>,
     val pending: List<MessageTurn>,
     val agent: AgentType,
     val hideTrailingReply: Boolean,
-    val window: Int,
 )
-
-/**
- * The last [window] turns, widened backward so the cut never lands inside a reply.
- *
- * `buildPersisted` merges each run of consecutive assistant turns into a single reply
- * that owns one footer. Cutting at an arbitrary turn index can land inside such a run,
- * which splits one reply into two — as older turns load, a second token/duration footer
- * would appear in the middle of a message. The cut is therefore moved back to the
- * nearest earlier user (or system) turn, which is always a block boundary.
- *
- * A window that already covers everything returns the list unchanged.
- */
-internal fun List<MessageTurn>.tailWindow(window: Int): List<MessageTurn> {
-    if (window >= size) return this
-    val start = (size - window).coerceAtLeast(0)
-    if (start == 0) return this
-    // Walk back to the previous role boundary. Bounded by the list itself: if no
-    // boundary exists before `start` we are at the beginning anyway.
-    var cut = start
-    while (cut > 0 && this[cut].role == TurnRole.ASSISTANT) cut--
-    return if (cut == 0) this else subList(cut, size).toList()
-}
