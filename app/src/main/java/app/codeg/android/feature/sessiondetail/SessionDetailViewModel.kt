@@ -790,6 +790,10 @@ class SessionDetailViewModel @Inject constructor(
         sendJob?.cancel()
         reconcileJob?.cancel()
         closeStream()
+        // Cleared before the request goes out, not after: the failure path below has to be
+        // the last writer of `isInFlight`, or a failed cancel would still leave the
+        // composer unlocked over a turn that is in fact still running.
+        clearInteractivePrompts()
         val conn = connectionId
         val c = client
         if (conn != null && c != null) {
@@ -798,9 +802,28 @@ class SessionDetailViewModel @Inject constructor(
             // would be cancelled before the request left the device — leaving the agent
             // running server-side with no client watching it. The scope below survives
             // the screen.
-            applicationScope.launch { runCatching { c.cancel(conn) } }
+            //
+            // A *failed* cancel used to be swallowed here while the UI had already
+            // unlocked the composer, so the agent kept running and the next send failed
+            // with `turn_in_progress` — a state the user could not diagnose or escape.
+            // The failure now re-establishes the truth instead of being ignored: the
+            // turn is still live, so reattach to it and say so.
+            applicationScope.launch {
+                val result = runCatching { c.cancel(conn) }
+                result.exceptionOrNull()?.let { error ->
+                    _ui.update {
+                        it.copy(
+                            notice = error.displayMessage(appContext),
+                            isInFlight = true,
+                            sendStatus = appContext.getString(R.string.session_status_reattaching),
+                        )
+                    }
+                    // The connection id is still ours; re-subscribe so the running turn
+                    // streams again rather than appearing finished.
+                    reattachIfLive()
+                }
+            }
         }
-        clearInteractivePrompts()
     }
 
     // endregion
