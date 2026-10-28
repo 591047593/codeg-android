@@ -106,6 +106,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun SessionDetailScreen(
     onBack: () -> Unit,
     onOpenSession: (Int) -> Unit = {},
+    /** Takes the user to the folder list — the way out of the "no folder" dead end. */
+    onOpenFolders: () -> Unit = {},
     viewModel: SessionDetailViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -387,6 +389,15 @@ fun SessionDetailScreen(
                             } else {
                                 stringResource(R.string.session_empty_message)
                             },
+                            // The message alone left the user to work out where "open a
+                            // folder" lives. A task cannot start without one, so the
+                            // empty state carries the action that fixes it.
+                            actionLabel = if (needsFolder) {
+                                stringResource(R.string.session_open_folders)
+                            } else {
+                                null
+                            },
+                            onAction = if (needsFolder) onOpenFolders else null,
                         )
                     }
 

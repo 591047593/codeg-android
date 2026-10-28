@@ -849,6 +849,7 @@
     <string name="session_turn_in_progress">此会话已有一轮正在进行。</string>
     <string name="session_attachments_skipped">已添加 %1$d 张图片；跳过 %2$d 张（过大或超出上限）。</string>
     <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
+    <string name="session_open_folders">打开文件夹</string>
     <string name="session_error_no_folder">请先打开一个文件夹——任务需要在其下运行。</string>
     <string name="projects_folder_not_found">未找到文件夹</string>
     <string name="projects_remove_from_list">从列表移除</string>
