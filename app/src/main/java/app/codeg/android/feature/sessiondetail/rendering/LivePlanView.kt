@@ -41,7 +41,7 @@ fun LivePlanView(entries: List<PlanEntry>, modifier: Modifier = Modifier) {
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(colors.textPrimary.copy(alpha = 0.03f))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),

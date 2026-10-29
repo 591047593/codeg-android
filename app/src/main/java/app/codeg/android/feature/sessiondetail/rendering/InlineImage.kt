@@ -61,7 +61,7 @@ fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifie
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 320.dp)
-                    .clip(RoundedCornerShape(10.dp)),
+                    .clip(RoundedCornerShape(12.dp)),
             )
         } else {
             // Placeholder while decoding: same footprint so the layout does not jump when
@@ -70,7 +70,7 @@ fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifie
                 Modifier
                     .fillMaxWidth()
                     .height(120.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(colors.codeSurface),
                 contentAlignment = Alignment.Center,
             ) {

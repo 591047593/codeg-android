@@ -43,7 +43,7 @@ fun CodegMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         containerColor = colors.bgElevated,
         tonalElevation = 0.dp,
         // One soft, wide shadow. Material's default pair (tonal + 3dp ambient) reads as a

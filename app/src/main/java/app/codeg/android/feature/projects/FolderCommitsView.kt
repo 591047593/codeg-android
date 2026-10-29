@@ -194,8 +194,8 @@ private fun SyncButton(
     val tint = if (enabled) colors.accent else colors.textTertiary
     Row(
         modifier
-            .clip(RoundedCornerShape(10.dp))
-            .border(1.dp, colors.surfaceStroke, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, colors.surfaceStroke, RoundedCornerShape(12.dp))
             .background(if (enabled) colors.accent.copy(alpha = 0.08f) else Color.Transparent)
             .clickable(enabled = enabled) { onClick() }
             .padding(vertical = 9.dp),
@@ -236,7 +236,7 @@ private fun CommitRow(entry: GitLogEntry, onClick: () -> Unit) {
             { Icon(if (pushed) Icons.Rounded.Cloud else Icons.Rounded.CloudOff, null, tint = colors.textTertiary, modifier = Modifier.size(14.dp)) }
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onClick() },
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() },
     )
 }
 
@@ -249,7 +249,7 @@ private fun CommitDetail(client: CodegClient, rootPath: String, entry: GitLogEnt
     val now by rememberNowInstant()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item("header") {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(entry.subject, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
                 if (entry.body.isNotEmpty()) Text(entry.body, fontSize = 13.sp, color = colors.textSecondary)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

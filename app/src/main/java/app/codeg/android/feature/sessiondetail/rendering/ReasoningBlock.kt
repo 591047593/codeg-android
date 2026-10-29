@@ -59,7 +59,7 @@ fun ReasoningBlock(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(colors.textPrimary.copy(alpha = 0.03f)),
     ) {
         Row(

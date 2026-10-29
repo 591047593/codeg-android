@@ -112,8 +112,8 @@ fun ComposeBar(
                 Modifier
                     .weight(1f)
                     .heightIn(min = 40.dp)
-                    .background(colors.codeSurface, RoundedCornerShape(18.dp))
-                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(18.dp))
+                    .background(colors.codeSurface, RoundedCornerShape(20.dp))
+                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(20.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {

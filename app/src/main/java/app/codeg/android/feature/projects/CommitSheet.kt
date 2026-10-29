@@ -197,7 +197,7 @@ fun CommitSheet(
                                 it,
                                 fontSize = 13.sp,
                                 color = colors.danger,
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(12.dp),
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(12.dp),
                             )
                         }
                     }
@@ -265,7 +265,7 @@ private fun FileSection(
         for (entry in entries) {
             val isSelected = entry.path in selected
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled) { onToggle(entry.path) }.padding(vertical = 8.dp, horizontal = 4.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled) { onToggle(entry.path) }.padding(vertical = 8.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(11.dp),
             ) {

@@ -409,9 +409,9 @@ fun PlainTextBlock(text: String) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(colors.codeSurface)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(8.dp))
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp))
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -483,9 +483,9 @@ fun FileBodyView(file: ReadOutputFormat.File, collapsedLineLimit: Int = 60) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(colors.codeSurface)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(8.dp)),
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp)),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
@@ -539,9 +539,9 @@ fun ToolErrorOutput(output: String) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(colors.danger.copy(alpha = 0.08f))
-            .border(0.5.dp, colors.danger.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+            .border(0.5.dp, colors.danger.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {

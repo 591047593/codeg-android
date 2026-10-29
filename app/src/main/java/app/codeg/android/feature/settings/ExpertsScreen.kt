@@ -117,7 +117,7 @@ fun ExpertsContent(viewModel: ExpertsViewModel = hiltViewModel()) {
 private fun ExpertRow(expert: ExpertListItem, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).clickable { onClick() }.padding(13.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).clickable { onClick() }.padding(13.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         ExpertIconTile(40.dp)
@@ -147,7 +147,7 @@ private fun ExpertIconTile(size: androidx.compose.ui.unit.Dp) {
 private fun ExpertsRefreshBanner(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(message, fontSize = 12.sp, color = colors.danger, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -198,7 +198,7 @@ private fun ExpertDetailDialog(
                 // Per-agent link matrix.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.experts_enable_for), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
                         when {
                             agents.isEmpty() -> Text(stringResource(R.string.experts_no_agents_available), fontSize = 13.sp, color = colors.textTertiary, modifier = Modifier.padding(16.dp))
                             detail.loading -> Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -218,13 +218,13 @@ private fun ExpertDetailDialog(
                 if (detail.content.isNotBlank()) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(R.string.experts_preview), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
-                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp)) {
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp)) {
                             MarkdownContent(stripFrontmatter(detail.content))
                         }
                     }
                 }
                 detail.error?.let {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(it, fontSize = 12.sp, color = colors.danger, modifier = Modifier.weight(1f))
                         Text(stringResource(R.string.common_dismiss), fontSize = 12.sp, color = colors.accent, modifier = Modifier.clickable { onDismissError() })
                     }
@@ -244,7 +244,7 @@ private fun AgentLinkRow(agent: AgentType, status: ExpertInstallStatus?, togglin
     val caption = linkCaption(state, status?.copyMode ?: false)
 
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(8.dp)).background(colors.textPrimary.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(colors.textPrimary.copy(alpha = 0.06f)), contentAlignment = Alignment.Center) {
             AgentIcon(agent, size = 20.dp)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {

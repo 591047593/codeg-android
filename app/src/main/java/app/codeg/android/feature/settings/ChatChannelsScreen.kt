@@ -200,10 +200,10 @@ fun ChatChannelsContent(viewModel: ChatChannelsViewModel = hiltViewModel()) {
                     Spacer(Modifier.height(8.dp))
                     Text(stringResource(R.string.cc_section_general), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).clickable { showGlobal = true }.padding(13.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).clickable { showGlobal = true }.padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp),
                     ) {
-                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(colors.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(colors.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Tune, null, tint = colors.accent, modifier = Modifier.size(20.dp))
                         }
                         Column(Modifier.weight(1f)) {
@@ -286,7 +286,7 @@ private fun ChannelRow(
     val colors = CodegTheme.colors
     val summary = remember(channel.configJson, channel.channelType) { ChannelConfig.parse(channel.configJson).summary(channel.channelType) }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
             .combinedClickable(onClick = onOpen, onLongClick = onDelete).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -314,7 +314,7 @@ private fun ChannelRow(
 private fun ChatRefreshBanner(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(message, fontSize = 12.sp, color = colors.danger, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -480,7 +480,7 @@ private fun ActionButton(title: String, icon: ImageVector, tint: Color, enabled:
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = tint.copy(alpha = 0.14f),
             contentColor = tint,
@@ -497,7 +497,7 @@ private fun DetailSection(title: String, content: @Composable () -> Unit) {
     val colors = CodegTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary, modifier = Modifier.padding(start = 4.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) { content() }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) { content() }
     }
 }
 
@@ -563,7 +563,7 @@ private fun WeixinQRDialog(channelId: Int, viewModel: ChatChannelsViewModel, onC
             )
             Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Spacer(Modifier.weight(1f))
-                Box(Modifier.size(240.dp).clip(RoundedCornerShape(18.dp)).background(Color.White), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(240.dp).clip(RoundedCornerShape(20.dp)).background(Color.White), contentAlignment = Alignment.Center) {
                     when (phase) {
                         QrPhase.CONFIRMED -> Icon(Icons.Rounded.Bolt, null, tint = Color(0xFF1AB833), modifier = Modifier.size(64.dp))
                         QrPhase.EXPIRED, QrPhase.FAILED -> Icon(Icons.Rounded.Refresh, null, tint = Color.Black.copy(alpha = 0.4f), modifier = Modifier.size(56.dp))
@@ -574,7 +574,7 @@ private fun WeixinQRDialog(channelId: Int, viewModel: ChatChannelsViewModel, onC
                 if (phase == QrPhase.EXPIRED || phase == QrPhase.FAILED) {
                     FilledTonalButton(
                         onClick = { attempt++ },
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.accent.copy(alpha = 0.14f), contentColor = colors.accent),
                     ) {
                         Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))

@@ -95,22 +95,47 @@ private val ANSI_LIGHT = listOf(
     Color(0xFF4B5563), // white — a light terminal's "white" is really grey
 )
 
-/** Build the colour set for the given mode + accent (iOS `Theme.swift` values). */
+/**
+ * Build the colour set for the given mode + accent.
+ *
+ * ### Why these values
+ *
+ * The palette follows Apple's platform colours rather than a web theme. Three
+ * properties carry that:
+ *
+ * 1. **A neutral, slightly warm grey scale.** iOS surfaces are not blue-tinted
+ *    (`#F2F4F6`) and not pure black. Light mode sits on `#F2F2F7` — the system
+ *    grouped-background grey — with `#FFFFFF` cards. Dark mode is `#000000` with
+ *    `#1C1C1E` cards, which is what makes the elevated surface read as *above* the
+ *    background instead of merely lighter than it.
+ * 2. **Separation by luminance, not by strokes.** iOS draws a border only when
+ *    content would otherwise float ambiguously. [surfaceStroke] is therefore
+ *    much weaker than a web card border; most separation comes from the surface
+ *    colour itself.
+ * 3. **System semantic colours** for danger (`#FF3B30` / `#FF453A`) and a text
+ *    ramp taken from `UIColor.label` / `.secondaryLabel` / `.tertiaryLabel`, so
+ *    the greys stay in one family instead of drifting.
+ *
+ * Accent hues are left as the user's choice; only the neutrals are opinionated.
+ */
 fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     val accentColor = accent.resolve(isDark)
     return if (isDark) {
         CodegColors(
             isDark = true,
-            bg = Color(0xFF0A0B0D),
-            bgElevated = Color(0xFF141619),
-            surfaceStroke = Color.White.copy(alpha = 0.09f),
-            hairline = Color.White.copy(alpha = 0.055f),
-            codeSurface = Color.Black.copy(alpha = 0.30f),
-            rail = Color.White.copy(alpha = 0.16f),
-            textPrimary = Color(0xFFF7F7F7),
-            textSecondary = Color(0xFFA3A3A3),
-            textTertiary = Color(0xFF707070),
-            danger = Color(0xFFF57575),
+            // Pure black is the iOS dark background; content layers stack upward from it
+            // in lighten steps rather than sitting on a slate wash.
+            bg = Color(0xFF000000),
+            bgElevated = Color(0xFF1C1C1E),
+            surfaceStroke = Color.White.copy(alpha = 0.10f),
+            hairline = Color.White.copy(alpha = 0.08f),
+            // A filled, slightly lifted panel: iOS secondary system fill.
+            codeSurface = Color(0xFF2C2C2E),
+            rail = Color.White.copy(alpha = 0.18f),
+            textPrimary = Color(0xFFFFFFFF),
+            textSecondary = Color(0xFFEBEBF5).copy(alpha = 0.60f),
+            textTertiary = Color(0xFFEBEBF5).copy(alpha = 0.38f),
+            danger = Color(0xFFFF453A),
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
@@ -118,16 +143,18 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     } else {
         CodegColors(
             isDark = false,
-            bg = Color(0xFFF2F4F6),
+            // System grouped background; cards are pure white on top of it.
+            bg = Color(0xFFF2F2F7),
             bgElevated = Color(0xFFFFFFFF),
-            surfaceStroke = Color.Black.copy(alpha = 0.10f),
-            hairline = Color.Black.copy(alpha = 0.07f),
-            codeSurface = Color.Black.copy(alpha = 0.045f),
-            rail = Color.Black.copy(alpha = 0.20f),
-            textPrimary = Color(0xFF1C1C1C),
-            textSecondary = Color(0xFF616161),
-            textTertiary = Color(0xFF8C8C8C),
-            danger = Color(0xFFCC2E2E),
+            surfaceStroke = Color.Black.copy(alpha = 0.08f),
+            hairline = Color.Black.copy(alpha = 0.10f),
+            // `UIColor.secondarySystemBackground`: a grey fill that reads as inset.
+            codeSurface = Color(0xFFF2F2F7),
+            rail = Color.Black.copy(alpha = 0.18f),
+            textPrimary = Color(0xFF000000),
+            textSecondary = Color(0xFF3C3C43).copy(alpha = 0.60f),
+            textTertiary = Color(0xFF3C3C43).copy(alpha = 0.38f),
+            danger = Color(0xFFFF3B30),
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
@@ -153,5 +180,5 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
 private fun onAccentColor(accent: Color): Color =
     if (accent.luminance() > 0.19f) Color(0xFF0F0F0F) else Color.White
 
-/** The cool indigo glow used in the app background (iOS `CodegBackground`). */
-val CodegGlowCool = Color(0xFF4D6BF2)
+// The cool indigo glow that used to paint the backdrop is gone with the two-glow
+// background; iOS-style surfaces are flat, so nothing references it any more.

@@ -95,7 +95,7 @@ fun ChatGlobalSettingsDialog(onDismiss: () -> Unit, viewModel: ChatGlobalSetting
                         FilledTonalButton(
                             onClick = { viewModel.setCommandPrefix(prefixField) },
                             modifier = Modifier.padding(top = 8.dp),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.accent.copy(alpha = 0.14f), contentColor = colors.accent),
                         ) {
                             Text(stringResource(R.string.chatglobal_save_prefix))
@@ -113,7 +113,7 @@ fun ChatGlobalSettingsDialog(onDismiss: () -> Unit, viewModel: ChatGlobalSetting
 
                     // Event filter.
                     GlobalSection(stringResource(R.string.chatglobal_forwarded_events_title), stringResource(R.string.chatglobal_forwarded_events_subtitle)) {
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
                             ChatEventCatalog.all.forEachIndexed { index, item ->
                                 if (index > 0) HorizontalDivider(thickness = Dp.Hairline, color = colors.textPrimary.copy(alpha = 0.06f))
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -131,7 +131,7 @@ fun ChatGlobalSettingsDialog(onDismiss: () -> Unit, viewModel: ChatGlobalSetting
                     GlobalSection(stringResource(R.string.chatglobal_webhooks_title), stringResource(R.string.chatglobal_webhooks_subtitle)) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             ui.webhooks.forEachIndexed { index, hook ->
-                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(hook.url, fontSize = 12.sp, fontFamily = CodegMono, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Switch(checked = hook.enabled, onCheckedChange = { viewModel.setWebhookEnabled(index, it) }, colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent))
                                     IconButton(onClick = { viewModel.removeWebhook(index) }) {
@@ -145,7 +145,7 @@ fun ChatGlobalSettingsDialog(onDismiss: () -> Unit, viewModel: ChatGlobalSetting
                                     onClick = { viewModel.addWebhook(newWebhook); newWebhook = "" },
                                     enabled = newWebhook.isNotBlank(),
                                     modifier = Modifier.size(48.dp),
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = RoundedCornerShape(16.dp),
                                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.accent.copy(alpha = 0.16f), contentColor = colors.accent),
                                 ) {
                                     Icon(Icons.Rounded.Add, stringResource(R.string.chatglobal_add_webhook_cd))

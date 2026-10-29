@@ -118,9 +118,9 @@ private fun UserNodeBody(turn: MessageTurn, modifier: Modifier) {
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.accent.copy(alpha = 0.12f))
-            .border(0.5.dp, colors.accent.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+            .border(0.5.dp, colors.accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -329,9 +329,9 @@ fun InlineTurnError(message: String, modifier: Modifier = Modifier) {
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(colors.danger.copy(alpha = 0.10f))
-            .border(0.5.dp, colors.danger.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+            .border(0.5.dp, colors.danger.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp),

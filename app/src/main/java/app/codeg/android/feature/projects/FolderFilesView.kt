@@ -88,7 +88,7 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
                 if (stack.size > 1) {
                     item("up") {
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { stack = stack.dropLast(1) }.padding(8.dp),
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { stack = stack.dropLast(1) }.padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Icon(Icons.Rounded.ArrowUpward, null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
@@ -125,7 +125,7 @@ private fun FileRow(item: DirectoryItem, onClick: () -> Unit) {
         },
         trailingContent = sizeLabel?.let { { Text(it, fontSize = 11.sp, color = colors.textTertiary) } },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { onClick() },
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() },
     )
 }
 
@@ -187,9 +187,9 @@ private fun FileContent(content: String) {
         Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(colors.codeSurface)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp)),
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(12.dp)),
         contentPadding = PaddingValues(vertical = 6.dp),
     ) {
         // No item key: the row identity IS its index, and a different file changes the

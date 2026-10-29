@@ -162,7 +162,7 @@ fun GitCredentialSheet(
                     CodegTextField(username, { username = it }, label = stringResource(R.string.cred_username))
                     SecretField(password, { password = it }, label = stringResource(R.string.cred_password_label))
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = saveCredentials, onCheckedChange = { saveCredentials = it }, enabled = !submitting)
@@ -191,6 +191,6 @@ private fun Banner(message: String, tint: Color, textColor: Color) {
         message,
         fontSize = 13.sp,
         color = textColor,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
     )
 }

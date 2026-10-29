@@ -65,9 +65,9 @@ fun PermissionRequestCard(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.bgElevated.copy(alpha = 0.96f))
-            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(14.dp))
+            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(16.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -183,7 +183,7 @@ private fun PermissionBody(parsed: ParsedPermission) {
 private fun OptionButton(option: PermissionOption, submitting: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     val isReject = option.isReject
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(12.dp)
     // Keep the actively-submitting button enabled-looking (spinner) while the
     // others disable; clicking is gated by `enabled` regardless.
     val clickable = enabled

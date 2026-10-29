@@ -80,7 +80,7 @@ fun SessionRow(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .then(
                     if (selected) Modifier.background(colors.accent.copy(alpha = 0.18f)) else Modifier,
                 )

@@ -357,7 +357,7 @@ private fun RefreshErrorBanner(
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -412,7 +412,7 @@ private fun ServerSwitcher(
     Box {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .clickable { open = true }
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,

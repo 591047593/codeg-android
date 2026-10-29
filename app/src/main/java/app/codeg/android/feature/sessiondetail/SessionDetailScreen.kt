@@ -616,9 +616,9 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
             Box(Modifier.size(60.dp)) {
                 val preview = bitmap
                 if (preview != null) {
-                    Image(preview, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)))
+                    Image(preview, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(12.dp)))
                 } else {
-                    Box(Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(colors.codeSurface))
+                    Box(Modifier.size(60.dp).clip(RoundedCornerShape(12.dp)).background(colors.codeSurface))
                 }
                 Box(
                     Modifier.align(Alignment.TopEnd).padding(2.dp).size(18.dp).clip(RoundedCornerShape(50)).background(colors.bg.copy(alpha = 0.7f)).clickable { onRemove(att.id) },

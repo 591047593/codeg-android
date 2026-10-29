@@ -5,31 +5,35 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Corner radii and spacing tokens, aligned to the codeg desktop client.
+ * Corner radii and spacing tokens.
  *
- * Source of truth: `src/app/globals.css` in the codeg web app, where every
- * radius is a multiple of `--radius: 10px` (`--radius-sm` ×0.6, `-md` ×0.8,
- * `-lg` ×1.0, `-xl` ×1.4, `-2xl` ×1.8). Mirroring the same multipliers keeps a
- * card on the phone and a card in the desktop client visibly the same shape;
- * the previous values (26/20/14/10) were ported from the iOS app and read far
- * rounder than anything in the desktop product.
+ * ### iOS geometry
  *
- * Spacing follows codeg's `--spacing: 4px` base, so every step here is a
- * multiple of 4dp.
+ * Apple's surfaces are rounder and roomier than a Material/Tailwind scale. The
+ * reference points are the platform's own: a grouped list row uses a 10pt radius inside
+ * a 16pt inset card, a sheet is 10pt at the top with 16pt side padding, and a filled
+ * button is a 12pt-radius capsule-ish block. These tokens approximate that with whole
+ * numbers at Android densities:
+ *
+ * - 8 / 12 / 16 / 20 / 28 rather than the desktop client's 6 / 8 / 10 / 14 / 18.
+ *   The old scale was ported from the web app's `--radius: 10px` multiples, which is
+ *   visibly tighter than anything iOS draws.
+ * - Spacing steps stay on the 4dp grid (iOS uses 4pt too) but the vertical rhythm opens
+ *   up: 12dp between blocks, 16dp screen insets.
  */
 @Immutable
 data class CodegDimens(
-    /** ×2.2 of the 10dp base — hero surfaces, sheets. */
-    val radius2xl: Dp = 22.dp,
-    /** ×1.8 — dialogs, large cards. */
-    val radiusXl: Dp = 18.dp,
-    /** ×1.4 — the codeg `rounded-xl`: message bubbles, panels. */
-    val radiusLg: Dp = 14.dp,
-    /** ×1.0 — the codeg `rounded-lg`: buttons, inputs, list rows. */
-    val radiusMd: Dp = 10.dp,
-    /** ×0.8 — the codeg `rounded-md`: chips, tags, small controls. */
+    /** ×2.8 — hero surfaces, sheets, the composer. */
+    val radius2xl: Dp = 28.dp,
+    /** ×2.0 — dialogs, large cards, grouped list containers. */
+    val radiusXl: Dp = 20.dp,
+    /** ×1.6 — message bubbles, panels, tool cards. */
+    val radiusLg: Dp = 16.dp,
+    /** ×1.2 — buttons, inputs, list rows. */
+    val radiusMd: Dp = 12.dp,
+    /** ×0.8 — chips, tags, small controls. */
     val radiusSm: Dp = 8.dp,
-    /** ×0.6 — the codeg `rounded-sm`: the tightest affordance. */
+    /** ×0.6 — the tightest affordance. */
     val radiusXs: Dp = 6.dp,
 
     /** Screen edge inset, 4 × 4dp. */

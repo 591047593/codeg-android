@@ -84,8 +84,8 @@ internal fun SingleBlockView(block: MarkdownBlock, modifier: Modifier = Modifier
     when (block) {
         is MarkdownBlock.Paragraph -> Text(
             text = rememberInlineMarkdown(block.text),
-            fontSize = 14.sp,
-            lineHeight = 21.sp,
+            fontSize = 17.sp,
+            lineHeight = 24.sp,
             color = colors.textPrimary,
             modifier = modifier.fillMaxWidth(),
         )
@@ -93,9 +93,13 @@ internal fun SingleBlockView(block: MarkdownBlock, modifier: Modifier = Modifier
         is MarkdownBlock.Heading -> Text(
             text = rememberInlineMarkdown(block.text),
             fontSize = headingSize(block.level),
+            // ~1.25× the size, as iOS sets its title styles; without it the larger sizes
+            // crowd their own second line.
+            lineHeight = (headingSize(block.level).value * 1.25f).sp,
             fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.3).sp,
             color = colors.textPrimary,
-            modifier = modifier.fillMaxWidth().padding(top = 2.dp),
+            modifier = modifier.fillMaxWidth().padding(top = 4.dp),
         )
 
         is MarkdownBlock.BulletList -> Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -116,8 +120,8 @@ internal fun SingleBlockView(block: MarkdownBlock, modifier: Modifier = Modifier
             )
             Text(
                 text = rememberInlineMarkdown(block.text),
-                fontSize = 14.sp,
-                lineHeight = 21.sp,
+                fontSize = 17.sp,
+                lineHeight = 24.sp,
                 fontStyle = FontStyle.Italic,
                 color = colors.textSecondary,
                 modifier = Modifier.fillMaxWidth(),
@@ -140,14 +144,17 @@ private fun ListRow(marker: String, content: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = marker,
-            fontSize = 14.sp,
+            // The bullet/number stays a step smaller than the body it introduces: at 17sp
+            // the marker competes with the text, and a two-digit "10." no longer fits the
+            // gutter the fixed width reserves.
+            fontSize = 15.sp,
             color = colors.textTertiary,
-            modifier = Modifier.width(16.dp),
+            modifier = Modifier.width(20.dp),
         )
         Text(
             text = rememberInlineMarkdown(content),
-            fontSize = 14.sp,
-            lineHeight = 21.sp,
+            fontSize = 17.sp,
+            lineHeight = 24.sp,
             color = colors.textPrimary,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -160,9 +167,9 @@ private fun MarkdownTable(table: MarkdownBlock.Table, modifier: Modifier = Modif
     Row(modifier.horizontalScroll(rememberScrollState())) {
         Column(
             Modifier
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(colors.codeSurface)
-                .border(0.5.dp, colors.hairline, RoundedCornerShape(10.dp)),
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(12.dp)),
         ) {
             TableRow(table.header, isHeader = true)
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(colors.hairline))
@@ -192,9 +199,17 @@ private fun TableRow(cells: List<String>, isHeader: Boolean) {
     }
 }
 
+/**
+ * Heading sizes, scaled against the 17sp body.
+ *
+ * The old ramp topped out at 20sp and bottomed at 14.5sp, which put h3 *below* body text
+ * once the body moved to the iOS 17sp — a heading that renders smaller than the paragraph
+ * under it is not a heading. Each level now stays clearly above the body, matching the
+ * ratio Apple uses for title2 → headline → body.
+ */
 private fun headingSize(level: Int) = when (level) {
-    1 -> 20.sp
-    2 -> 18.sp
-    3 -> 16.sp
-    else -> 14.5.sp
+    1 -> 26.sp
+    2 -> 22.sp
+    3 -> 19.sp
+    else -> 17.sp
 }

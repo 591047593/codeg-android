@@ -5,19 +5,17 @@ import androidx.compose.material3.Shapes
 import androidx.compose.ui.unit.dp
 
 /**
- * Material3 shape scale mapped onto the codeg desktop radii.
+ * Material3 shape scale, aligned with [CodegDimens]' iOS-style radii.
  *
- * The values are the same multiples of the 10dp base that codeg's
- * `globals.css` uses (`--radius-sm` ×0.6, `-md` ×0.8, `-lg` ×1.0, `-xl` ×1.4),
- * so a button, an input, and a dialog are the same shape here as on the
- * desktop. They are written out literally rather than read from
- * [CodegDimens] because [Shapes] is a plain value created once at the theme
- * root and cannot participate in a `@Composable` read.
+ * Written out literally rather than read from [CodegDimens] because [Shapes] is a plain
+ * value created once at the theme root and cannot participate in a `@Composable` read.
+ * Keep these in step with the tokens: a stock M3 control (dialog, menu, sheet) has to
+ * look like it came from the same family as the hand-drawn surfaces.
  */
 val CodegShapes = Shapes(
     extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(10.dp),
-    large = RoundedCornerShape(14.dp),
-    extraLarge = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(20.dp),
 )

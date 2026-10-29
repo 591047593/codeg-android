@@ -44,7 +44,7 @@ fun VersionControlContent(viewModel: VersionControlViewModel = hiltViewModel()) 
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Git", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (ui.detect.installed) Ok else colors.danger))
                     Text(if (ui.detect.installed) stringResource(R.string.vcs_git_installed) else stringResource(R.string.vcs_git_not_found), fontSize = 14.sp, color = colors.textPrimary)
@@ -70,7 +70,7 @@ fun VersionControlContent(viewModel: VersionControlViewModel = hiltViewModel()) 
             if (ui.accounts.isEmpty()) {
                 Text(stringResource(R.string.vcs_no_linked_accounts), fontSize = 13.sp, color = colors.textTertiary)
             } else {
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
                     for (acc in ui.accounts) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -94,7 +94,7 @@ private fun Pill(label: String, loading: Boolean, onClick: () -> Unit, filled: B
         Button(
             onClick = onClick,
             enabled = !loading,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.accent, contentColor = colors.onAccent),
         ) {
             if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = colors.onAccent)
@@ -104,7 +104,7 @@ private fun Pill(label: String, loading: Boolean, onClick: () -> Unit, filled: B
         FilledTonalButton(
             onClick = onClick,
             enabled = !loading,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.filledTonalButtonColors(containerColor = colors.textPrimary.copy(alpha = 0.06f), contentColor = colors.textPrimary),
         ) {
             if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = colors.accent)

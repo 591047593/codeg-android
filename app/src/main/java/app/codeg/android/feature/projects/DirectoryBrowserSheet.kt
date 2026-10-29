@@ -125,7 +125,7 @@ fun DirectoryBrowserSheet(
 private fun BrowserRow(name: String, hasChildren: Boolean, icon: ImageVector, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onClick() }.padding(horizontal = 8.dp, vertical = 11.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onClick() }.padding(horizontal = 8.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Icon(icon, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))

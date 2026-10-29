@@ -106,7 +106,7 @@ fun SessionActionsMenu(
                 Column {
                     for (status in ConversationStatus.selectable) {
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                                 .selectable(selected = summary.status == status, role = Role.RadioButton) { viewModel.setStatus(status); showStatus = false }
                                 .padding(vertical = 4.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),

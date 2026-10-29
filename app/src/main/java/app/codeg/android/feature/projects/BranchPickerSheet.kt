@@ -90,7 +90,7 @@ fun BranchPickerSheet(viewModel: ProjectDetailViewModel, onDismiss: () -> Unit) 
                     },
                     enabled = newBranch.isNotBlank() && !busy,
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = colors.accent.copy(alpha = 0.16f), contentColor = colors.accent),
                 ) { Icon(Icons.Rounded.Add, stringResource(R.string.branch_create_branch)) }
             }
@@ -126,6 +126,6 @@ private fun BranchRow(branch: String, current: Boolean, enabled: Boolean, onClic
             containerColor = Color.Transparent,
             headlineColor = if (current) colors.accent else colors.textPrimary,
         ),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled && !current) { onClick() },
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled && !current) { onClick() },
     )
 }

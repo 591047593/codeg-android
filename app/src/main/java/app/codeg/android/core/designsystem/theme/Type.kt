@@ -70,102 +70,114 @@ val CodeTextStyle = TextStyle(
 )
 
 /**
- * Type scale aligned to the codeg web client's Tailwind scale
- * (`--text-xs: 12px`, `-sm: 14px`, `-base: 16px`, `-lg: 18px`, `-xl: 20px`,
- * `-2xl: 24px`) and set in Inter.
+ * Type scale modelled on iOS's text styles, set in Inter.
  *
- * Line heights follow codeg's `leading-*` usage — about 1.5× for body copy and
- * 1.35× for titles. The previous scale used Material's default line heights
- * with iOS sizes, which left titles too tight and labels too loose next to the
- * desktop client.
+ * Inter is the closest bundled match to SF Pro — same grotesque skeleton, similar
+ * widths — and Apple's *metrics* are what make text feel like iOS: body copy is 17pt,
+ * not 16; line heights are generous (≈1.3–1.4×) because the platform expects multiline
+ * paragraphs; and large titles are tracked in tightly (-0.4pt) while small labels are
+ * tracked out, which is why iOS labels look airy rather than cramped.
+ *
+ * The previous scale was Tailwind's (`text-base: 16px`, `text-sm: 14px`) — a web scale
+ * that runs a step small on a phone and set every line a little tight.
+ *
+ * Mapping (iOS text style → this scale):
+ * - largeTitle / title1 → [headlineLarge] / [headlineMedium]
+ * - title2 / title3 → [titleLarge] / [titleMedium]
+ * - headline → [titleSmall]
+ * - body (17) → [bodyLarge]
+ * - subheadline (15) → [bodyMedium]
+ * - footnote (13) → [bodySmall]
+ * - callout (16, medium) → [labelLarge]
  */
 val CodegTypography = Typography(
-    // 24px / 1.33 — codeg `text-2xl`. Screen titles.
+    // 28 / 1.21 — iOS largeTitle. Screen titles.
     headlineLarge = TextStyle(
         fontFamily = InterFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = -0.46.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = -0.5.sp,
     ),
-    // 20px / 1.4 — codeg `text-xl`. Section headers.
+    // 22 / 1.27 — iOS title1. Section headers.
     headlineMedium = TextStyle(
         fontFamily = InterFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = -0.34.sp,
+        letterSpacing = -0.4.sp,
     ),
-    // 18px / 1.44 — codeg `text-lg`. Dialog and sheet titles.
+    // 20 / 1.25 — iOS title2. Dialog and sheet titles.
     titleLarge = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
-        lineHeight = 26.sp,
-        letterSpacing = -0.25.sp,
+        fontSize = 20.sp,
+        lineHeight = 25.sp,
+        letterSpacing = -0.35.sp,
     ),
-    // 16px / 1.5 — codeg `text-base`. Prominent labels, list rows.
+    // 17 / 1.29 — iOS title3. Prominent labels, list rows.
     titleMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = -0.18.sp,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        letterSpacing = -0.24.sp,
     ),
-    // 14px / 1.43 — codeg `text-sm` at medium weight.
+    // 15 / 1.33 — iOS headline at semibold.
     titleSmall = TextStyle(
         fontFamily = InterFamily,
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp,
         lineHeight = 20.sp,
-        letterSpacing = -0.08.sp,
+        letterSpacing = -0.16.sp,
     ),
-    // 16px / 1.5 — codeg `text-base`. Message body copy.
+    // 17 / 1.41 — iOS body. Message copy. The extra point over 16 is what makes a
+    // phone paragraph read comfortably rather than dense.
     bodyLarge = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
+        fontSize = 17.sp,
         lineHeight = 24.sp,
-        letterSpacing = -0.18.sp,
+        letterSpacing = -0.2.sp,
     ),
-    // 14px / 1.43 — codeg `text-sm`. Secondary copy, descriptions.
+    // 15 / 1.4 — iOS subheadline. Secondary copy, descriptions.
     bodyMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = -0.08.sp,
+        fontSize = 15.sp,
+        lineHeight = 21.sp,
+        letterSpacing = -0.12.sp,
     ),
-    // 12px / 1.33 — codeg `text-xs`. Metadata, timestamps, captions.
+    // 13 / 1.38 — iOS footnote. Metadata, timestamps, captions.
     bodySmall = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.sp,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+        letterSpacing = -0.06.sp,
     ),
-    // 14px / 1.43 at medium — codeg `text-sm font-medium`. Buttons, tabs.
+    // 16 / 1.25 at medium — iOS callout. Buttons, tabs.
     labelLarge = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
+        fontSize = 16.sp,
         lineHeight = 20.sp,
-        letterSpacing = -0.08.sp,
+        letterSpacing = -0.16.sp,
     ),
-    // 12px / 1.33 — codeg `text-xs font-medium`. Chips, badges.
+    // 13 / 1.23 at medium — iOS caption1. Chips, badges.
     labelMedium = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.sp,
+        letterSpacing = -0.04.sp,
     ),
-    // 11px / 1.45 — codeg `text-2xs`. The tightest badge text.
+    // 11 / 1.27 at medium — iOS caption2 with the tracking iOS gives small text.
     labelSmall = TextStyle(
         fontFamily = InterFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.sp,
+        lineHeight = 14.sp,
+        letterSpacing = 0.06.sp,
     ),
 )

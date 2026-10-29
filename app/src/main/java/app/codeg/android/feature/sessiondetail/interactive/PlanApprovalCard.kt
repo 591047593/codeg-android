@@ -83,9 +83,9 @@ fun PlanApprovalCard(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.bgElevated.copy(alpha = 0.96f))
-            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(14.dp))
+            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(16.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -114,9 +114,9 @@ fun PlanApprovalCard(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(colors.codeSurface)
-                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(8.dp))
+                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(10.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
                 if (feedback.isEmpty()) {

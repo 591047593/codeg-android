@@ -100,7 +100,7 @@ fun CloneRepoSheet(
                     Text(stringResource(R.string.clone_clones_into, targetDir), fontFamily = CodegMono, fontSize = 11.sp, color = colors.textTertiary)
                 }
                 error?.let {
-                    Text(it, fontSize = 13.sp, color = colors.danger, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(10.dp))
+                    Text(it, fontSize = 13.sp, color = colors.danger, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.danger.copy(alpha = 0.12f)).padding(10.dp))
                 }
             }
             PrimaryButton(

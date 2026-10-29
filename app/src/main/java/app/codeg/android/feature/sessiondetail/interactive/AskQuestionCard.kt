@@ -79,9 +79,9 @@ fun AskQuestionCard(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.bgElevated.copy(alpha = 0.96f))
-            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(14.dp))
+            .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(16.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -193,9 +193,9 @@ private fun QuestionBlock(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(colors.codeSurface)
-                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(8.dp))
+                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(10.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
                 if (otherText.isEmpty()) Text(stringResource(R.string.ask_other_placeholder), color = colors.textTertiary, fontSize = 13.sp)
@@ -217,9 +217,9 @@ private fun OptionRow(label: String, description: String, checked: Boolean, mult
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(if (checked) colors.accent.copy(alpha = 0.12f) else colors.textPrimary.copy(alpha = 0.02f))
-            .border(0.5.dp, if (checked) colors.accent.copy(alpha = 0.4f) else colors.hairline, RoundedCornerShape(8.dp))
+            .border(0.5.dp, if (checked) colors.accent.copy(alpha = 0.4f) else colors.hairline, RoundedCornerShape(10.dp))
             .clickable { onClick() }
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

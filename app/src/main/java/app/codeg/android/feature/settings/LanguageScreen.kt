@@ -63,7 +63,7 @@ fun LanguageContent() {
             stringResource(R.string.language_interface_description),
             fontSize = 13.sp, color = colors.textTertiary, modifier = Modifier.padding(bottom = 8.dp, start = 4.dp),
         )
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
             AppLanguage.entries.forEachIndexed { index, lang ->
                 val isSelected = lang == selected
                 ListItem(

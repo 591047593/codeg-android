@@ -223,7 +223,7 @@ private fun ChangeRow(entry: GitStatusEntry, onClick: () -> Unit, onLongClick: (
         },
         leadingContent = { GitChangeBadge(entry.change) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary, supportingColor = colors.textTertiary),
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick),
     )
 }
 

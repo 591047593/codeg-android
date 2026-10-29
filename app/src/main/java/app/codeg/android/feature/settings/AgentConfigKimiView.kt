@@ -341,7 +341,7 @@ private fun KimiGateBanner(present: Boolean, mode: KimiAuthMode) {
         else -> stringResource(R.string.agents_kimi_gate_apikey)
     }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(tint.copy(alpha = 0.10f)).padding(12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.10f)).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(if (present) Icons.Rounded.Verified else Icons.Rounded.WarningAmber, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
@@ -354,7 +354,7 @@ private fun KimiResultBanner(banner: KimiBanner) {
     val colors = CodegTheme.colors
     val tint = if (banner.isError) colors.danger else SuccessGreen
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = 0.12f)).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(if (banner.isError) Icons.Rounded.ErrorOutline else Icons.Rounded.CheckCircle, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
