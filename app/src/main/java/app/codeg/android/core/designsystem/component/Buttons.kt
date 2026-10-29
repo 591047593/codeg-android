@@ -50,7 +50,7 @@ fun PrimaryButton(
             // tappable — on the server form, both buttons looked broken rather than
             // simply unavailable. A neutral grey with a legible label reads as "not yet".
             disabledContainerColor = colors.codeSurface,
-            disabledContentColor = colors.textTertiary,
+            disabledContentColor = colors.textSecondary,
         ),
     ) {
         if (loading) {

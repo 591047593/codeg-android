@@ -64,13 +64,13 @@ fun CodegTextField(
             TextStyle(color = colors.textPrimary)
         },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        // A single-line field is 48dp tall — the iOS control height. M3's `TextField`
-        // reserves a 56dp minimum for a floating label it no longer draws here, so a
-        // three-field form occupied most of the screen; `height` (not `heightIn`) because
-        // the internal minimum would otherwise still win.
+        // A single-line field is 54dp. 48dp clipped the placeholder: M3 reserves ~16dp of
+        // vertical padding inside a `TextField`, so the box has to be taller than the
+        // iOS control height to fit the same text. `height` rather than `heightIn`
+        // because the component's own 56dp floor would otherwise win.
         modifier = modifier
             .fillMaxWidth()
-            .then(if (singleLine) Modifier.height(48.dp) else Modifier),
+            .then(if (singleLine) Modifier.height(54.dp) else Modifier),
         shape = RoundedCornerShape(12.dp),
         colors = codegFieldColors(),
     )
