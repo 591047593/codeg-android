@@ -19,11 +19,16 @@ import androidx.compose.ui.graphics.luminance
  * carry an actual hue are offered here.
  */
 enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
-    // Hues are the iOS system colours, which are less saturated than the web presets
-    // they replace. The web values (`#FF6900` orange, `#FB2C36` red) are tuned to pop
-    // against a page on a large display; at phone size on a near-white surface the same
-    // saturation dominates every screen it appears on. The system values keep the same
-    // hue identity at a weight that reads as a control colour rather than as an alert.
+    /**
+     * The default, matching the desktop client's `DEFAULT_THEME_COLOR = "neutral"`.
+     *
+     * A near-black accent in light mode and near-white in dark: the interface is then
+     * carried entirely by the neutral surfaces, and colour appears only where it means
+     * something (destructive actions, status, agent identity). Picking a hue as the
+     * default made every button, tab and link the same loud colour, which is not how the
+     * desktop client looks on first launch.
+     */
+    NEUTRAL("neutral", Color(0xFFE5E5EA), Color(0xFF1C1C1E)),
     RED("red", Color(0xFFFF453A), Color(0xFFFF3B30)),
     ROSE("rose", Color(0xFFFF375F), Color(0xFFFF2D55)),
     ORANGE("orange", Color(0xFFFF9F0A), Color(0xFFFF9500)),
@@ -35,7 +40,7 @@ enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 
     companion object {
-        val DEFAULT = ORANGE
+        val DEFAULT = NEUTRAL
         val all: List<AccentPalette> = entries
         fun from(id: String?): AccentPalette = entries.firstOrNull { it.id == id } ?: DEFAULT
     }

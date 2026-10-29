@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive-icon foreground: a "</>" code-bracket glyph, echoing the iOS app icon.
-  Drawn as stroked paths inside the 108x108 viewport (safe zone ~ the centre 66dp).
+  Adaptive-icon foreground: the Codeg mark.
+
+  Taken from the project's own logo (`public/icon.svg` upstream): a `</>` drawn in the
+  light grey used for the bracket strokes, with three coloured dots between the angles —
+  magenta, yellow, cyan. The previous icon replaced the dots with a single blue slash,
+  which shares the bracket idea but is not the brand.
+
+  Geometry is the upstream 512-unit artwork scaled to this 108-unit viewport (×0.211);
+  the mark occupies the central safe zone so no launcher mask crops it.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -9,29 +16,32 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Left chevron  <  -->
+    <!-- Left chevron  <  (upstream polyline 180,186 → 100,256 → 180,326) -->
     <path
         android:strokeColor="#DCDFE9"
-        android:strokeWidth="6"
+        android:strokeWidth="6.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="#00000000"
-        android:pathData="M47,42 L34,54 L47,66" />
+        android:pathData="M38,39.3 L21.1,54 L38,68.7" />
 
-    <!-- Slash  /  -->
+    <!-- Middle dots: magenta / yellow / cyan, the logo's only colour -->
     <path
-        android:strokeColor="#9FB0FF"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M60,40 L48,68" />
+        android:fillColor="#E91E63"
+        android:pathData="M43.5,54 m-6.3,0 a6.3,6.3 0 1,0 12.6,0 a6.3,6.3 0 1,0 -12.6,0" />
+    <path
+        android:fillColor="#FDD835"
+        android:pathData="M54,54 m-7.6,0 a7.6,7.6 0 1,0 15.2,0 a7.6,7.6 0 1,0 -15.2,0" />
+    <path
+        android:fillColor="#03A9F4"
+        android:pathData="M64.5,54 m-6.3,0 a6.3,6.3 0 1,0 12.6,0 a6.3,6.3 0 1,0 -12.6,0" />
 
-    <!-- Right chevron  >  -->
+    <!-- Right chevron  >  (upstream 332,186 → 412,256 → 332,326) -->
     <path
         android:strokeColor="#DCDFE9"
-        android:strokeWidth="6"
+        android:strokeWidth="6.75"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="#00000000"
-        android:pathData="M61,42 L74,54 L61,66" />
+        android:pathData="M70,39.3 L86.9,54 L70,68.7" />
 </vector>

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.PrimaryButton
+import app.codeg.android.core.designsystem.component.CodegLogo
 import app.codeg.android.core.designsystem.theme.CodegTheme
 
 /** Shown when no server is configured (iOS `OnboardingView`). */
@@ -51,12 +52,10 @@ fun OnboardingScreen(
     ) {
         // Pushes the hero block down enough to feel intentional without centring the lot.
         Spacer(Modifier.height(48.dp))
-        Icon(
-            Icons.Rounded.Code,
-            contentDescription = null,
-            tint = colors.accent,
-            modifier = Modifier.size(56.dp),
-        )
+        // The product mark rather than a generic code glyph: this is the first screen a
+        // new user sees, and the `</>` with its three coloured dots is what identifies
+        // the app.
+        CodegLogo(size = 64.dp)
         Text(
             stringResource(R.string.onboarding_title),
             style = MaterialTheme.typography.titleLarge,
