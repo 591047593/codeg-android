@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -28,9 +29,9 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -87,34 +88,24 @@ fun ComposeBar(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (onPlus != null) {
-                FilledTonalIconButton(
-                    onClick = onPlus,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = colors.textPrimary.copy(alpha = 0.06f),
-                        contentColor = colors.textSecondary,
-                    ),
-                ) {
+                IconButton(onClick = onPlus) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.compose_insert), modifier = Modifier.size(22.dp))
                 }
             }
             if (onAttach != null) {
-                FilledTonalIconButton(
-                    onClick = onAttach,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = colors.textPrimary.copy(alpha = 0.06f),
-                        contentColor = colors.textSecondary,
-                    ),
-                ) {
+                IconButton(onClick = onAttach) {
                     Icon(Icons.Rounded.Image, contentDescription = stringResource(R.string.compose_attach_image), modifier = Modifier.size(20.dp))
                 }
             }
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 40.dp)
-                    .background(colors.codeSurface, RoundedCornerShape(20.dp))
-                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                    .heightIn(min = 38.dp)
+                    // iOS fills a message field with a grey well instead of outlining it:
+                    // the rounded fill is the affordance, and a stroke on top of it reads
+                    // as a form input rather than as a text field you type into.
+                    .background(colors.codeSurface, RoundedCornerShape(19.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (text.isEmpty()) {
@@ -142,6 +133,10 @@ fun ComposeBar(
             FilledIconButton(
                 onClick = { if (isInFlight) onStop() else onSend() },
                 enabled = canSend || isInFlight,
+                // A true circle. `FilledIconButton` defaults to Material's 12dp rounded
+                // square, which next to the pill-shaped input reads as a different family;
+                // iOS pairs a round send button with a rounded field.
+                shape = CircleShape,
                 colors = IconButtonDefaults.filledIconButtonColors(
                     containerColor = sendContainer,
                     contentColor = colors.onAccent,
