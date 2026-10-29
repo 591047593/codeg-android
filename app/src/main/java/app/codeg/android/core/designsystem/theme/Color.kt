@@ -153,8 +153,13 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             bgElevated = Color(0xFFFFFFFF),
             surfaceStroke = Color.Black.copy(alpha = 0.08f),
             hairline = Color.Black.copy(alpha = 0.10f),
-            // `UIColor.secondarySystemBackground`: a grey fill that reads as inset.
-            codeSurface = Color(0xFFF2F2F7),
+            // A fill that reads as inset *against the grouped background*. Taking
+            // `secondarySystemBackground` literally here made it identical to `bg`
+            // (`#F2F2F7` on `#F2F2F7`), so every filled control — code blocks, text
+            // fields, the composer — became invisible; iOS only gets away with that
+            // value because its fields sit on white cards. One step darker than the
+            // background keeps the same relationship without the vanishing act.
+            codeSurface = Color(0xFFE5E5EA),
             rail = Color.Black.copy(alpha = 0.18f),
             textPrimary = Color(0xFF000000),
             textSecondary = Color(0xFF3C3C43).copy(alpha = 0.72f),
