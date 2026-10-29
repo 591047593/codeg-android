@@ -17,7 +17,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -41,6 +40,7 @@ import app.codeg.android.core.common.RelativeTime
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.statusColor
 import app.codeg.android.core.designsystem.component.statusLabel
+import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.CodegMenu
 import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -86,7 +86,12 @@ fun SessionActionsMenu(
             containerColor = colors.bgElevated,
             title = { Text(stringResource(R.string.sessionactions_rename_session), color = colors.textPrimary) },
             text = {
-                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                CodegTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = stringResource(R.string.sessionactions_rename),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             },
             confirmButton = {
                 TextButton(enabled = name.trim().isNotEmpty(), onClick = { viewModel.rename(name); showRename = false }) {

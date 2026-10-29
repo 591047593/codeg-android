@@ -1,29 +1,41 @@
 package app.codeg.android.core.designsystem.component
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import app.codeg.android.core.designsystem.theme.CodegTheme
+import androidx.compose.ui.unit.dp
 import app.codeg.android.core.designsystem.theme.CodegMono
+import app.codeg.android.core.designsystem.theme.CodegTheme
 
-/** A labelled single-line text field themed to the app palette. */
+/**
+ * A labelled text field, filled rather than outlined.
+ *
+ * iOS does not outline its text fields: a rounded grey well is the whole affordance, and
+ * a label sits above it rather than floating inside the box. `OutlinedTextField` put a
+ * 1dp stroke around every input and a floating label that jumped on focus, which is the
+ * Material idiom and the first thing that reads as "Android" on a form screen.
+ *
+ * All fields in the app go through this file, so the shape stays consistent.
+ */
 @Composable
 fun CodegTextField(
     value: String,
@@ -36,16 +48,20 @@ fun CodegTextField(
     singleLine: Boolean = true,
 ) {
     val colors = CodegTheme.colors
-    OutlinedTextField(
+    TextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
-        placeholder = placeholder?.let { { Text(it) } },
+        placeholder = placeholder?.let { { Text(it, color = colors.textTertiary) } },
         singleLine = singleLine,
-        textStyle = if (mono) TextStyle(fontFamily = CodegMono) else TextStyle.Default,
+        textStyle = if (mono) {
+            TextStyle(fontFamily = CodegMono, color = colors.textPrimary)
+        } else {
+            TextStyle(color = colors.textPrimary)
+        },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = modifier.fillMaxWidth(),
-        colors = fieldColors(),
+        shape = RoundedCornerShape(12.dp),
+        colors = codegFieldColors(),
     )
 }
 
@@ -58,34 +74,47 @@ fun SecretField(
     modifier: Modifier = Modifier,
 ) {
     var visible by remember { mutableStateOf(false) }
-    OutlinedTextField(
+    val colors = CodegTheme.colors
+    TextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
+        placeholder = { Text(label, color = colors.textTertiary) },
         singleLine = true,
-        textStyle = TextStyle(fontFamily = CodegMono),
+        textStyle = TextStyle(fontFamily = CodegMono, color = colors.textPrimary),
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
                 Icon(
-                    imageVector = if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                    contentDescription = if (visible) "Hide" else "Show",
-                    tint = CodegTheme.colors.textTertiary,
+                    if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    contentDescription = label,
+                    tint = colors.textTertiary,
                 )
             }
         },
         modifier = modifier.fillMaxWidth(),
-        colors = fieldColors(),
+        shape = RoundedCornerShape(12.dp),
+        colors = codegFieldColors(),
     )
 }
 
+/**
+ * Shared field colours: a grey well that darkens slightly on focus, no indicator line.
+ *
+ * `secondarySystemBackground` is the iOS fill for a field sitting on a grouped
+ * background; the focus state only lifts its tone rather than drawing a 2dp accent line
+ * under the text, which is Material's tell.
+ */
 @Composable
-private fun fieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = CodegTheme.colors.accent,
-    unfocusedBorderColor = CodegTheme.colors.surfaceStroke,
-    focusedLabelColor = CodegTheme.colors.accent,
-    unfocusedLabelColor = CodegTheme.colors.textTertiary,
+private fun codegFieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = CodegTheme.colors.codeSurface,
+    unfocusedContainerColor = CodegTheme.colors.codeSurface,
+    // Fields that cannot be edited should look inert rather than merely dimmer.
+    disabledContainerColor = CodegTheme.colors.codeSurface.copy(alpha = 0.5f),
+    focusedIndicatorColor = Color.Transparent,
+    unfocusedIndicatorColor = Color.Transparent,
+    disabledIndicatorColor = Color.Transparent,
+    errorIndicatorColor = Color.Transparent,
     cursorColor = CodegTheme.colors.accent,
     focusedTextColor = CodegTheme.colors.textPrimary,
     unfocusedTextColor = CodegTheme.colors.textPrimary,
