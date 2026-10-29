@@ -1,5 +1,6 @@
 package app.codeg.android.core.designsystem.component
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,10 +49,14 @@ fun CodegTextField(
     singleLine: Boolean = true,
 ) {
     val colors = CodegTheme.colors
+    // The label doubles as the placeholder when none was given. Without this, a field
+    // whose caller omitted `placeholder` rendered as an empty grey well with nothing to
+    // say what belongs in it (the server-name field did exactly that).
+    val hint = placeholder ?: label
     TextField(
         value = value,
         onValueChange = onValueChange,
-        placeholder = placeholder?.let { { Text(it, color = colors.textTertiary) } },
+        placeholder = { Text(hint, color = colors.textTertiary) },
         singleLine = singleLine,
         textStyle = if (mono) {
             TextStyle(fontFamily = CodegMono, color = colors.textPrimary)
@@ -59,7 +64,13 @@ fun CodegTextField(
             TextStyle(color = colors.textPrimary)
         },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        modifier = modifier.fillMaxWidth(),
+        // A single-line field is 48dp tall — the iOS control height. M3's `TextField`
+        // reserves a 56dp minimum for a floating label it no longer draws here, so a
+        // three-field form occupied most of the screen; `height` (not `heightIn`) because
+        // the internal minimum would otherwise still win.
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (singleLine) Modifier.height(48.dp) else Modifier),
         shape = RoundedCornerShape(12.dp),
         colors = codegFieldColors(),
     )

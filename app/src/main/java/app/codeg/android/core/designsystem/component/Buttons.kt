@@ -45,8 +45,12 @@ fun PrimaryButton(
         colors = ButtonDefaults.buttonColors(
             containerColor = colors.accent,
             contentColor = colors.onAccent,
-            disabledContainerColor = colors.accent.copy(alpha = 0.40f),
-            disabledContentColor = colors.onAccent.copy(alpha = 0.70f),
+            // A disabled button is inert, not a washed-out one. Fading the accent and
+            // then fading the label on top produced a pale smear that still read as
+            // tappable — on the server form, both buttons looked broken rather than
+            // simply unavailable. A neutral grey with a legible label reads as "not yet".
+            disabledContainerColor = colors.codeSurface,
+            disabledContentColor = colors.textTertiary,
         ),
     ) {
         if (loading) {
