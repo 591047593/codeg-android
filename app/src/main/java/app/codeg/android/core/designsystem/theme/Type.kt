@@ -110,7 +110,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
         lineHeight = 34.sp,
-        letterSpacing = -0.5.sp,
+        letterSpacing = 0.sp,
     ),
     // 22 / 1.27 — iOS title1. Section headers.
     headlineMedium = TextStyle(
@@ -118,7 +118,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        letterSpacing = -0.4.sp,
+        letterSpacing = 0.sp,
     ),
     // 20 / 1.25 — iOS title2. Dialog and sheet titles.
     titleLarge = TextStyle(
@@ -126,7 +126,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         lineHeight = 25.sp,
-        letterSpacing = -0.35.sp,
+        letterSpacing = 0.sp,
     ),
     // 17 / 1.29 — iOS title3. Prominent labels, list rows.
     titleMedium = TextStyle(
@@ -134,7 +134,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 22.sp,
-        letterSpacing = -0.24.sp,
+        letterSpacing = 0.sp,
     ),
     // 15 / 1.33 — iOS headline at semibold.
     titleSmall = TextStyle(
@@ -142,16 +142,24 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         lineHeight = 20.sp,
-        letterSpacing = -0.16.sp,
+        letterSpacing = 0.sp,
     ),
     // 17 / 1.41 — iOS body. Message copy. The extra point over 16 is what makes a
     // phone paragraph read comfortably rather than dense.
     bodyLarge = TextStyle(
         fontFamily = CodegSans,
-        fontWeight = FontWeight.Normal,
+        // Medium, not Normal. Android's CJK fallback renders Regular far lighter than
+        // PingFang does on iOS — the strokes come out thin and washed at body size — so
+        // the whole scale is nudged one step heavier to match the weight iOS body text
+        // actually has. Latin gains a little weight too, which keeps the pair consistent.
+        fontWeight = FontWeight.Medium,
         fontSize = 17.sp,
-        lineHeight = 24.sp,
-        letterSpacing = -0.2.sp,
+        // 1.47× — CJK glyphs are square and need more leading than Latin at the same
+        // point size; iOS sets Chinese a touch looser than English for this reason.
+        lineHeight = 25.sp,
+        // Neutral tracking. Negative tracking tightens Latin pleasantly but closes up
+        // dense CJK glyphs into a solid block.
+        letterSpacing = 0.sp,
     ),
     // 15 / 1.4 — iOS subheadline. Secondary copy, descriptions.
     bodyMedium = TextStyle(
@@ -159,7 +167,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 21.sp,
-        letterSpacing = -0.12.sp,
+        letterSpacing = 0.sp,
     ),
     // 13 / 1.38 — iOS footnote. Metadata, timestamps, captions.
     bodySmall = TextStyle(
@@ -167,7 +175,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        letterSpacing = -0.06.sp,
+        letterSpacing = 0.sp,
     ),
     // 16 / 1.25 at medium — iOS callout. Buttons, tabs.
     labelLarge = TextStyle(
@@ -175,7 +183,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 20.sp,
-        letterSpacing = -0.16.sp,
+        letterSpacing = 0.sp,
     ),
     // 13 / 1.23 at medium — iOS caption1. Chips, badges.
     labelMedium = TextStyle(
@@ -183,7 +191,7 @@ val CodegTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 13.sp,
         lineHeight = 16.sp,
-        letterSpacing = -0.04.sp,
+        letterSpacing = 0.sp,
     ),
     // 11 / 1.27 at medium — iOS caption2 with the tracking iOS gives small text.
     labelSmall = TextStyle(

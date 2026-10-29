@@ -19,13 +19,18 @@ import androidx.compose.ui.graphics.luminance
  * carry an actual hue are offered here.
  */
 enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
-    RED("red", Color(0xFFFB2C36), Color(0xFFFB2C36)),
-    ROSE("rose", Color(0xFFFF2056), Color(0xFFFF2056)),
-    ORANGE("orange", Color(0xFFF54900), Color(0xFFFF6900)),
-    YELLOW("yellow", Color(0xFFF0B100), Color(0xFFF0B100)),
-    GREEN("green", Color(0xFF00BC7D), Color(0xFF00C950)),
-    BLUE("blue", Color(0xFF2B7FFF), Color(0xFF155DFC)),
-    VIOLET("violet", Color(0xFF7F22FE), Color(0xFF8E51FF));
+    // Hues are the iOS system colours, which are less saturated than the web presets
+    // they replace. The web values (`#FF6900` orange, `#FB2C36` red) are tuned to pop
+    // against a page on a large display; at phone size on a near-white surface the same
+    // saturation dominates every screen it appears on. The system values keep the same
+    // hue identity at a weight that reads as a control colour rather than as an alert.
+    RED("red", Color(0xFFFF453A), Color(0xFFFF3B30)),
+    ROSE("rose", Color(0xFFFF375F), Color(0xFFFF2D55)),
+    ORANGE("orange", Color(0xFFFF9F0A), Color(0xFFFF9500)),
+    YELLOW("yellow", Color(0xFFFFD60A), Color(0xFFFFCC00)),
+    GREEN("green", Color(0xFF30D158), Color(0xFF34C759)),
+    BLUE("blue", Color(0xFF0A84FF), Color(0xFF007AFF)),
+    VIOLET("violet", Color(0xFFBF5AF2), Color(0xFFAF52DE));
 
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 

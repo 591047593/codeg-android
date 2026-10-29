@@ -85,7 +85,11 @@ internal fun SingleBlockView(block: MarkdownBlock, modifier: Modifier = Modifier
         is MarkdownBlock.Paragraph -> Text(
             text = rememberInlineMarkdown(block.text),
             fontSize = 17.sp,
-            lineHeight = 24.sp,
+            // Matches `bodyLarge`: CJK needs the heavier weight and the looser leading,
+            // and this is the paragraph style the transcript is read in.
+            lineHeight = 25.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.sp,
             color = colors.textPrimary,
             modifier = modifier.fillMaxWidth(),
         )
@@ -97,7 +101,7 @@ internal fun SingleBlockView(block: MarkdownBlock, modifier: Modifier = Modifier
             // crowd their own second line.
             lineHeight = (headingSize(block.level).value * 1.25f).sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.3).sp,
+            letterSpacing = 0.sp,
             color = colors.textPrimary,
             modifier = modifier.fillMaxWidth().padding(top = 4.dp),
         )
