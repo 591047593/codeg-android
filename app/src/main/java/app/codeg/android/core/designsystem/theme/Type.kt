@@ -161,20 +161,23 @@ val CodegTypography = Typography(
         // dense CJK glyphs into a solid block.
         letterSpacing = 0.sp,
     ),
-    // 15 / 1.4 — iOS subheadline. Secondary copy, descriptions.
+    // 15 / 1.47 — iOS subheadline. Secondary copy, descriptions. The most-used body
+    // style in the app, so it carries the same CJK-motivated weight and leading as
+    // `bodyLarge`.
     bodyMedium = TextStyle(
         fontFamily = CodegSans,
-        fontWeight = FontWeight.Normal,
+        fontWeight = FontWeight.Medium,
         fontSize = 15.sp,
-        lineHeight = 21.sp,
+        lineHeight = 22.sp,
         letterSpacing = 0.sp,
     ),
-    // 13 / 1.38 — iOS footnote. Metadata, timestamps, captions.
+    // 13 / 1.46 — iOS footnote. Metadata, timestamps, captions. Stays Regular: these
+    // are secondary labels, and at Medium the small CJK glyphs blur together.
     bodySmall = TextStyle(
         fontFamily = CodegSans,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
-        lineHeight = 18.sp,
+        lineHeight = 19.sp,
         letterSpacing = 0.sp,
     ),
     // 16 / 1.25 at medium — iOS callout. Buttons, tabs.
