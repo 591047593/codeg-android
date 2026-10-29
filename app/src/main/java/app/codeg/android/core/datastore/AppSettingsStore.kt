@@ -26,7 +26,14 @@ data class AppSettings(
     val accentId: String = DEFAULT_ACCENT,
 ) {
     companion object {
-        const val DEFAULT_ACCENT = "orange"
+        /**
+         * Delegates to the palette so the two defaults cannot drift apart.
+         *
+         * This was a hardcoded `"orange"`, which meant changing `AccentPalette.DEFAULT`
+         * had no effect on a fresh install — the stored default won, and the app kept
+         * launching with a coloured accent while the design system said neutral.
+         */
+        val DEFAULT_ACCENT: String = app.codeg.android.core.designsystem.theme.AccentPalette.DEFAULT.id
     }
 }
 
