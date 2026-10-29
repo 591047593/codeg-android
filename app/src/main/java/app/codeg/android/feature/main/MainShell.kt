@@ -325,7 +325,8 @@ private fun CodegNavRail(currentRoute: String?, onSelect: (HomeTab) -> Unit) {
                         selectedTextColor = colors.accent,
                         unselectedIconColor = colors.textTertiary,
                         unselectedTextColor = colors.textTertiary,
-                        indicatorColor = colors.accent.copy(alpha = 0.20f),
+                        // Tint-only selection, matching the bottom bar.
+                        indicatorColor = Color.Transparent,
                     ),
                 )
             }
@@ -345,16 +346,13 @@ private fun CodegBottomBar(
 ) {
     val colors = CodegTheme.colors
     androidx.compose.foundation.layout.Column(modifier) {
-        // A hairline that delineates the bar from the content above it, the way
-        // GitHub / Telegram / ChatGPT separate their bottom navigation.
-        HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = colors.surfaceStroke)
+        // iOS tab bars are a translucent material with a hairline on top; the content
+        // scrolls *under* them rather than stopping above. A translucent elevated fill
+        // plus that hairline is the whole effect — no blur pass, which a scrolling
+        // LazyColumn behind it would make expensive on a phone.
+        HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = colors.hairline)
         NavigationBar(
-            // Fully transparent so the CodegBackground (base + both glows) flows
-            // uninterrupted to the bottom edge. A translucent fill is pointless in
-            // light mode (elevated #FFFFFF and base #F2F4F6 are both near-white, so it
-            // still reads as a white slab); letting the canvas itself show through is
-            // what actually makes the tabs continuous with the content above them.
-            containerColor = Color.Transparent,
+            containerColor = colors.bgElevated.copy(alpha = 0.94f),
             tonalElevation = 0.dp,
         ) {
             HomeTab.entries.forEach { tab ->
@@ -375,7 +373,10 @@ private fun CodegBottomBar(
                         selectedTextColor = colors.accent,
                         unselectedIconColor = colors.textTertiary,
                         unselectedTextColor = colors.textTertiary,
-                        indicatorColor = colors.accent.copy(alpha = 0.20f),
+                        // iOS marks the selected tab by tint alone — the filled pill
+                        // behind the icon is Material's idiom, and it is the single
+                        // detail that makes a bottom bar read as "Android app".
+                        indicatorColor = Color.Transparent,
                     ),
                 )
             }

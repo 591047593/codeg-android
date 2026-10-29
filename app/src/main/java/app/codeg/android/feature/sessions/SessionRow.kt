@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +30,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +65,22 @@ fun SessionRow(
     modifier: Modifier = Modifier,
     folderName: String? = null,
     selected: Boolean = false,
+    /** Draw the inset hairline under this row (all but the last in a grouped card). */
+    showDivider: Boolean = false,
+    /**
+     * Corner shape for the row's own background.
+     *
+     * Standalone callers (search results, the activity feed) want a full pill per row; a
+     * grouped list passes a shape that rounds only the first and last. Done as a parameter
+     * rather than an internal constant so the caller owns the grouping geometry — an
+     * inner clip would otherwise cut every row back to the same shape.
+     */
+    shape: Shape = RoundedCornerShape(16.dp),
+    /**
+     * Fill behind the row. [Color.Unspecified] leaves it transparent (search results and
+     * the activity feed sit directly on the canvas); a grouped list paints the card.
+     */
+    cardBackground: Color = Color.Unspecified,
     onTogglePin: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
 ) {
@@ -77,12 +96,17 @@ fun SessionRow(
     val avatarSize = 26.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
 
     Box {
+        Column {
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(shape)
                 .then(
-                    if (selected) Modifier.background(colors.accent.copy(alpha = 0.18f)) else Modifier,
+                    when {
+                        selected -> Modifier.background(colors.accent.copy(alpha = 0.18f))
+                        cardBackground != Color.Unspecified -> Modifier.background(cardBackground)
+                        else -> Modifier
+                    },
                 )
                 .combinedClickable(
                     onClick = onClick,
@@ -195,6 +219,16 @@ fun SessionRow(
                     modifier = Modifier.size(13.dp),
                 )
             }
+        }
+        // Inset to the title, not the row edge — iOS starts a grouped list's separator
+        // where the text starts so the leading avatar column stays visually open.
+        if (showDivider) {
+            HorizontalDivider(
+                color = colors.hairline,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(start = 45.dp, end = 8.dp),
+            )
+        }
         }
 
         if (onTogglePin != null || onDelete != null) {

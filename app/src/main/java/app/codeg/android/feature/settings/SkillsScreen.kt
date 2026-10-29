@@ -245,7 +245,7 @@ private fun SkillRow(skill: AgentSkillItem, onClick: () -> Unit, onDelete: () ->
     val colors = CodegTheme.colors
     val isDir = skill.layout == "skill_directory"
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated)
             .combinedClickable(onClick = onClick, onLongClick = { if (!skill.readOnly) onDelete() }).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {

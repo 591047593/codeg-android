@@ -471,7 +471,7 @@ private fun JumpToLatestButton(onClick: () -> Unit) {
         Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .background(colors.bgElevated.copy(alpha = 0.96f))
+            .background(colors.bgElevated)
             .border(0.5.dp, colors.surfaceStroke, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -521,7 +521,7 @@ private fun SendStatusLine(status: String) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(colors.bgElevated.copy(alpha = 0.92f))
+            .background(colors.bgElevated)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -598,7 +598,7 @@ private val STATUS_LINE_HEIGHT = 24.dp
 private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) -> Unit) {
     val colors = CodegTheme.colors
     LazyRow(
-        Modifier.fillMaxWidth().background(colors.bgElevated.copy(alpha = 0.92f)).padding(horizontal = 10.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().background(colors.bgElevated).padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(attachments, key = { it.id }) { att ->

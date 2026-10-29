@@ -56,7 +56,7 @@ fun SystemContent(viewModel: SystemViewModel = hiltViewModel()) {
             Text(stringResource(R.string.system_server_update), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
             PillButton(stringResource(R.string.system_check_for_updates), loading = ui.checking, onClick = viewModel::checkUpdate)
             ui.updateResult?.let { r ->
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.system_current_version, r.currentVersion), fontSize = 13.sp, color = colors.textSecondary)
                     if (r.update != null) {
                         Text(stringResource(R.string.system_update_available, r.update.version), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.accent)

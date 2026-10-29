@@ -186,7 +186,7 @@ private fun SettingsRoot(onSelect: (SettingsLeaf) -> Unit) {
         for (group in SettingsLeaf.entries.map { it.groupRes }.distinct()) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(stringResource(group), style = MaterialTheme.typography.labelLarge, color = colors.textTertiary, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated)) {
                     val leaves = SettingsLeaf.entries.filter { it.groupRes == group }
                     leaves.forEachIndexed { index, l ->
                         ListItem(
@@ -244,7 +244,7 @@ private fun AppearanceSettings(viewModel: SettingsViewModel) {
             }
         }
         // Live preview.
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.6f)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.settings_preview), fontSize = 13.sp, color = colors.textTertiary)
             Text(stringResource(R.string.settings_accent_preview_caption), fontSize = 14.sp, color = colors.textPrimary)
             Box(Modifier.clip(RoundedCornerShape(12.dp)).background(colors.accent).padding(horizontal = 16.dp, vertical = 8.dp)) {

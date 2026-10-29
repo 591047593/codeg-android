@@ -81,7 +81,7 @@ fun ComposeBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colors.bgElevated.copy(alpha = 0.92f))
+                .background(colors.bgElevated)
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

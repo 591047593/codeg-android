@@ -165,7 +165,7 @@ private fun AgentHeader(state: AgentDetailState, onToggle: (Boolean) -> Unit) {
     val colors = CodegTheme.colors
     val agent = state.agent
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(16.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(colors.bgElevated).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -855,7 +855,7 @@ internal fun FormSection(title: String, footer: String? = null, content: @Compos
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary, modifier = Modifier.padding(start = 4.dp))
         Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f)).padding(14.dp),
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content,
         )
@@ -993,7 +993,7 @@ private fun AdvancedSection(state: AgentDetailState, vm: AgentsViewModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated.copy(alpha = 0.5f))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(colors.bgElevated)
                 .clickable { open = !open }.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,

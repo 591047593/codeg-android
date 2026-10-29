@@ -26,10 +26,12 @@ fun Modifier.hairlineBorder(
 ): Modifier = this.border(width, color, shape)
 
 /**
- * The frosted "glass" card surface (iOS `GlassCard`): rounded (20dp), a
- * translucent elevated fill that lets the background glow bleed through, and a
- * hairline stroke. True backdrop blur (Haze) can be layered in later; the
- * translucent fill is the API-safe approximation for now.
+ * A grouped-content card: rounded, an opaque elevated fill, and a hairline stroke.
+ *
+ * Named for the original iOS "glass" surface, which was translucent so the backdrop's
+ * colour glows could show through. iOS actually draws these cards opaque — translucency
+ * is reserved for chrome (tab bars, toolbars) that content scrolls beneath — so with the
+ * flat backdrop the fill is now solid and only the hairline separates it.
  */
 @Composable
 fun GlassCard(
@@ -43,7 +45,10 @@ fun GlassCard(
     Column(
         modifier
             .clip(shape)
-            .background(colors.bgElevated.copy(alpha = if (colors.isDark) 0.60f else 0.85f))
+            // Opaque, like an iOS grouped-content card. The translucency existed so the
+            // background's colour glows could bleed through; with a flat backdrop it only
+            // muddied the fill, and a card that shows the canvas behind it is a web idiom.
+            .background(colors.bgElevated)
             .hairlineBorder(shape, colors.surfaceStroke)
             .padding(padding),
         content = content,
@@ -62,8 +67,7 @@ fun GlassRow(
 ) {
     val colors = CodegTheme.colors
     val shape = RoundedCornerShape(CodegTheme.dimens.radiusMd)
-    val fill = if (selected) colors.accent.copy(alpha = 0.22f)
-    else colors.bgElevated.copy(alpha = if (colors.isDark) 0.55f else 0.85f)
+    val fill = if (selected) colors.accent.copy(alpha = 0.22f) else colors.bgElevated
     val stroke = if (selected) colors.accent.copy(alpha = 0.45f) else colors.surfaceStroke
     Column(
         modifier

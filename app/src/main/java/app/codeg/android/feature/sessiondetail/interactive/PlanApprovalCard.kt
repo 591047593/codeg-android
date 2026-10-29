@@ -84,7 +84,7 @@ fun PlanApprovalCard(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(colors.bgElevated.copy(alpha = 0.96f))
+            .background(colors.bgElevated)
             .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(16.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),

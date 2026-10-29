@@ -48,7 +48,7 @@ internal fun GitStatusStrip(
     val colors = CodegTheme.colors
     when {
         busy -> Row(
-            modifier.fillMaxWidth().clip(RoundedCornerShape(CodegTheme.dimens.radiusMd)).background(colors.bgElevated.copy(alpha = 0.6f)).padding(horizontal = 14.dp, vertical = 11.dp),
+            modifier.fillMaxWidth().clip(RoundedCornerShape(CodegTheme.dimens.radiusMd)).background(colors.bgElevated).padding(horizontal = 14.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {

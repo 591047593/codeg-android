@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -53,7 +53,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -263,6 +262,7 @@ private fun SessionList(
     onRetry: () -> Unit,
     onDismissError: () -> Unit,
 ) {
+    val colors = CodegTheme.colors
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -299,16 +299,30 @@ private fun SessionList(
                 )
             }
             if (!isCollapsed) {
-                items(
+                itemsIndexed(
                     items = section.rows,
-                    key = { "row-${it.conversation.id}" },
-                    contentType = { "row" },
-                ) { row ->
+                    key = { _, row -> "row-${row.conversation.id}" },
+                    contentType = { _, _ -> "row" },
+                ) { index, row ->
+                    // Inset grouped list, the way iOS presents a section: one rounded
+                    // card holding the rows, with a hairline between them that starts at
+                    // the text rather than running edge to edge. Rows used to float
+                    // individually, which read as a feed rather than as grouped settings.
+                    val isFirst = index == 0
+                    val isLast = index == section.rows.lastIndex
                     SessionRow(
                         conversation = row.conversation,
                         onClick = { onOpenConversation(row.conversation.id) },
                         modifier = Modifier.animateItem(),
                         folderName = row.folderName,
+                        showDivider = !isLast,
+                        shape = RoundedCornerShape(
+                            topStart = if (isFirst) 16.dp else 0.dp,
+                            topEnd = if (isFirst) 16.dp else 0.dp,
+                            bottomStart = if (isLast) 16.dp else 0.dp,
+                            bottomEnd = if (isLast) 16.dp else 0.dp,
+                        ),
+                        cardBackground = colors.bgElevated,
                         onTogglePin = { onTogglePin(row.conversation) },
                         onDelete = { onDelete(row.conversation) },
                     )
@@ -420,8 +434,11 @@ private fun ServerSwitcher(
         ) {
             Text(
                 text = name,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
+                // iOS uses a Large Title here (34pt bold, tracked in), not a navigation
+                // title. It is the screen's identity — the server you are looking at —
+                // and at nav-title size it read as a label for the list rather than as
+                // the page heading.
+                style = MaterialTheme.typography.headlineLarge,
                 color = colors.textPrimary,
             )
             Icon(
