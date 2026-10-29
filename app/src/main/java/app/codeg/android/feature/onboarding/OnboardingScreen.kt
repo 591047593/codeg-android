@@ -3,6 +3,8 @@ package app.codeg.android.feature.onboarding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,10 +41,16 @@ fun OnboardingScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 48.dp),
+            .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        // Top-aligned with breathing room rather than vertically centred. Centering left
+        // the whole page floating in the middle of the screen with dead space above and
+        // below — it reads as an empty screen rather than as a welcome, and any keyboard
+        // or font-scale change pushes the content around instead of extending it.
+        verticalArrangement = Arrangement.spacedBy(0.dp, Alignment.Top),
     ) {
+        // Pushes the hero block down enough to feel intentional without centring the lot.
+        Spacer(Modifier.height(48.dp))
         Icon(
             Icons.Rounded.Code,
             contentDescription = null,
