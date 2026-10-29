@@ -12,26 +12,30 @@ import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 
 /**
- * Bundled Inter — the codeg desktop client's default interface font
- * (`--font-sans: "Inter Variable", system-ui, …` in its `globals.css`).
+ * The platform UI font — Roboto for Latin, Noto Sans CJK for Chinese.
  *
- * This is the highest-impact typography change available on Android. Roboto
- * and Inter have similar metrics but very different voice at the small sizes
- * that make up most of this UI, and every screen is set in one or the other.
+ * ### Why the bundled Inter is no longer the body face
+ *
+ * Inter was chosen to match the desktop client, and for an English-only UI it is the
+ * better grotesque. It has **no CJK glyphs**, though. In a Chinese build every ideograph
+ * fell back to the system font *per character*, so a single line mixed two typefaces with
+ * different stroke weights, widths and vertical metrics — which is exactly the "ragged,
+ * cheap-looking" text a mixed-script fallback produces, and it is most visible at the
+ * small sizes this UI uses most.
+ *
+ * The platform family is a matched pair: Roboto and Noto Sans CJK are drawn to sit
+ * together, with compatible x-heights and stroke contrast. Dropping Inter costs a little
+ * Latin personality and buys consistent text in the language most of this app is read in.
+ *
+ * Inter is still bundled and still available as [InterFamily] for a caller that wants the
+ * desktop's exact look in a Latin-only string.
  *
  * ### Why each weight is a separate [Font] entry
  *
- * The fonts are variable files, and Compose applies a weight to a variable
- * font only through `FontVariation.Settings`. The four-argument `Font(resId,
- * weight, style, loadingStrategy)` factory passes an *empty* `Settings()`, and
- * on Android that empty value is what reaches
- * `Typeface.Builder.setFontVariationSettings` — so every declared weight would
- * silently render at 400 and nothing in the app would ever look bold.
- * `variationSettings` is therefore passed explicitly, which is what requires
- * the [ExperimentalTextApi] opt-in below.
- *
- * One variable file covers 100–900, so the whole range costs 860 KB instead of
- * four separate ~300 KB static faces.
+ * Compose only applies a weight to a *variable* font through `FontVariation.Settings`;
+ * the four-argument factory passes an empty `Settings()`, which reaches
+ * `Typeface.Builder.setFontVariationSettings` and silently renders every declared weight
+ * at 400. Hence the explicit settings and the [ExperimentalTextApi] opt-in.
  */
 @OptIn(ExperimentalTextApi::class)
 private fun inter(weight: Int): Font = Font(
@@ -41,7 +45,16 @@ private fun inter(weight: Int): Font = Font(
     variationSettings = FontVariation.Settings(FontWeight(weight), FontStyle.Normal),
 )
 
+/** Bundled Inter, for Latin-only surfaces that want the desktop's voice. */
 val InterFamily: FontFamily = FontFamily(inter(400), inter(500), inter(600), inter(700))
+
+/**
+ * The app's text family: the platform's own, so Latin and CJK come from a matched pair.
+ *
+ * Kept as a named local rather than `FontFamily.Default` so the intent is explicit at
+ * every call site and a future substitution happens in one place.
+ */
+val CodegSans: FontFamily = FontFamily.Default
 
 /**
  * Bundled JetBrains Mono for code, inline commands, and monospaced values.
@@ -93,7 +106,7 @@ val CodeTextStyle = TextStyle(
 val CodegTypography = Typography(
     // 28 / 1.21 — iOS largeTitle. Screen titles.
     headlineLarge = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Bold,
         fontSize = 28.sp,
         lineHeight = 34.sp,
@@ -101,7 +114,7 @@ val CodegTypography = Typography(
     ),
     // 22 / 1.27 — iOS title1. Section headers.
     headlineMedium = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         lineHeight = 28.sp,
@@ -109,7 +122,7 @@ val CodegTypography = Typography(
     ),
     // 20 / 1.25 — iOS title2. Dialog and sheet titles.
     titleLarge = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.SemiBold,
         fontSize = 20.sp,
         lineHeight = 25.sp,
@@ -117,7 +130,7 @@ val CodegTypography = Typography(
     ),
     // 17 / 1.29 — iOS title3. Prominent labels, list rows.
     titleMedium = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 22.sp,
@@ -125,7 +138,7 @@ val CodegTypography = Typography(
     ),
     // 15 / 1.33 — iOS headline at semibold.
     titleSmall = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         lineHeight = 20.sp,
@@ -134,7 +147,7 @@ val CodegTypography = Typography(
     // 17 / 1.41 — iOS body. Message copy. The extra point over 16 is what makes a
     // phone paragraph read comfortably rather than dense.
     bodyLarge = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Normal,
         fontSize = 17.sp,
         lineHeight = 24.sp,
@@ -142,7 +155,7 @@ val CodegTypography = Typography(
     ),
     // 15 / 1.4 — iOS subheadline. Secondary copy, descriptions.
     bodyMedium = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 21.sp,
@@ -150,7 +163,7 @@ val CodegTypography = Typography(
     ),
     // 13 / 1.38 — iOS footnote. Metadata, timestamps, captions.
     bodySmall = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
@@ -158,7 +171,7 @@ val CodegTypography = Typography(
     ),
     // 16 / 1.25 at medium — iOS callout. Buttons, tabs.
     labelLarge = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 20.sp,
@@ -166,7 +179,7 @@ val CodegTypography = Typography(
     ),
     // 13 / 1.23 at medium — iOS caption1. Chips, badges.
     labelMedium = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Medium,
         fontSize = 13.sp,
         lineHeight = 16.sp,
@@ -174,7 +187,7 @@ val CodegTypography = Typography(
     ),
     // 11 / 1.27 at medium — iOS caption2 with the tracking iOS gives small text.
     labelSmall = TextStyle(
-        fontFamily = InterFamily,
+        fontFamily = CodegSans,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 14.sp,
