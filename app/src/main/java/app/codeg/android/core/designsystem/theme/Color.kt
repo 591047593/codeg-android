@@ -18,7 +18,22 @@ import androidx.compose.ui.graphics.luminance
  * button, selected tab and link indistinguishable on a phone. Only the presets that
  * carry an actual hue are offered here.
  */
-enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
+enum class AccentPalette(
+    val id: String,
+    val dark: Color,
+    val light: Color,
+    /**
+     * Explicit label colour, or null to let [onAccentColor] pick by luminance.
+     *
+     * Almost every accent wants the computed choice — it maximises contrast. The
+     * exception is a brand colour whose *identity* is the combination of fill and label:
+     * Claude's terracotta buttons carry white text, and a luminance-optimal dark label
+     * measures better (6.1:1 against 3.1:1) while making the button look like a warning
+     * chip rather than the product's primary action. 3.1:1 clears the WCAG floor for
+     * large text, which is what a button label is.
+     */
+    val label: Color? = null,
+) {
     /**
      * The default, matching the desktop client's `DEFAULT_THEME_COLOR = "neutral"`.
      *
@@ -37,7 +52,7 @@ enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
      * makes it feel like part of a stationery palette. Dark mode lifts it slightly so
      * it holds up on a dark warm grey.
      */
-    CLAUDE("claude", Color(0xFFE08A6B), Color(0xFFD97757)),
+    CLAUDE("claude", Color(0xFFE08A6B), Color(0xFFD97757), label = Color.White),
     NEUTRAL("neutral", Color(0xFFE5E5EA), Color(0xFF1C1C1E)),
     RED("red", Color(0xFFFF453A), Color(0xFFFF3B30)),
     ROSE("rose", Color(0xFFFF375F), Color(0xFFFF2D55)),
@@ -160,7 +175,7 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             textTertiary = Color(0xFFF5F4EF).copy(alpha = 0.45f),
             danger = Color(0xFFE86A5E),
             accent = accentColor,
-            onAccent = onAccentColor(accentColor),
+            onAccent = accent.label ?: onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
         )
     } else {
@@ -185,7 +200,7 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             textTertiary = Color(0xFF1F1E1D).copy(alpha = 0.45f),
             danger = Color(0xFFC2410C),
             accent = accentColor,
-            onAccent = onAccentColor(accentColor),
+            onAccent = accent.label ?: onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
         )
     }
