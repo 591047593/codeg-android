@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MiniMax Code: white "M" on a red squircle, from the upstream app icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M0,6 A6,6 0 0 1 6,0 L18,0 A6,6 0 0 1 24,6 L24,18 A6,6 0 0 1 18,24 L6,24 A6,6 0 0 1 0,18 Z"
+        android:fillColor="#F23F5D" />
+    <path
+        android:pathData="M5,17 V7 h3 l4,6 4,-6 h3 v10 h-3 v-5 l-4,6 -4,-6 v5 Z"
+        android:fillColor="#FFFFFF" />
+</vector>

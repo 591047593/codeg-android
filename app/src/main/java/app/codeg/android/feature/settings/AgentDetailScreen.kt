@@ -137,6 +137,13 @@ fun AgentDetailContent(
                 AgentType.CURSOR -> CursorSection(detail, viewModel)
                 AgentType.KIMI_CODE -> AgentConfigKimiView(detail.agent, viewModel)
                 AgentType.PI -> AgentConfigPiView(detail.agent, viewModel)
+                // Standard ACP agents: they share the generic env/config editor below
+                // rather than needing a bespoke section, which is also how the server
+                // UI treats them (only Claude/Codex/Gemini/… have dedicated panels).
+                AgentType.DEEPSEEK, AgentType.QODER, AgentType.ANTIGRAVITY,
+                AgentType.KIRO, AgentType.ZCODE, AgentType.TRAE,
+                AgentType.COMMAND_CODE, AgentType.MINIMAX_CODE,
+                -> Unit
             }
 
             if (agentType != AgentType.HERMES && !selfContained) AdvancedSection(detail, viewModel)

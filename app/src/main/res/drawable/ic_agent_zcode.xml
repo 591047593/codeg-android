@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ZCode: the Z mark in white on a dark squircle, from the upstream app icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M0,5.3 A5.3,5.3 0 0 1 5.3,0 L18.7,0 A5.3,5.3 0 0 1 24,5.3 L24,18.7 A5.3,5.3 0 0 1 18.7,24 L5.3,24 A5.3,5.3 0 0 1 0,18.7 Z"
+        android:fillColor="#1A1A1A" />
+    <group
+        android:translateX="3.75"
+        android:translateY="4.9831"
+        android:scaleX="0.064453"
+        android:scaleY="0.064453">
+        <path
+            android:pathData="M134.4,0.130152 L116.48,25.6022 C113.665,29.5699 109.054,32.0019 104.064,32.0019 L6.3999,32.0019 L6.3999,0 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M256,0.130127 L102.401,217.732 L0,217.732 L153.599,0.130127 Z"
+            android:fillColor="#FFFFFF" />
+        <path
+            android:pathData="M121.601,217.732 L139.65,192.134 C142.465,188.166 147.076,185.734 152.067,185.734 L249.604,185.734 L249.604,217.736 L121.601,217.732 Z"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>

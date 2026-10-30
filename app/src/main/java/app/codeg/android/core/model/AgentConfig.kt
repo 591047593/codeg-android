@@ -599,6 +599,13 @@ data class AgentDraft(
                 // Kimi & Pi project their own state from `configJson` inside their
                 // self-contained panels.
                 AgentType.KIMI_CODE, AgentType.PI -> Unit
+                // Standard ACP agents carry no bespoke structured controls: their
+                // base URL / key / model are seeded through the shared `important` path
+                // above and edited as raw config in the advanced section.
+                AgentType.DEEPSEEK, AgentType.QODER, AgentType.ANTIGRAVITY,
+                AgentType.KIRO, AgentType.ZCODE, AgentType.TRAE,
+                AgentType.COMMAND_CODE, AgentType.MINIMAX_CODE,
+                -> Unit
             }
             return draft
         }
