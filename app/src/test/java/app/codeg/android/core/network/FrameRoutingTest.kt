@@ -17,9 +17,35 @@ class FrameRoutingTest {
         assertEquals(StreamFrame.Ready, parse("""{"channel":"__ready__","payload":null}"""))
     }
 
+    /**
+     * Broadcast channels must survive parsing.
+     *
+     * These used to be dropped ("other legacy channels are ignored"), which meant a
+     * conversation renamed, pinned or deleted on the desktop client never reached this
+     * one — the list kept showing whatever it fetched at screen entry. They now surface
+     * as `SideChannel` with the payload untouched, for the list screens to apply.
+     */
     @Test
-    fun `other legacy channels are ignored`() {
-        assertNull(parse("""{"channel":"conversation://changed","payload":{}}"""))
+    fun `broadcast channels surface with their payload`() {
+        val frame = parse("""{"channel":"conversation://changed","payload":{"upsert":{"id":7}}}""")
+        assertTrue(frame is StreamFrame.SideChannel)
+        assertEquals("conversation://changed", (frame as StreamFrame.SideChannel).channel)
+        assertEquals(
+            """{"upsert":{"id":7}}""",
+            frame.payload.toString(),
+        )
+    }
+
+    @Test
+    fun `a broadcast channel with no payload still routes`() {
+        val frame = parse("""{"channel":"folder://changed"}""")
+        assertTrue(frame is StreamFrame.SideChannel)
+        assertEquals("folder://changed", (frame as StreamFrame.SideChannel).channel)
+    }
+
+    @Test
+    fun `a frame with neither channel nor type is dropped`() {
+        assertNull(parse("""{"unrelated":true}"""))
     }
 
     @Test
