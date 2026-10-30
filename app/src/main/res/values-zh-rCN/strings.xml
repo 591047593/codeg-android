@@ -574,6 +574,10 @@
     <string name="sessionactions_unpin">取消置顶</string>
     <string name="sessionactions_pin">置顶</string>
     <string name="sessionactions_tags">标签</string>
+    <string name="session_outline_title">消息</string>
+    <string name="session_outline_empty">还没有消息。</string>
+    <string name="session_outline_untitled">（无文字）</string>
+    <string name="session_jump_not_found">无法定位该消息。</string>
     <string name="session_tags_title">标签</string>
     <string name="session_tags_empty">还没有标签。可在电脑端创建标签。</string>
     <string name="sessionactions_session_details">会话详情</string>

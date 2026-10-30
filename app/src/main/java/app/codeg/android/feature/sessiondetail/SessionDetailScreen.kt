@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Close
@@ -127,6 +128,7 @@ fun SessionDetailScreen(
     var draft by rememberSaveable { mutableStateOf("") }
     var showInsert by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
+    var showOutline by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -253,6 +255,18 @@ fun SessionDetailScreen(
         }
     }
 
+    if (showOutline) {
+        OutlineSheet(
+            entries = ui.outline,
+            loading = ui.outlineLoading,
+            onJump = { turnId ->
+                showOutline = false
+                viewModel.jumpToTurn(turnId) { revealed -> scrollToId(revealed) }
+            },
+            onDismiss = { showOutline = false },
+        )
+    }
+
     val title = when {
         ui.isNew -> stringResource(R.string.session_new_task)
         else -> ui.summary?.trimmedTitle ?: stringResource(R.string.session_title_fallback)
@@ -274,6 +288,18 @@ fun SessionDetailScreen(
                     }
                 },
                 actions = {
+                    // The message navigator. Only on a loaded transcript: on a new task
+                    // there is nothing to navigate, and an always-present button that
+                    // opens an empty sheet reads as broken.
+                    if (!ui.isNew && ui.turns.isNotEmpty()) {
+                        IconButton(onClick = { showOutline = true; viewModel.loadOutline() }) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.List,
+                                contentDescription = stringResource(R.string.session_outline_title),
+                                tint = colors.textPrimary,
+                            )
+                        }
+                    }
                     // The agent avatar is the options button (mode / config / folder / branch).
                     Box(
                         Modifier
@@ -450,40 +476,40 @@ fun SessionDetailScreen(
                     // the same reason.
                     LocalForkFromTurn provides if (ui.isInFlight || ui.isNew) null else viewModel::forkFromTurn,
                 ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
-                    ) {
-                        // The session's tags, at the top of the transcript. They belong to
-                        // the conversation rather than to any one turn, so they open the
-                        // scroll rather than sitting in a fixed header that would eat a
-                        // phone's already-short reading area.
-                        val assignedTags = remember(ui.summary?.tagIds, ui.allTags) {
-                            val ids = ui.summary?.tagIds.orEmpty()
-                            if (ids.isEmpty()) emptyList() else ui.allTags.filter { it.id in ids }
-                        }
+                    // The conversation's tags, above the scroll. They belong to the
+                    // session rather than to any one turn, and a row inside the list would
+                    // need composable work inside `LazyListScope` — the header slot keeps
+                    // them out of the paging maths entirely.
+                    val assignedTags = remember(ui.summary?.tagIds, ui.allTags) {
+                        val ids = ui.summary?.tagIds.orEmpty()
+                        if (ids.isEmpty()) emptyList() else ui.allTags.filter { it.id in ids }
+                    }
+                    Column(Modifier.fillMaxSize()) {
                         if (assignedTags.isNotEmpty()) {
-                            item(key = "__session_tags__", contentType = "session_tags") {
-                                SessionTagRow(assignedTags)
-                            }
+                            SessionTagRow(assignedTags, Modifier.padding(start = 12.dp, end = 16.dp, top = 8.dp))
                         }
-                        items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->
-                            TimelineRow(
-                                marker = node.marker,
-                                connectTop = node.connectTop,
-                                connectBottom = node.connectBottom,
-                                startsGroup = node.startsGroup,
-                                rail = node.rail,
-                                // Block rows skip item animation: streaming appends a tail
-                                // block on every blank line, and the live→persisted re-key
-                                // would otherwise flash all N blocks of the reply at once.
-                                modifier = if (node.content is NodeContent.AssistantBlock) Modifier else Modifier.animateItem(),
-                            ) {
-                                NodeBody(node)
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                        ) {
+                            items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->
+                                TimelineRow(
+                                    marker = node.marker,
+                                    connectTop = node.connectTop,
+                                    connectBottom = node.connectBottom,
+                                    startsGroup = node.startsGroup,
+                                    rail = node.rail,
+                                    // Block rows skip item animation: streaming appends a tail
+                                    // block on every blank line, and the live→persisted re-key
+                                    // would otherwise flash all N blocks of the reply at once.
+                                    modifier = if (node.content is NodeContent.AssistantBlock) Modifier else Modifier.animateItem(),
+                                ) {
+                                    NodeBody(node)
+                                }
                             }
+                            item(key = "__timeline_bottom_anchor__") { Spacer(Modifier.height(1.dp)) }
                         }
-                        item(key = "__timeline_bottom_anchor__") { Spacer(Modifier.height(1.dp)) }
                     }
                 }
             }
@@ -674,9 +700,9 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
 /** The conversation's tags, drawn as small coloured chips above the transcript. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SessionTagRow(tags: List<ConversationTag>) {
+private fun SessionTagRow(tags: List<ConversationTag>, modifier: Modifier = Modifier) {
     FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        modifier = modifier.fillMaxWidth().padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {

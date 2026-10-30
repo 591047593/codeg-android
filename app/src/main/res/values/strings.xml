@@ -574,6 +574,10 @@
     <string name="sessionactions_unpin">Unpin</string>
     <string name="sessionactions_pin">Pin</string>
     <string name="sessionactions_tags">Tags</string>
+    <string name="session_outline_title">Messages</string>
+    <string name="session_outline_empty">No messages yet.</string>
+    <string name="session_outline_untitled">(no text)</string>
+    <string name="session_jump_not_found">Could not load that message.</string>
     <string name="session_tags_title">Tags</string>
     <string name="session_tags_empty">No tags yet. Create tags on the desktop client.</string>
     <string name="sessionactions_session_details">Session Details</string>

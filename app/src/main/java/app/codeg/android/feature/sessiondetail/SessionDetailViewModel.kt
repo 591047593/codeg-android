@@ -25,6 +25,7 @@ import android.net.Uri
 import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.core.model.ConversationOutline
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.FolderDetail
@@ -444,53 +445,63 @@ class SessionDetailViewModel @Inject constructor(
      */
     fun loadOlderTurns() {
         if (pagingJob?.isActive == true) return
-        if (System.currentTimeMillis() < pagingRetryAt) return
+        pagingJob = viewModelScope.launch { pageOlder() }
+    }
+
+    /**
+     * One page, awaited. Returns true when turns were prepended.
+     *
+     * The navigator needs the awaited form: a jump above the window has to page until the
+     * target exists, and a fire-and-forget call would report "not found" before the page
+     * landed. The scroll-to-top path keeps the fire-and-forget wrapper above, so its
+     * collapse-a-storm-of-reports behaviour is unchanged.
+     */
+    private suspend fun pageOlder(): Boolean {
+        if (System.currentTimeMillis() < pagingRetryAt) return false
         val current = _ui.value
-        if (!current.hasOlderTurns || current.turns.isEmpty()) return
-        val c = client ?: return
-        val id = conversationId ?: return
+        if (!current.hasOlderTurns || current.turns.isEmpty()) return false
+        val c = client ?: return false
+        val id = conversationId ?: return false
         val before = windowOffset
         if (before <= 0) {
             // Nothing above the window: the transcript is fully loaded.
             _ui.update { it.copy(hasOlderTurns = false) }
-            return
+            return false
         }
 
-        pagingJob = viewModelScope.launch {
-            val page = runCatching { c.conversationTurns(id, beforeIndex = before, limit = CHUNK) }
-                .getOrElse { e ->
-                    // A failed page must not wedge the transcript, but it must not be
-                    // permanent either: the paging effect re-fires as the user nudges the
-                    // top of the list, so retrying instantly would issue a request per
-                    // frame. Report once, leave `hasOlderTurns` alone so the history is
-                    // still reachable, and suppress further attempts for a short backoff.
-                    val message = e.displayMessage(appContext)
-                    _ui.update { it.copy(notice = message) }
-                    pagingRetryAt = System.currentTimeMillis() + PAGING_RETRY_BACKOFF_MS
-                    return@launch
-                }
-
-            // The page must butt against the window exactly. `turnsOffset + turns.size`
-            // has to equal the offset we asked from, or the two would overlap or leave a
-            // hole; the server guarantees it, but a mismatch means the transcript changed
-            // underneath us and prepending would corrupt the history.
-            if (page.turnsOffset + page.turns.size != before) {
-                _ui.update { it.copy(hasOlderTurns = false) }
-                return@launch
+        val page = runCatching { c.conversationTurns(id, beforeIndex = before, limit = CHUNK) }
+            .getOrElse { e ->
+                // A failed page must not wedge the transcript, but it must not be
+                // permanent either: the paging effect re-fires as the user nudges the
+                // top of the list, so retrying instantly would issue a request per
+                // frame. Report once, leave `hasOlderTurns` alone so the history is
+                // still reachable, and suppress further attempts for a short backoff.
+                _ui.update { it.copy(notice = e.displayMessage(appContext)) }
+                pagingRetryAt = System.currentTimeMillis() + PAGING_RETRY_BACKOFF_MS
+                return false
             }
 
-            windowOffset = page.turnsOffset
-            windowTotal = page.turnsTotal
-            // A landed page proves the endpoint works again; let the next one fire at once.
-            pagingRetryAt = 0L
-            _ui.update {
-                it.copy(
-                    turns = page.turns + it.turns,
-                    hasOlderTurns = page.turnsOffset > 0,
-                )
-            }
-            rebuildTimeline(force = true)
+        // The page must butt against the window exactly. `turnsOffset + turns.size`
+        // has to equal the offset we asked from, or the two would overlap or leave a
+        // hole; the server guarantees it, but a mismatch means the transcript changed
+        // underneath us and prepending would corrupt the history.
+        if (page.turnsOffset + page.turns.size != before) {
+            _ui.update { it.copy(hasOlderTurns = false) }
+            return false
         }
+
+        windowOffset = page.turnsOffset
+        windowTotal = page.turnsTotal
+        // A landed page proves the endpoint works again; let the next one fire at once.
+        pagingRetryAt = 0L
+        _ui.update {
+            it.copy(
+                turns = page.turns + it.turns,
+                hasOlderTurns = page.turnsOffset > 0,
+            )
+        }
+        rebuildTimeline(force = true)
+        return true
     }
 
     /**
@@ -1579,6 +1590,83 @@ class SessionDetailViewModel @Inject constructor(
 
     // endregion
 
+    // region Message navigator
+
+    /**
+     * Fetch the index of every message in the conversation, for the jump-to-message list.
+     *
+     * Only the history *above* the loaded window needs a request: the window itself is
+     * already in `ui.turns`, and the server's outline stops exactly where the window
+     * starts. Both halves are stitched together so the navigator covers the whole
+     * transcript — a conversation short enough to load in one window costs one request
+     * that returns nothing, which is cheaper than the alternative of guessing.
+     */
+    fun loadOutline() {
+        if (outlineLoading) return
+        val c = client ?: return
+        val id = conversationId ?: return
+        outlineLoading = true
+        _ui.update { it.copy(outlineLoading = true) }
+        viewModelScope.launch {
+            val above = if (windowOffset > 0) {
+                runCatching { c.conversationOutline(id, windowOffset) }
+                    .getOrElse { e ->
+                        outlineLoading = false
+                        _ui.update { it.copy(outlineLoading = false, notice = e.displayMessage(appContext)) }
+                        return@launch
+                    }
+            } else {
+                ConversationOutline()
+            }
+            val loaded = _ui.value.turns
+            // The outline's turns are already reduced to id + a one-block preview by the
+            // server; the window's own turns carry full blocks, so only the pieces the
+            // navigator draws are kept here.
+            val entries = buildList {
+                for (t in above.turns) {
+                    add(OutlineEntry(t.id, t.role, previewOf(t), t.timestamp))
+                }
+                for (t in loaded) {
+                    add(OutlineEntry(t.id, t.role, previewOf(t), t.timestamp))
+                }
+            }
+            outlineLoading = false
+            _ui.update {
+                it.copy(outline = entries, outlineLoading = false)
+            }
+        }
+    }
+
+    private var outlineLoading = false
+
+    /**
+     * Jump to [turnId]: page the history in until the turn is loaded, then scroll.
+     *
+     * The navigator lists turns the window may not hold yet, so a jump is "load, then
+     * scroll" rather than "scroll" — [onRevealed] runs once the node exists. Repeats are
+     * bounded by [MAX_JUMP_PAGES] so a turn that the outline knows about but paging cannot
+     * reach (a transcript edited underneath us) gives up instead of looping.
+     */
+    fun jumpToTurn(turnId: String, onRevealed: (String) -> Unit) {
+        viewModelScope.launch {
+            var pages = 0
+            while (_ui.value.turns.none { it.id == turnId } &&
+                pages < MAX_JUMP_PAGES &&
+                _ui.value.hasOlderTurns
+            ) {
+                pages += 1
+                if (!pageOlder()) break
+            }
+            if (_ui.value.turns.any { it.id == turnId }) {
+                onRevealed(turnId)
+            } else {
+                _ui.update { it.copy(notice = appContext.getString(R.string.session_jump_not_found)) }
+            }
+        }
+    }
+
+    // endregion
+
     // region Composer draft persistence
 
     /**
@@ -2201,6 +2289,37 @@ sealed interface BranchSwitchOutcome {
     data object Failed : BranchSwitchOutcome
 }
 
+/**
+ * One row in the message navigator: a turn's id, who said it, and the one line of text
+ * the list shows.
+ */
+data class OutlineEntry(
+    val turnId: String,
+    val role: TurnRole,
+    val preview: String,
+    val timestamp: java.time.Instant,
+)
+
+/**
+ * The one-line summary of a turn for the navigator.
+ *
+ * A user turn shows its prompt, an assistant turn its first paragraph. Reasoning, tool
+ * calls and images are skipped: the navigator is for finding "the message where I asked
+ * about X", and a tool name is never that.
+ */
+private fun previewOf(turn: MessageTurn): String {
+    val text = turn.blocks
+        .filterIsInstance<ContentBlock.Text>()
+        .firstOrNull { it.text.isNotBlank() }
+        ?.text
+        ?: turn.blocks.filterIsInstance<ContentBlock.Text>().firstOrNull()?.text
+        ?: ""
+    val line = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+    return if (line.length > PREVIEW_MAX_CHARS) line.take(PREVIEW_MAX_CHARS) + "…" else line
+}
+
+private const val PREVIEW_MAX_CHARS = 120
+
 data class SessionDetailUiState(
     val isNew: Boolean,
     val loading: Boolean = false,
@@ -2245,6 +2364,14 @@ data class SessionDetailUiState(
     val queuedPrompts: List<String> = emptyList(),
     /** Every tag definition in the workspace, loaded when the tag sheet first opens. */
     val allTags: List<ConversationTag> = emptyList(),
+    /**
+     * The conversation's message index, oldest first, once the navigator has been opened.
+     *
+     * Only the turns above the loaded window cost a request; the window's own turns are
+     * appended locally. Empty until [SessionDetailViewModel.loadOutline] runs.
+     */
+    val outline: List<OutlineEntry> = emptyList(),
+    val outlineLoading: Boolean = false,
     val isInFlight: Boolean = false,
     val sendStatus: String? = null,
     val notice: String? = null,
@@ -2412,6 +2539,9 @@ private const val INITIAL_TURN_WINDOW = 120
  * means that one turn (or the conversation record around it) exceeds the ceiling and no
  * amount of retrying will help. The error is surfaced at that point rather than looping.
  */
+/** Most pages a single jump will page in before giving up. */
+private const val MAX_JUMP_PAGES = 40
+
 private const val MIN_TURN_WINDOW = 1
 
 /** Turns requested per [SessionDetailViewModel.loadOlderTurns] call. */
