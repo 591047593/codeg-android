@@ -573,6 +573,9 @@
     <string name="sessionactions_rename">重命名</string>
     <string name="sessionactions_unpin">取消置顶</string>
     <string name="sessionactions_pin">置顶</string>
+    <string name="sessionactions_tags">标签</string>
+    <string name="session_tags_title">标签</string>
+    <string name="session_tags_empty">还没有标签。可在电脑端创建标签。</string>
     <string name="sessionactions_session_details">会话详情</string>
     <string name="sessionactions_change_status">更改状态</string>
     <string name="sessionactions_rename_session">重命名会话</string>

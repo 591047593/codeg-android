@@ -26,6 +26,7 @@ import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.ConversationSummary
+import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.FolderVisibility
 import app.codeg.android.core.model.GitBranchList
@@ -1705,6 +1706,48 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Load every tag definition, once, for the tag sheet.
+     *
+     * Tags are workspace-wide and change rarely, so the sheet caches what it fetched;
+     * re-opening it does not hit the server again unless the first call failed.
+     */
+    suspend fun loadTags(): List<ConversationTag> {
+        val cached = _ui.value.allTags
+        if (cached.isNotEmpty()) return cached
+        val c = client ?: return emptyList()
+        val tags = runCatching { c.listConversationTags() }.getOrDefault(emptyList())
+        if (tags.isNotEmpty()) _ui.update { it.copy(allTags = tags) }
+        return tags
+    }
+
+    /**
+     * Put a tag on this conversation, or take it off.
+     *
+     * Optimistic on `summary.tagIds` — the chips flip immediately and roll back to the
+     * previous row if the server refuses (a tag from another folder's family, say).
+     */
+    fun toggleTag(tag: ConversationTag, assign: Boolean) {
+        val c = client ?: return
+        val id = conversationId ?: return
+        val previous = _ui.value.summary ?: return
+        val nextIds = if (assign) previous.tagIds + tag.id else previous.tagIds - tag.id
+        _ui.update { it.copy(summary = it.summary?.copy(tagIds = nextIds)) }
+        viewModelScope.launch {
+            runCatching {
+                if (assign) c.updateConversationTags(id, add = listOf(tag.id))
+                else c.updateConversationTags(id, remove = listOf(tag.id))
+            }
+                .onSuccess { updated ->
+                    _ui.update { it.copy(summary = updated) }
+                    repository.notifyConversationsChanged()
+                }
+                .onFailure { e ->
+                    _ui.update { it.copy(summary = previous, notice = e.displayMessage(appContext)) }
+                }
+        }
+    }
+
     /** Delete the conversation; [onDeleted] runs (on the main thread) only after the server confirms. */
     fun deleteConversation(onDeleted: () -> Unit) {
         val c = client ?: return
@@ -2200,6 +2243,8 @@ data class SessionDetailUiState(
      * queued message is visibly waiting rather than silently held.
      */
     val queuedPrompts: List<String> = emptyList(),
+    /** Every tag definition in the workspace, loaded when the tag sheet first opens. */
+    val allTags: List<ConversationTag> = emptyList(),
     val isInFlight: Boolean = false,
     val sendStatus: String? = null,
     val notice: String? = null,

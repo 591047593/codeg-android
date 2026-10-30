@@ -573,6 +573,9 @@
     <string name="sessionactions_rename">Rename</string>
     <string name="sessionactions_unpin">Unpin</string>
     <string name="sessionactions_pin">Pin</string>
+    <string name="sessionactions_tags">Tags</string>
+    <string name="session_tags_title">Tags</string>
+    <string name="session_tags_empty">No tags yet. Create tags on the desktop client.</string>
     <string name="sessionactions_session_details">Session Details</string>
     <string name="sessionactions_change_status">Change Status</string>
     <string name="sessionactions_rename_session">Rename Session</string>

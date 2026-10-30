@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -83,7 +85,9 @@ import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
+import app.codeg.android.core.designsystem.tagColor
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.feature.sessiondetail.interactive.AskQuestionCard
 import app.codeg.android.feature.sessiondetail.interactive.PermissionRequestCard
 import app.codeg.android.feature.sessiondetail.interactive.PlanApprovalCard
@@ -451,6 +455,19 @@ fun SessionDetailScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                     ) {
+                        // The session's tags, at the top of the transcript. They belong to
+                        // the conversation rather than to any one turn, so they open the
+                        // scroll rather than sitting in a fixed header that would eat a
+                        // phone's already-short reading area.
+                        val assignedTags = remember(ui.summary?.tagIds, ui.allTags) {
+                            val ids = ui.summary?.tagIds.orEmpty()
+                            if (ids.isEmpty()) emptyList() else ui.allTags.filter { it.id in ids }
+                        }
+                        if (assignedTags.isNotEmpty()) {
+                            item(key = "__session_tags__", contentType = "session_tags") {
+                                SessionTagRow(assignedTags)
+                            }
+                        }
                         items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->
                             TimelineRow(
                                 marker = node.marker,
@@ -650,6 +667,30 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_remove), tint = colors.textPrimary, modifier = Modifier.size(12.dp)) }
             }
+        }
+    }
+}
+
+/** The conversation's tags, drawn as small coloured chips above the transcript. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SessionTagRow(tags: List<ConversationTag>) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        for (tag in tags) {
+            val tint = tagColor(tag.color)
+            Text(
+                tag.name,
+                fontSize = 11.sp,
+                color = tint,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(tint.copy(alpha = 0.14f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            )
         }
     }
 }

@@ -146,6 +146,21 @@ data class ConversationTurnsPage(
 )
 
 /**
+ * A conversation tag definition (`list_conversation_tags`).
+ *
+ * `folderId == null` means a global tag; otherwise it belongs to that folder's family.
+ * `color` is a normalized `#rrggbb` string.
+ */
+@Serializable
+data class ConversationTag(
+    val id: Int,
+    val folderId: Int? = null,
+    val name: String,
+    val color: String,
+    val sortOrder: Int = 0,
+)
+
+/**
  * One entry in a conversation's message index (`get_folder_conversation_outline`).
  *
  * The server returns the history above a loaded window reduced to what a navigator

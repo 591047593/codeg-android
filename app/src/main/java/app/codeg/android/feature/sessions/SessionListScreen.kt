@@ -64,6 +64,7 @@ import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.component.CodegMenu
 import app.codeg.android.core.designsystem.component.CodegMenuItem
+import app.codeg.android.core.designsystem.tagColor
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.colorFromHex
 import app.codeg.android.core.model.ConversationSummary
@@ -91,6 +92,9 @@ fun SessionListScreen(
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val sections by viewModel.sections.collectAsStateWithLifecycle()
+    // id → #rrggbb, built once per tag-set change rather than per row: a row with three
+    // tags would otherwise scan the definition list three times on every recomposition.
+    val tagsById = remember(ui.tags) { ui.tags.associate { it.id to it.color } }
     // Collapsed section ids. In the composable (not the VM) so collapsing never
     // re-runs the grouping flow; rememberSaveable keeps the fold state across
     // rotation / process death.
@@ -207,6 +211,7 @@ fun SessionListScreen(
                             expandedParents = ui.expandedParents,
                             loadingChildren = ui.loadingChildren,
                             onToggleChildren = viewModel::toggleChildren,
+                            tagsById = tagsById,
                             collapsed = collapsed,
                             onToggleSection = { id ->
                                 collapsed = if (id in collapsed) collapsed - id else collapsed + id
@@ -256,6 +261,7 @@ fun SessionListScreen(
 @Composable
 private fun SessionList(
     sections: List<SessionSection>,
+    tagsById: Map<Int, String>,
     expandedParents: Set<Int>,
     loadingChildren: Set<Int>,
     onToggleChildren: (ConversationSummary) -> Unit,
@@ -335,6 +341,7 @@ private fun SessionList(
                         cardBackground = colors.bgElevated,
                         onTogglePin = { onTogglePin(row.conversation) },
                         onDelete = { onDelete(row.conversation) },
+                        tagColors = row.conversation.tagIds.mapNotNull { tagsById[it] }.map(::tagColor),
                     )
                 }
             }

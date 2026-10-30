@@ -7,6 +7,7 @@ import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
+import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
@@ -191,13 +192,20 @@ class SessionListViewModel @Inject constructor(
             val result = coroutineScope {
                 val folders = async { active.listFolders() }
                 val conversations = async { active.listConversations() }
-                folders.await() to conversations.await()
+                // Tags ride along with every fetch rather than in their own request: the
+                // rows render colour dots from them, and a list that painted before the
+                // definitions arrived would flicker the dots in a moment later. A tag
+                // endpoint that fails must not take the list down with it, hence the
+                // default inside the async.
+                val tags = async { runCatching { active.listConversationTags() }.getOrDefault(emptyList()) }
+                Triple(folders.await(), conversations.await(), tags.await())
             }
             if (token != fetchGeneration) return
             _ui.update {
                 it.copy(
                     folders = result.first,
                     conversations = result.second,
+                    tags = result.third,
                     hasLoaded = true,
                     isLoading = false,
                     isRefreshing = false,
@@ -359,6 +367,13 @@ data class SessionListUiState(
     val expandedParents: Set<Int> = emptySet(),
     /** Parents whose children are being fetched, so the row can show a spinner. */
     val loadingChildren: Set<Int> = emptySet(),
+    /**
+     * Every tag definition, so a row can paint its `tagIds` as coloured dots.
+     *
+     * A conversation carries ids only; without the definitions a tagged row would look
+     * untagged, so both travel in the same fetch.
+     */
+    val tags: List<ConversationTag> = emptyList(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val hasLoaded: Boolean = false,

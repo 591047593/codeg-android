@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,8 @@ import app.codeg.android.core.designsystem.component.CodegMenu
 import app.codeg.android.core.designsystem.component.CodegMenuItem
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.core.model.ConversationTag
+import kotlinx.coroutines.launch
 
 /**
  * The session detail toolbar's overflow menu: Rename / Pin / Session Details /
@@ -65,6 +68,11 @@ fun SessionActionsMenu(
     var showStatus by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var showTags by remember { mutableStateOf(false) }
+    // Tags are fetched the first time the sheet is opened, not with the screen: most
+    // sessions are read and never tagged, and this is a second round trip on open.
+    var tags by remember { mutableStateOf<List<ConversationTag>>(emptyList()) }
+    val scope = rememberCoroutineScope()
 
     Box {
         IconButton(onClick = { menu = true }) {
@@ -73,7 +81,22 @@ fun SessionActionsMenu(
         CodegMenu(expanded = menu, onDismissRequest = { menu = false }) {
             CodegMenuItem(text = stringResource(R.string.sessionactions_rename), onClick = { menu = false; showRename = true })
             CodegMenuItem(text = if (summary.isPinned) stringResource(R.string.sessionactions_unpin) else stringResource(R.string.sessionactions_pin), onClick = { menu = false; viewModel.togglePin() })
-            CodegMenuItem(text = stringResource(R.string.sessionactions_session_details), onClick = { menu = false; showDetails = true })
+            CodegMenuItem(
+                text = stringResource(R.string.sessionactions_tags),
+                onClick = {
+                    menu = false
+                    showTags = true
+                    scope.launch { tags = viewModel.loadTags() }
+                },
+            )
+            CodegMenuItem(
+                text = stringResource(R.string.sessionactions_session_details),
+                onClick = {
+                    menu = false
+                    showDetails = true
+                    if (tags.isEmpty()) scope.launch { tags = viewModel.loadTags() }
+                },
+            )
             CodegMenuItem(text = stringResource(R.string.sessionactions_change_status), onClick = { menu = false; showStatus = true })
             CodegMenuItem(text = stringResource(R.string.common_delete), danger = true, onClick = { menu = false; showDelete = true })
         }
@@ -143,6 +166,16 @@ fun SessionActionsMenu(
         )
     }
 
+    if (showTags) {
+        val assigned = summary.tagIds.toSet()
+        SessionTagsSheet(
+            tags = tags,
+            assigned = assigned,
+            onToggle = { tag, assign -> viewModel.toggleTag(tag, assign) },
+            onDismiss = { showTags = false },
+        )
+    }
+
     if (showDetails) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { showDetails = false }, sheetState = sheetState, containerColor = colors.bgElevated) {
@@ -156,6 +189,8 @@ fun SessionActionsMenu(
                 DetailRow(stringResource(R.string.sessionactions_detail_messages), summary.messageCount.toString())
                 summary.model?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_model), it) }
                 summary.gitBranch?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_branch), it) }
+                val tagNames = tags.filter { it.id in summary.tagIds }.map { it.name }
+                if (tagNames.isNotEmpty()) DetailRow(stringResource(R.string.sessionactions_tags), tagNames.joinToString(", "))
                 val justNow = stringResource(R.string.time_just_now)
                 DetailRow(stringResource(R.string.sessionactions_detail_created), RelativeTime.compact(summary.createdAt, justNow = justNow))
                 DetailRow(stringResource(R.string.sessionactions_detail_updated), RelativeTime.compact(summary.updatedAt, justNow = justNow))

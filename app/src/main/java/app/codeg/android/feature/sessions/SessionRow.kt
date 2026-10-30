@@ -94,6 +94,13 @@ fun SessionRow(
      */
     cardBackground: Color = Color.Unspecified,
     onTogglePin: (() -> Unit)? = null,
+    /**
+     * This row's tag colours, already resolved from its `tagIds` by the list.
+     *
+     * Dots rather than named chips: a phone row has room for two or three 6dp dots
+     * beside the folder/model line, and the names are available on the session screen.
+     */
+    tagColors: List<Color> = emptyList(),
     onDelete: (() -> Unit)? = null,
 ) {
     val colors = CodegTheme.colors
@@ -194,6 +201,20 @@ fun SessionRow(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.widthIn(max = 96.dp),
                             )
+                            MetaDot()
+                        }
+                        // Tag dots lead the metadata line: they are the user's own
+                        // classification, and scanning by colour is how the desktop
+                        // sidebar is read.
+                        for (c in tagColors.take(3)) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(c),
+                            )
+                        }
+                        if (tagColors.isNotEmpty() && (folderName != null || !conversation.model.isNullOrBlank())) {
                             MetaDot()
                         }
                         conversation.model?.takeIf { it.isNotBlank() }?.let { model ->

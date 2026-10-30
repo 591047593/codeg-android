@@ -33,8 +33,10 @@ import app.codeg.android.core.model.PromptInputBlock
 import app.codeg.android.core.model.QuestionAnswer
 import app.codeg.android.core.model.RespondPermissionBody
 import app.codeg.android.core.model.ConversationSummary
+import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.UpdateConversationPinnedBody
 import app.codeg.android.core.model.UpdateConversationStatusBody
+import app.codeg.android.core.model.UpdateConversationTagsBody
 import app.codeg.android.core.model.UpdateConversationTitleBody
 import app.codeg.android.core.model.CloneRepositoryBody
 import app.codeg.android.core.model.DirectoryEntry
@@ -298,6 +300,30 @@ class CodegClient(
             send("list_child_conversations", encode(ConversationIdBody(conversationId))),
             ListSerializer(ConversationSummary.serializer()),
         )
+
+    /** Every tag definition the workspace knows — global ones and every folder's. */
+    suspend fun listConversationTags(): List<ConversationTag> =
+        decode(
+            send("list_conversation_tags", encode(EmptyBody)),
+            ListSerializer(ConversationTag.serializer()),
+        )
+
+    /**
+     * Put [add] tags on a conversation and take [remove] off, returning its fresh row.
+     *
+     * The server broadcasts the updated summary, so other screens converge without a refetch.
+     */
+    suspend fun updateConversationTags(
+        conversationId: Int,
+        add: List<Int> = emptyList(),
+        remove: List<Int> = emptyList(),
+    ): ConversationSummary = decode(
+        send(
+            "update_conversation_tags",
+            encode(UpdateConversationTagsBody(conversationId, add, remove)),
+        ),
+        ConversationSummary.serializer(),
+    )
 
     /**
      * The messages above the loaded window, reduced to what a navigator needs.

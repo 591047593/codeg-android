@@ -462,6 +462,14 @@ data class ValidatePiCommandBody(val command: String)
 @Serializable
 data class TaskIdBody(val taskId: String)
 
+/** `update_conversation_tags` — put tags on / take tags off a conversation. */
+@Serializable
+data class UpdateConversationTagsBody(
+    val conversationId: Int,
+    val add: List<Int> = emptyList(),
+    val remove: List<Int> = emptyList(),
+)
+
 // MARK: - Cursor request bodies
 
 /**
