@@ -667,6 +667,11 @@
     <string name="branch_switch_branch">Switch Branch</string>
     <string name="branch_new_branch">New branch</string>
     <string name="branch_create_branch">Create branch</string>
+    <string name="branch_delete_title">Delete branch "%1$s"?</string>
+    <string name="branch_delete_message">The local branch is removed. Its commits stay in the repository until garbage collection.</string>
+    <string name="branch_force_delete_title">"%1$s" is not merged</string>
+    <string name="branch_force_delete_message">git refused to delete it because its commits are not merged anywhere. Force-delete anyway?</string>
+    <string name="branch_force_delete_confirm">Force delete</string>
     <string name="branch_local">LOCAL</string>
     <string name="branch_remote">REMOTE</string>
     <string name="branch_filter">Filter branches</string>

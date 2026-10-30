@@ -667,6 +667,11 @@
     <string name="branch_switch_branch">切换分支</string>
     <string name="branch_new_branch">新建分支</string>
     <string name="branch_create_branch">创建分支</string>
+    <string name="branch_delete_title">删除分支 "%1$s"？</string>
+    <string name="branch_delete_message">将删除本地分支。其提交在垃圾回收前仍保留在仓库中。</string>
+    <string name="branch_force_delete_title">"%1$s" 尚未合并</string>
+    <string name="branch_force_delete_message">git 因其提交未合并到任何分支而拒绝删除。仍要强制删除吗？</string>
+    <string name="branch_force_delete_confirm">强制删除</string>
     <string name="branch_local">本地</string>
     <string name="branch_remote">远程</string>
     <string name="branch_filter">筛选分支</string>

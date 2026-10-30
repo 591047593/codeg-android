@@ -1,5 +1,6 @@
 package app.codeg.android.feature.projects
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -23,6 +25,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -62,6 +65,12 @@ fun BranchPickerSheet(viewModel: ProjectDetailViewModel, onDismiss: () -> Unit) 
     var newBranch by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Deleting a local branch is long-press only: it is destructive and rare, and a
+    // visible per-row button would compete with the tap that switches branch.
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    // Set when git refused the plain `-d` because the branch is unmerged; the dialog
+    // then offers the force path explicitly instead of escalating on its own.
+    var forcePrompt by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         val list = viewModel.loadBranches()
@@ -100,12 +109,78 @@ fun BranchPickerSheet(viewModel: ProjectDetailViewModel, onDismiss: () -> Unit) 
             } else {
                 LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (locals.isNotEmpty()) item("lh") { SectionLabel(stringResource(R.string.branch_local)) }
-                    items(locals, key = { "l-$it" }) { b -> BranchRow(b, current = b == ui.branch, enabled = !busy) { doCheckout(b) } }
+                    items(locals, key = { "l-$it" }) { b ->
+                        BranchRow(
+                            branch = b,
+                            current = b == ui.branch,
+                            enabled = !busy,
+                            onClick = { doCheckout(b) },
+                            // The checked-out branch cannot be deleted by git at all, so
+                            // the long-press is not offered on it.
+                            onLongClick = if (b == ui.branch) null else ({ deleteTarget = b }),
+                        )
+                    }
                     if (remotes.isNotEmpty()) item("rh") { SectionLabel(stringResource(R.string.branch_remote)) }
                     items(remotes, key = { "r-$it" }) { b -> BranchRow(b, current = false, enabled = !busy) { doCheckout(b) } }
                 }
             }
         }
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = colors.bgElevated,
+            title = { Text(stringResource(R.string.branch_delete_title, target), color = colors.textPrimary) },
+            text = { Text(stringResource(R.string.branch_delete_message), color = colors.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = target
+                    deleteTarget = null
+                    busy = true; error = null
+                    viewModel.deleteBranch(name, force = false) { err ->
+                        busy = false
+                        if (err == null) {
+                            locals = locals - name
+                        } else {
+                            // A refusal here is almost always "not merged"; ask before
+                            // forcing rather than doing it on the user's behalf.
+                            error = err
+                            forcePrompt = name
+                        }
+                    }
+                }) { Text(stringResource(R.string.common_delete), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
+    }
+
+    forcePrompt?.let { name ->
+        AlertDialog(
+            onDismissRequest = { forcePrompt = null },
+            containerColor = colors.bgElevated,
+            title = { Text(stringResource(R.string.branch_force_delete_title, name), color = colors.textPrimary) },
+            text = { Text(stringResource(R.string.branch_force_delete_message), color = colors.textSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    forcePrompt = null
+                    busy = true; error = null
+                    viewModel.deleteBranch(name, force = true) { err ->
+                        busy = false
+                        if (err == null) locals = locals - name else error = err
+                    }
+                }) { Text(stringResource(R.string.branch_force_delete_confirm), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { forcePrompt = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
+                }
+            },
+        )
     }
 }
 
@@ -114,8 +189,15 @@ private fun SectionLabel(text: String) {
     Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = CodegTheme.colors.textTertiary, modifier = Modifier.padding(top = 8.dp, start = 4.dp, bottom = 2.dp))
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun BranchRow(branch: String, current: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun BranchRow(
+    branch: String,
+    current: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
     val colors = CodegTheme.colors
     ListItem(
         headlineContent = { Text(branch, fontSize = 14.sp, fontFamily = CodegMono, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -126,6 +208,12 @@ private fun BranchRow(branch: String, current: Boolean, enabled: Boolean, onClic
             containerColor = Color.Transparent,
             headlineColor = if (current) colors.accent else colors.textPrimary,
         ),
-        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(enabled = enabled && !current) { onClick() },
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                enabled = enabled,
+                onLongClick = onLongClick,
+                onClick = { if (!current) onClick() },
+            ),
     )
 }

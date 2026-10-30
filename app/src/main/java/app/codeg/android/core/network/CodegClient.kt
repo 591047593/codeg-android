@@ -54,6 +54,7 @@ import app.codeg.android.core.model.GitBranchList
 import app.codeg.android.core.model.GitCheckoutBody
 import app.codeg.android.core.model.GitCommitBody
 import app.codeg.android.core.model.GitCommitResult
+import app.codeg.android.core.model.DeleteBranchBody
 import app.codeg.android.core.model.DeleteFileTreeEntryBody
 import app.codeg.android.core.model.GitCredentials
 import app.codeg.android.core.model.GitDiffBody
@@ -535,6 +536,16 @@ class CodegClient(
     /** Stop a generation started with [gitGenerateCommitMessage]. */
     suspend fun gitCancelCommitMessage(requestId: String) {
         send("git_generate_commit_message_cancel", encode(CancelCommitMessageBody(requestId)))
+    }
+
+    /**
+     * Delete a local branch.
+     *
+     * Without [force] git refuses to drop a branch whose commits are not merged; the
+     * caller offers that refusal to the user rather than escalating silently.
+     */
+    suspend fun gitDeleteBranch(path: String, branchName: String, force: Boolean = false) {
+        send("git_delete_branch", encode(DeleteBranchBody(path, branchName, force)))
     }
 
     /** True while a merge is in progress (`git_has_merge_head`). */

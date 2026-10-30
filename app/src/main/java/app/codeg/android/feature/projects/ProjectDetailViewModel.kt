@@ -142,6 +142,20 @@ class ProjectDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Delete a local branch. [force] is the caller's explicit second attempt after git
+     * refused an unmerged branch — never an automatic escalation.
+     */
+    fun deleteBranch(name: String, force: Boolean, onResult: (String?) -> Unit) {
+        val c = _ui.value.client ?: return
+        val path = _ui.value.folder?.path ?: return
+        viewModelScope.launch {
+            runCatching { c.gitDeleteBranch(path, name, force) }
+                .onSuccess { onResult(null) }
+                .onFailure { onResult(it.displayMessage(appContext)) }
+        }
+    }
+
     fun createBranch(name: String, onResult: (String?) -> Unit) {
         val c = _ui.value.client ?: return
         val path = _ui.value.folder?.path ?: return

@@ -516,3 +516,7 @@ data class ResolveConflictBody(val path: String, val file: String, val content: 
 /** `git_abort_operation` — `merge`, `pull` or `rebase`. */
 @Serializable
 data class AbortOperationBody(val path: String, val operation: String)
+
+/** `git_delete_branch` — local branch removal; [force] maps to `-D` instead of `-d`. */
+@Serializable
+data class DeleteBranchBody(val path: String, val branchName: String, val force: Boolean = false)
