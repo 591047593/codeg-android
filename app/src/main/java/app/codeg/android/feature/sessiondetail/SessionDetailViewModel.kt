@@ -1497,6 +1497,49 @@ class SessionDetailViewModel @Inject constructor(
      * would upload the payloads again, and a retry after a transport failure is usually
      * about the text.
      */
+    /**
+     * Branch this conversation at [turnId], keeping everything before it.
+     *
+     * The server keeps the pre-fork history as a sibling conversation and re-points the
+     * live connection at the new session, so this reloads onto the fork rather than
+     * mutating what is on screen.
+     */
+    fun forkFromTurn(turnId: String) {
+        val c = client ?: return
+        val id = conversationId ?: return
+        viewModelScope.launch {
+            // The fork needs a live connection; resolve (or open) one the same way a send
+            // does, so forking from an idle session works rather than no-op'ing.
+            val conn = runCatching { resolveConnection(c) }.getOrNull()
+            if (conn == null) {
+                _ui.update { it.copy(notice = appContext.getString(R.string.session_fork_failed)) }
+                return@launch
+            }
+            val result = runCatching {
+                c.forkConversation(
+                    connectionId = conn,
+                    conversationId = id,
+                    folderId = folder?.id,
+                    forkFromTurnId = turnId,
+                )
+            }
+            result.exceptionOrNull()?.let { error ->
+                _ui.update { it.copy(notice = error.displayMessage(appContext)) }
+                return@launch
+            }
+            // The row that now holds the pre-fork history is new; the list must refetch.
+            repository.notifyConversationsChanged()
+            onConversationForked?.invoke(result.getOrThrow().siblingConversationId)
+            load()
+        }
+    }
+
+    /**
+     * Called with the sibling conversation id when a fork succeeds, so the screen can
+     * offer to open the preserved history. Null when the host does not care.
+     */
+    var onConversationForked: ((siblingId: Int) -> Unit)? = null
+
     fun retryLastTurn() {
         if (_ui.value.isInFlight) return
         val lastUser = _ui.value.turns.lastOrNull { it.role == TurnRole.USER } ?: return

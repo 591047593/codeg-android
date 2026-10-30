@@ -74,6 +74,20 @@ data class ConversationOutlineBody(
     val beforeIndex: Int,
 )
 
+/**
+ * Body for `acp_fork`.
+ *
+ * [conversationId] and [folderId] are linkage for a resumed historical conversation that
+ * is not bound to the connection yet; the server ignores both once it is.
+ */
+@Serializable
+data class ForkBody(
+    val connectionId: String,
+    val conversationId: Int? = null,
+    val folderId: Int? = null,
+    val forkFromTurnId: String,
+)
+
 @Serializable
 data class CreateConversationBody(
     val folderId: Int,

@@ -22,6 +22,8 @@ import app.codeg.android.core.model.TaskIdBody
 import app.codeg.android.core.model.UpdateKimiCodeConfigBody
 import app.codeg.android.core.model.UpdatePiConfigBody
 import app.codeg.android.core.model.ValidatePiCommandBody
+import app.codeg.android.core.model.ForkResult
+import app.codeg.android.core.model.ForkBody
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.FolderIdBody
 import app.codeg.android.core.model.HealthResponse
@@ -308,6 +310,34 @@ class CodegClient(
             send("get_folder_conversation_outline", encode(ConversationOutlineBody(id, beforeIndex))),
             ConversationOutline.serializer(),
         )
+
+    /**
+     * Fork a conversation at [forkFromTurnId], leaving the original history intact.
+     *
+     * The server re-points the live connection at the new session and keeps the pre-fork
+     * history as a sibling conversation row, so the original stays readable. This is the
+     * desktop client's "Fork from here" — the only way to branch a conversation without
+     * losing the turns after the point you wanted to change.
+     */
+    suspend fun forkConversation(
+        connectionId: String,
+        conversationId: Int?,
+        folderId: Int?,
+        forkFromTurnId: String,
+    ): ForkResult = decode(
+        send(
+            "acp_fork",
+            encode(
+                ForkBody(
+                    connectionId = connectionId,
+                    conversationId = conversationId,
+                    folderId = folderId,
+                    forkFromTurnId = forkFromTurnId,
+                ),
+            ),
+        ),
+        ForkResult.serializer(),
+    )
 
     /** Create a conversation row up front and return its id (a bare JSON int). */
     suspend fun createConversation(folderId: Int, agentType: AgentType, title: String?): Int =

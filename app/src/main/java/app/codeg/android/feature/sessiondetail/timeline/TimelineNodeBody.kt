@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
@@ -68,6 +69,15 @@ private val SuccessGreen = Color(0xFF85D18F)
 
 /** Scrolls the timeline to a node id — used by the footer's jump-to-question button. */
 val LocalTimelineScroll = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/**
+ * "Fork from here", provided by the session screen; null when it is not offered.
+ *
+ * A composition local rather than a parameter on [NodeBody] because the action belongs to
+ * a footer several layers down and only one screen provides it — threading it through the
+ * timeline renderer would put a session-screen concern in every node type.
+ */
+val LocalForkFromTurn = staticCompositionLocalOf<((turnId: String) -> Unit)?> { null }
 
 /**
  * Renders a node's content to the right of the rail. A pure dispatcher that reuses
@@ -202,6 +212,9 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (copyText.isNotEmpty()) CopyButton(copyText)
+        LocalForkFromTurn.current?.let { fork ->
+            ForkButton(onFork = { fork(turn.id) })
+        }
         if (questionId != null) JumpToQuestionButton(questionId)
         Spacer(Modifier.weight(1f))
         Text(
@@ -214,6 +227,37 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
             // intrinsic size, and this is the only piece that may be cut.
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * "Fork from here" — branch the conversation at this reply.
+ *
+ * The desktop client's footer action of the same name: the pre-fork history is kept as a
+ * sibling conversation, so nothing is lost and the original stays readable.
+ */
+@Composable
+private fun ForkButton(onFork: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onFork)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(
+            Icons.Rounded.CallSplit,
+            contentDescription = null,
+            tint = colors.textTertiary,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            stringResource(R.string.session_fork_from_here),
+            fontSize = 10.sp,
+            color = colors.textTertiary,
         )
     }
 }

@@ -90,6 +90,7 @@ import app.codeg.android.feature.sessiondetail.timeline.LocalTimelineScroll
 import app.codeg.android.feature.sessiondetail.timeline.NodeBody
 import app.codeg.android.feature.sessiondetail.timeline.NodeContent
 import app.codeg.android.feature.sessiondetail.timeline.TimelineRow
+import app.codeg.android.feature.sessiondetail.timeline.LocalForkFromTurn
 import app.codeg.android.feature.sessiondetail.timeline.TranscriptTimeline
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -427,7 +428,13 @@ fun SessionDetailScreen(
                         )
                     }
 
-                else -> CompositionLocalProvider(LocalTimelineScroll provides scrollToId) {
+                else -> CompositionLocalProvider(
+                    LocalTimelineScroll provides scrollToId,
+                    // Fork is offered only while idle: branching a running turn would
+                    // fork a half-written reply, and the desktop client disables it for
+                    // the same reason.
+                    LocalForkFromTurn provides if (ui.isInFlight || ui.isNew) null else viewModel::forkFromTurn,
+                ) {
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),

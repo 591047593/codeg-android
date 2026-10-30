@@ -158,6 +158,17 @@ data class ConversationOutline(
     val prefixHash: String = "",
 )
 
+/**
+ * Result of `acp_fork`: the new session, the one forked from, and the sibling row the
+ * server created to keep the pre-fork history readable.
+ */
+@Serializable
+data class ForkResult(
+    val forkedSessionId: String,
+    val originalSessionId: String,
+    val siblingConversationId: Int,
+)
+
 /** Returned by `acp_find_connection_for_conversation` when a live ACP
  * connection already owns a conversation. */@Serializable
 data class ConversationConnectionInfo(
