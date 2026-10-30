@@ -28,6 +28,16 @@ enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
      * default made every button, tab and link the same loud colour, which is not how the
      * desktop client looks on first launch.
      */
+    /**
+     * The Claude accent: a warm terracotta, not a saturated orange.
+     *
+     * Claude's brand colour is `#D97757` — an earthy orange-red that reads as clay or
+     * paper rather than as a warning. At `#FF9500` (the iOS system orange) the same
+     * button looks like a call to action on an alert; one step toward brown is what
+     * makes it feel like part of a stationery palette. Dark mode lifts it slightly so
+     * it holds up on a dark warm grey.
+     */
+    CLAUDE("claude", Color(0xFFE08A6B), Color(0xFFD97757)),
     NEUTRAL("neutral", Color(0xFFE5E5EA), Color(0xFF1C1C1E)),
     RED("red", Color(0xFFFF453A), Color(0xFFFF3B30)),
     ROSE("rose", Color(0xFFFF375F), Color(0xFFFF2D55)),
@@ -40,7 +50,8 @@ enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 
     companion object {
-        val DEFAULT = NEUTRAL
+        /** The Claude palette is the app's look; the rest stay selectable. */
+        val DEFAULT = CLAUDE
         val all: List<AccentPalette> = entries
         fun from(id: String?): AccentPalette = entries.firstOrNull { it.id == id } ?: DEFAULT
     }
@@ -110,42 +121,44 @@ private val ANSI_LIGHT = listOf(
  *
  * ### Why these values
  *
- * The palette follows Apple's platform colours rather than a web theme. Three
- * properties carry that:
+ * The palette follows the Claude app rather than Apple's system colours. What carries
+ * that is a warm, low-chroma ramp rather than any single hue:
  *
- * 1. **A neutral, slightly warm grey scale.** iOS surfaces are not blue-tinted
- *    (`#F2F4F6`) and not pure black. Light mode sits on `#F2F2F7` — the system
- *    grouped-background grey — with `#FFFFFF` cards. Dark mode is `#000000` with
- *    `#1C1C1E` cards, which is what makes the elevated surface read as *above* the
- *    background instead of merely lighter than it.
- * 2. **Separation by luminance, not by strokes.** iOS draws a border only when
- *    content would otherwise float ambiguously. [surfaceStroke] is therefore
- *    much weaker than a web card border; most separation comes from the surface
- *    colour itself.
- * 3. **System semantic colours** for danger (`#FF3B30` / `#FF453A`) and a text
- *    ramp taken from `UIColor.label` / `.secondaryLabel` / `.tertiaryLabel`, so
- *    the greys stay in one family instead of drifting.
+ * 1. **Warm neutrals, not cold greys.** The background is `#F5F4EF` — an off-white with
+ *    a little sand in it — and dark mode is `#262624`, a warm charcoal. iOS's
+ *    `#F2F2F7` is faintly blue and `#000000` is clinical; against either, warm text and
+ *    a terracotta accent look pasted on. Nearly everything else in this file is judged
+ *    against that background, so this is the value that decides whether the app reads as
+ *    a Claude surface at all.
+ * 2. **Charcoal type, not black.** `#1F1E1D` instead of `#000000`. Long agent replies
+ *    are the main content of this app, and warm-dark text on warm paper is markedly
+ *    easier to read in bulk than maximum contrast.
+ * 3. **Separation by luminance.** [surfaceStroke] stays very weak; depth comes from the
+ *    surface colour itself, as in the Claude app, where cards are a slightly lighter
+ *    paper rather than a bordered box.
  *
- * Accent hues are left as the user's choice; only the neutrals are opinionated.
+ * Accent hues are the user's choice; [AccentPalette.CLAUDE] is the brand default.
  */
 fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     val accentColor = accent.resolve(isDark)
     return if (isDark) {
         CodegColors(
             isDark = true,
-            // Pure black is the iOS dark background; content layers stack upward from it
-            // in lighten steps rather than sitting on a slate wash.
-            bg = Color(0xFF000000),
-            bgElevated = Color(0xFF1C1C1E),
-            surfaceStroke = Color.White.copy(alpha = 0.10f),
-            hairline = Color.White.copy(alpha = 0.08f),
-            // A filled, slightly lifted panel: iOS secondary system fill.
-            codeSurface = Color(0xFF2C2C2E),
-            rail = Color.White.copy(alpha = 0.18f),
-            textPrimary = Color(0xFFFFFFFF),
-            textSecondary = Color(0xFFEBEBF5).copy(alpha = 0.72f),
-            textTertiary = Color(0xFFEBEBF5).copy(alpha = 0.48f),
-            danger = Color(0xFFFF453A),
+            // Warm charcoal rather than pure black. Claude's dark theme is a brown-grey
+            // (#262624 territory), not the neutral black iOS uses: on a phone it reads as
+            // an ink-washed page, and it keeps the terracotta accent in the same family
+            // instead of making it glow against a cold background.
+            bg = Color(0xFF262624),
+            bgElevated = Color(0xFF30302E),
+            surfaceStroke = Color(0xFFFFF8F0).copy(alpha = 0.10f),
+            hairline = Color(0xFFFFF8F0).copy(alpha = 0.08f),
+            // A slightly lifted well for code, fields and the composer.
+            codeSurface = Color(0xFF1F1F1D),
+            rail = Color(0xFFFFF8F0).copy(alpha = 0.18f),
+            textPrimary = Color(0xFFF5F4EF),
+            textSecondary = Color(0xFFF5F4EF).copy(alpha = 0.68f),
+            textTertiary = Color(0xFFF5F4EF).copy(alpha = 0.45f),
+            danger = Color(0xFFE86A5E),
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
@@ -153,23 +166,24 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     } else {
         CodegColors(
             isDark = false,
-            // System grouped background; cards are pure white on top of it.
-            bg = Color(0xFFF2F2F7),
-            bgElevated = Color(0xFFFFFFFF),
-            surfaceStroke = Color.Black.copy(alpha = 0.08f),
-            hairline = Color.Black.copy(alpha = 0.10f),
-            // A fill that reads as inset *against the grouped background*. Taking
-            // `secondarySystemBackground` literally here made it identical to `bg`
-            // (`#F2F2F7` on `#F2F2F7`), so every filled control — code blocks, text
-            // fields, the composer — became invisible; iOS only gets away with that
-            // value because its fields sit on white cards. One step darker than the
-            // background keeps the same relationship without the vanishing act.
-            codeSurface = Color(0xFFE5E5EA),
-            rail = Color.Black.copy(alpha = 0.18f),
-            textPrimary = Color(0xFF000000),
-            textSecondary = Color(0xFF3C3C43).copy(alpha = 0.72f),
-            textTertiary = Color(0xFF3C3C43).copy(alpha = 0.48f),
-            danger = Color(0xFFFF3B30),
+            // Claude's paper: a warm off-white with a hint of sand (`#F5F4EF`), not the
+            // cool system grey. This single value is most of what makes the app read as
+            // Claude rather than as a generic iOS list — every surface above it is judged
+            // against it, so a cold grey here makes the whole screen feel like settings.
+            bg = Color(0xFFF5F4EF),
+            bgElevated = Color(0xFFFDFCFA),
+            surfaceStroke = Color(0xFF1F1E1D).copy(alpha = 0.08f),
+            hairline = Color(0xFF1F1E1D).copy(alpha = 0.10f),
+            // Inset well: one step darker than the paper, as before — the earlier bug was
+            // setting this to the same value as `bg`, which made filled controls vanish.
+            codeSurface = Color(0xFFEBE9E3),
+            rail = Color(0xFF1F1E1D).copy(alpha = 0.18f),
+            // Charcoal, not pure black: Claude's type is warm-dark, which is why long
+            // passages read softer than on a `#000000` interface.
+            textPrimary = Color(0xFF1F1E1D),
+            textSecondary = Color(0xFF1F1E1D).copy(alpha = 0.68f),
+            textTertiary = Color(0xFF1F1E1D).copy(alpha = 0.45f),
+            danger = Color(0xFFC2410C),
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),

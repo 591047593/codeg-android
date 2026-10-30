@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -115,23 +116,41 @@ fun NodeBody(node: TimelineNode, modifier: Modifier = Modifier) {
 @Composable
 private fun UserNodeBody(turn: MessageTurn, modifier: Modifier) {
     val colors = CodegTheme.colors
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.accent.copy(alpha = 0.12f))
-            .border(0.5.dp, colors.accent.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    // Right-aligned, width-fitting bubble — the Claude chat shape.
+    //
+    // The prompt used to be a full-width tinted card with a border, which made it look
+    // like a system notification sitting in the flow rather than something the user said.
+    // A bubble that hugs its text and sits on the right is the single strongest "this is a
+    // conversation" cue in the app, and it is what makes the assistant's full-width prose
+    // read as its answer rather than as another card in a list.
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
     ) {
-        for (block in turn.blocks) {
-            when (block) {
-                is ContentBlock.Text -> if (block.text.isNotBlank()) MarkdownContent(block.text)
-                is ContentBlock.Image -> InlineImage(block.image, null)
-                is ContentBlock.ImageGeneration ->
-                    if (block.image != null) InlineImage(block.image, block.revisedPrompt)
-                    else if (!block.revisedPrompt.isNullOrBlank()) MarkdownContent(block.revisedPrompt)
-                else -> {}
+        Column(
+            Modifier
+                // 88% of the row, capped at a readable measure. A chat bubble cannot also
+                // hug a short message here: the Markdown renderer inside spans the width
+                // it is given, so a width that shrank to the text would need the whole
+                // measure chain rebuilt around intrinsics. At 88% the left gutter is
+                // visible at every text size, which is what carries the "right-aligned
+                // bubble" reading; genuinely short prompts are rare in this app.
+                .fillMaxWidth(0.88f)
+                .widthIn(max = 560.dp)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
+                .background(colors.codeSurface)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (block in turn.blocks) {
+                when (block) {
+                    is ContentBlock.Text -> if (block.text.isNotBlank()) MarkdownContent(block.text)
+                    is ContentBlock.Image -> InlineImage(block.image, null)
+                    is ContentBlock.ImageGeneration ->
+                        if (block.image != null) InlineImage(block.image, block.revisedPrompt)
+                        else if (!block.revisedPrompt.isNullOrBlank()) MarkdownContent(block.revisedPrompt)
+                    else -> {}
+                }
             }
         }
     }
