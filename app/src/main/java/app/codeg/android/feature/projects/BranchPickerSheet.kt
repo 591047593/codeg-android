@@ -121,7 +121,9 @@ fun BranchPickerSheet(viewModel: ProjectDetailViewModel, onDismiss: () -> Unit) 
                         )
                     }
                     if (remotes.isNotEmpty()) item("rh") { SectionLabel(stringResource(R.string.branch_remote)) }
-                    items(remotes, key = { "r-$it" }) { b -> BranchRow(b, current = false, enabled = !busy) { doCheckout(b) } }
+                    items(remotes, key = { "r-$it" }) { b ->
+                        BranchRow(b, current = false, enabled = !busy, onClick = { doCheckout(b) })
+                    }
                 }
             }
         }
