@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -350,6 +351,16 @@ fun SessionDetailScreen(
                 // it. The text is still in `turns`, so retry is one tap away from the
                 // composer where the user is already looking.
                 if (ui.canRetryLastTurn) RetryBar(onRetry = viewModel::retryLastTurn)
+                // Prompts typed while a turn was running. One line, so a queued message is
+                // visibly waiting rather than silently held.
+                if (ui.queuedPrompts.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.session_queued_prompts, ui.queuedPrompts.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                        modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+                    )
+                }
                 // The current model / effort / mode, read out where the desktop client
                 // shows it. Opens the same editor the top-bar avatar does.
                 SessionSettingsChip(

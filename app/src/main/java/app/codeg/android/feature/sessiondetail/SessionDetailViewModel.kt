@@ -516,7 +516,17 @@ class SessionDetailViewModel @Inject constructor(
     private fun send(text: String, withAttachments: Boolean) {
         val trimmed = text.trim()
         val attachments = if (withAttachments) _ui.value.attachments else emptyList()
-        if ((trimmed.isEmpty() && attachments.isEmpty()) || _ui.value.isInFlight) return
+        if (trimmed.isEmpty() && attachments.isEmpty()) return
+        // A turn is already running: queue this instead of dropping it.
+        //
+        // The composer used to turn into a Stop button while in flight, so text typed
+        // during a turn simply could not be sent — and on a phone a turn routinely runs
+        // for minutes. The desktop client queues in the same situation and flushes when
+        // the turn ends; this does the same, minus the reorder/edit affordances.
+        if (_ui.value.isInFlight) {
+            _ui.update { it.copy(queuedPrompts = it.queuedPrompts + trimmed) }
+            return
+        }
 
         // Supersede any post-turn reconcile still running for the previous turn so it can't
         // wipe the turn we're about to start (its identity guard is the backstop).
@@ -794,6 +804,10 @@ class SessionDetailViewModel @Inject constructor(
         sendJob?.cancel()
         reconcileJob?.cancel()
         closeStream()
+        // A queued prompt belongs to a turn the user just stopped. Sending it the moment
+        // the agent halts would look like the Stop did nothing, so the queue goes with
+        // the cancel; the text is still in the transcript the user can copy from.
+        _ui.update { it.copy(queuedPrompts = emptyList()) }
         // Cleared before the request goes out, not after: the failure path below has to be
         // the last writer of `isInFlight`, or a failed cancel would still leave the
         // composer unlocked over a turn that is in fact still running.
@@ -1245,6 +1259,17 @@ class SessionDetailViewModel @Inject constructor(
         // the reconcile it just started and folds the finished reply in locally, exactly
         // as a user typing the instant a turn ends would.
         if (planFollowUp != null) send(planFollowUp, withAttachments = false)
+        // A prompt the user typed while this turn was running goes out now that the
+        // composer is free. One at a time: the next queued prompt is sent when *its*
+        // turn finishes, so two replies never interleave.
+        else flushNextQueued()
+    }
+
+    /** Send the oldest queued prompt, if any, and drop it from the queue. */
+    private fun flushNextQueued() {
+        val next = _ui.value.queuedPrompts.firstOrNull() ?: return
+        _ui.update { it.copy(queuedPrompts = it.queuedPrompts.drop(1)) }
+        send(next, withAttachments = false)
     }
 
     /**
@@ -2168,6 +2193,13 @@ data class SessionDetailUiState(
      * compute and the same strings can be asserted in a test.
      */
     val settingsSummary: List<String> = emptyList(),
+    /**
+     * Prompts typed while a turn was already running, oldest first.
+     *
+     * Flushed one at a time as each turn completes; the composer shows the count so a
+     * queued message is visibly waiting rather than silently held.
+     */
+    val queuedPrompts: List<String> = emptyList(),
     val isInFlight: Boolean = false,
     val sendStatus: String? = null,
     val notice: String? = null,

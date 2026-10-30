@@ -849,6 +849,7 @@
     <string name="session_turn_in_progress">此会话已有一轮正在进行。</string>
     <string name="session_attachments_skipped">已添加 %1$d 张图片；跳过 %2$d 张（过大或超出上限）。</string>
     <string name="session_server_changed">当前服务器已变更。请重新打开此会话以继续。</string>
+    <string name="session_queued_prompts">%1$d 条排队中</string>
     <string name="session_fork_failed">无法分叉此会话。</string>
     <string name="session_fork_from_here">分叉</string>
     <string name="session_turn_failed">本轮回复失败。</string>

@@ -67,7 +67,13 @@ fun ComposeBar(
     canSendOverride: Boolean = false,
 ) {
     val colors = CodegTheme.colors
-    val canSend = (text.isNotBlank() || canSendOverride) && !isInFlight
+    // Send is available while a turn runs: the prompt is queued and goes out when the
+    // current turn finishes. Only an empty composer falls back to Stop, so the button
+    // always does the thing the user is reaching for — send what they typed, or stop a
+    // turn they have nothing to add to.
+    val hasText = text.isNotBlank() || canSendOverride
+    val canSend = hasText
+    val showStop = isInFlight && !hasText
     val sendContainer by animateColorAsState(
         targetValue = if (isInFlight) colors.danger else colors.accent,
         animationSpec = tween(220),
@@ -131,8 +137,8 @@ fun ComposeBar(
             }
 
             FilledIconButton(
-                onClick = { if (isInFlight) onStop() else onSend() },
-                enabled = canSend || isInFlight,
+                onClick = { if (showStop) onStop() else onSend() },
+                enabled = canSend || showStop,
                 // A true circle. `FilledIconButton` defaults to Material's 12dp rounded
                 // square, which next to the pill-shaped input reads as a different family;
                 // iOS pairs a round send button with a rounded field.
@@ -145,16 +151,16 @@ fun ComposeBar(
                 ),
             ) {
                 AnimatedContent(
-                    targetState = isInFlight,
+                    targetState = showStop,
                     transitionSpec = {
                         (fadeIn(tween(150)) + scaleIn(tween(150), initialScale = 0.6f)) togetherWith
                             (fadeOut(tween(120)) + scaleOut(tween(120), targetScale = 0.6f))
                     },
                     label = "send-stop-icon",
-                ) { inFlight ->
+                ) { stop ->
                     Icon(
-                        imageVector = if (inFlight) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
-                        contentDescription = if (inFlight) stringResource(R.string.compose_stop) else stringResource(R.string.compose_send),
+                        imageVector = if (stop) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+                        contentDescription = if (stop) stringResource(R.string.compose_stop) else stringResource(R.string.compose_send),
                         modifier = Modifier.size(20.dp),
                     )
                 }
