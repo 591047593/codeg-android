@@ -26,6 +26,8 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -217,6 +219,11 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
         }
         if (questionId != null) JumpToQuestionButton(questionId)
         Spacer(Modifier.weight(1f))
+        // Tapping the meta line opens the token breakdown. The line is the only place a
+        // turn's usage is ever mentioned, and a one-glance "12.4k" is useless for the
+        // question people actually ask of it — how much of that was cache.
+        val usage = turn.usage
+        var showUsage by remember(turn.id) { mutableStateOf(false) }
         Text(
             meta,
             fontFamily = CodegMono,
@@ -227,7 +234,18 @@ private fun TurnFooter(turn: MessageTurn, questionId: String?, modifier: Modifie
             // intrinsic size, and this is the only piece that may be cut.
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = if (usage != null && usage.total > 0) {
+                Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable { showUsage = true }
+                    .padding(horizontal = 2.dp)
+            } else {
+                Modifier
+            },
         )
+        if (showUsage && usage != null) {
+            TurnUsageDialog(usage = usage, onDismiss = { showUsage = false })
+        }
     }
 }
 
@@ -419,4 +437,55 @@ private fun compactDuration(ms: Int): String {
     val m = whole / 60
     val s = whole % 60
     return if (s == 0) "${m}m" else "${m}m ${s}s"
+}
+
+/**
+ * One turn's token breakdown: input, output, cache read, cache write.
+ *
+ * Mirrors the desktop's coins tooltip. Cache rows are omitted at zero — an agent that
+ * does not report a split would otherwise show a misleading "Cache read 0" and read as
+ * "caching is broken" rather than "this agent does not report it".
+ */
+@Composable
+private fun TurnUsageDialog(usage: app.codeg.android.core.model.TurnUsage, onDismiss: () -> Unit) {
+    val colors = CodegTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.bgElevated,
+        title = { Text(stringResource(R.string.timeline_token_usage), color = colors.textPrimary) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                UsageRow(stringResource(R.string.timeline_token_input), usage.inputTokens)
+                if (usage.outputTokens > 0) {
+                    UsageRow(stringResource(R.string.timeline_token_output), usage.outputTokens)
+                }
+                if (usage.cacheReadInputTokens > 0) {
+                    UsageRow(stringResource(R.string.timeline_token_cache_read), usage.cacheReadInputTokens)
+                }
+                if (usage.cacheCreationInputTokens > 0) {
+                    UsageRow(stringResource(R.string.timeline_token_cache_write), usage.cacheCreationInputTokens)
+                }
+                HorizontalDivider(color = colors.hairline)
+                UsageRow(stringResource(R.string.timeline_token_total), usage.total, emphasized = true)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close), color = colors.accent) }
+        },
+    )
+}
+
+@Composable
+private fun UsageRow(label: String, value: Int, emphasized: Boolean = false) {
+    val colors = CodegTheme.colors
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, fontSize = 14.sp, color = colors.textSecondary)
+        Text(
+            String.format(java.util.Locale.getDefault(), "%,d", value),
+            fontFamily = CodegMono,
+            fontSize = 14.sp,
+            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
+            color = colors.textPrimary,
+        )
+    }
 }

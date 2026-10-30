@@ -574,6 +574,12 @@
     <string name="sessionactions_unpin">Unpin</string>
     <string name="sessionactions_pin">Pin</string>
     <string name="sessionactions_tags">Tags</string>
+    <string name="timeline_token_usage">Token usage</string>
+    <string name="timeline_token_input">Input</string>
+    <string name="timeline_token_output">Output</string>
+    <string name="timeline_token_cache_read">Cache read</string>
+    <string name="timeline_token_cache_write">Cache write</string>
+    <string name="timeline_token_total">Total</string>
     <string name="session_context_usage">Context window</string>
     <string name="session_context_used">Used</string>
     <string name="session_context_max">Limit</string>

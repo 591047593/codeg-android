@@ -574,6 +574,12 @@
     <string name="sessionactions_unpin">取消置顶</string>
     <string name="sessionactions_pin">置顶</string>
     <string name="sessionactions_tags">标签</string>
+    <string name="timeline_token_usage">Token 用量</string>
+    <string name="timeline_token_input">输入</string>
+    <string name="timeline_token_output">输出</string>
+    <string name="timeline_token_cache_read">缓存读取</string>
+    <string name="timeline_token_cache_write">缓存写入</string>
+    <string name="timeline_token_total">合计</string>
     <string name="session_context_usage">上下文窗口</string>
     <string name="session_context_used">已用</string>
     <string name="session_context_max">上限</string>
