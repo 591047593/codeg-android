@@ -46,7 +46,9 @@ class FileReferenceTest {
 
     @Test
     fun `the label defaults to the file name and brackets are escaped`() {
-        assertEquals("[Mai\\[n\\].kt](file:///a/Mai[n].kt)", FileReference.markdown("/a/Mai[n].kt"))
+        // Both halves are escaped, for different reasons: the label because brackets
+        // would end the link text, the destination because they are not path-safe.
+        assertEquals("[Mai\\[n\\].kt](file:///a/Mai%5Bn%5D.kt)", FileReference.markdown("/a/Mai[n].kt"))
     }
 
     @Test
