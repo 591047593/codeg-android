@@ -54,8 +54,19 @@ data class SessionRowItem(
  */
 fun buildSessionSections(
     folders: List<FolderDetail>,
-    conversations: List<ConversationSummary>,
+    allConversations: List<ConversationSummary>,
 ): List<SessionSection> {
+    // Two kinds of row the desktop sidebar never shows at the top level:
+    //
+    //  - `chat` rows are the hidden per-folder scratch conversations the desktop client
+    //    keeps. They were surfacing here as folder groups of their own — several groups
+    //    literally named "Chat", each holding one conversation — which is a large part
+    //    of why this list did not look like the desktop.
+    //  - delegation children belong under their parent, not beside it; the parent's
+    //    `childCount` drives the expand affordance instead.
+    val conversations = allConversations.filter {
+        it.kind.isListed && it.parentId == null
+    }
     val folderNames = SessionGrouping.folderNames(folders)
     val out = ArrayList<SessionSection>()
 

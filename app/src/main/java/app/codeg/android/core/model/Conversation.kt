@@ -14,12 +14,45 @@ data class ConversationSummary(
     val id: Int,
     val folderId: Int,
     val title: String? = null,
+    /**
+     * True when a user action named this row (a rename, or a fork's `[Fork]` prefix),
+     * so the server's auto-title backfill leaves it alone. Display-only here.
+     */
+    val titleLocked: Boolean = false,
     val agentType: AgentType,
     val status: ConversationStatus,
+    /**
+     * What kind of row this is: `regular`, `chat`, `loop` or `delegate`.
+     *
+     * Drives grouping. Without it the client could not tell a per-conversation "Chat"
+     * scratch row from a real project conversation, so every hidden scratch row appeared
+     * as a folder group of its own.
+     */
+    val kind: ConversationKind = ConversationKind.REGULAR,
     val model: String? = null,
     val gitBranch: String? = null,
     val externalId: String? = null,
     val messageCount: Int = 0,
+    /**
+     * Direct, non-deleted delegation children.
+     *
+     * `> 0` means this row is expandable into its sub-session subtree — the sidebar
+     * chevron the desktop client draws.
+     */
+    val childCount: Int = 0,
+    /** The parent conversation when this row is a delegation child. */
+    val parentId: Int? = null,
+    val parentToolUseId: String? = null,
+    val delegationCallId: String? = null,
+    /** The working directory this ran in when it differs from its folder's path. */
+    val originCwd: String? = null,
+    /** The assistant a delegation child ran as. */
+    val assistantId: Int? = null,
+    val assistantName: String? = null,
+    /** `"cli"` for a conversation a `codeg-cli` run started; absent otherwise. */
+    val source: String? = null,
+    /** Tags attached to this conversation, ascending. Empty means none. */
+    val tagIds: List<Int> = emptyList(),
     @Serializable(with = InstantSerializer::class)
     val createdAt: Instant,
     @Serializable(with = InstantSerializer::class)
@@ -110,6 +143,19 @@ data class ConversationTurnsPage(
     val prefixHash: String = "",
     /** Fingerprint the client's current window must carry for the join to be legal. */
     val prefixHashBeforeIndex: String = "",
+)
+
+/**
+ * One entry in a conversation's message index (`get_folder_conversation_outline`).
+ *
+ * The server returns the history above a loaded window reduced to what a navigator
+ * needs, so building the index costs one small response rather than the transcript.
+ */
+@Serializable
+data class ConversationOutline(
+    val turns: List<MessageTurn> = emptyList(),
+    val turnsTotal: Int = 0,
+    val prefixHash: String = "",
 )
 
 /** Returned by `acp_find_connection_for_conversation` when a live ACP

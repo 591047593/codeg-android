@@ -1,6 +1,8 @@
 package app.codeg.android.core.network
 
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.ConversationOutlineBody
+import app.codeg.android.core.model.ConversationOutline
 import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationIdBody
@@ -281,6 +283,30 @@ class CodegClient(
                 encode(ConversationTurnsBody(id, beforeIndex, limit)),
             ),
             ConversationTurnsPage.serializer(),
+        )
+
+    /**
+     * The delegation children of [conversationId], newest first.
+     *
+     * The desktop sidebar expands a row into this list (its chevron is driven by
+     * `childCount`); the mobile list flattens the same data one level deep.
+     */
+    suspend fun listChildConversations(conversationId: Int): List<ConversationSummary> =
+        decode(
+            send("list_child_conversations", encode(ConversationIdBody(conversationId))),
+            ListSerializer(ConversationSummary.serializer()),
+        )
+
+    /**
+     * The messages above the loaded window, reduced to what a navigator needs.
+     *
+     * Used to build the in-session message index without transferring whole transcripts:
+     * the server returns one entry per turn with its id and a preview.
+     */
+    suspend fun conversationOutline(id: Int, beforeIndex: Int): ConversationOutline =
+        decode(
+            send("get_folder_conversation_outline", encode(ConversationOutlineBody(id, beforeIndex))),
+            ConversationOutline.serializer(),
         )
 
     /** Create a conversation row up front and return its id (a bare JSON int). */

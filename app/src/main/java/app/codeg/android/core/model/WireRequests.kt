@@ -67,6 +67,13 @@ data class ConversationTurnsBody(
     val limit: Int,
 )
 
+/** Body for `get_folder_conversation_outline` — the message index above a window. */
+@Serializable
+data class ConversationOutlineBody(
+    val conversationId: Int,
+    val beforeIndex: Int,
+)
+
 @Serializable
 data class CreateConversationBody(
     val folderId: Int,
