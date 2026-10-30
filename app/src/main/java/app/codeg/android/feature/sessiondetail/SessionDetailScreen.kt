@@ -352,8 +352,7 @@ fun SessionDetailScreen(
                 // The current model / effort / mode, read out where the desktop client
                 // shows it. Opens the same editor the top-bar avatar does.
                 SessionSettingsChip(
-                    modes = ui.modes,
-                    configOptions = ui.configOptions,
+                    summary = ui.settingsSummary,
                     onClick = { showOptions = true },
                     modifier = Modifier.padding(start = 10.dp, top = 2.dp),
                 )

@@ -36,13 +36,11 @@ import app.codeg.android.core.model.SessionModeState
  */
 @Composable
 fun SessionSettingsChip(
-    modes: SessionModeState?,
-    configOptions: List<SessionConfigOption>,
+    summary: List<String>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    val summary = sessionSettingsSummary(modes, configOptions)
     if (summary.isEmpty()) return
 
     Row(

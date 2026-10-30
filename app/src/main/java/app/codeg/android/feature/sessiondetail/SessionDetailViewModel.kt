@@ -1876,7 +1876,7 @@ class SessionDetailViewModel @Inject constructor(
                 configOptions = snapshot.configOptions,
                 initialModeId = snapshot.modes?.currentModeId,
                 initialConfig = snapshot.configOptions.currentValues(),
-            )
+            ).also { publishSettingsSummary(it) }
         }
         // No live session (draft / idle) — probe the catalog and pre-select the remembered
         // pick so the sheet opens on the user's last-used mode/config, not the server default.
@@ -1890,7 +1890,30 @@ class SessionDetailViewModel @Inject constructor(
             val saved = prefs.configValues?.get(opt.id)?.takeIf { it in opt.kind.allSelectValues() }
             opt.id to (saved ?: opt.kind.currentValue ?: "")
         }.filterValues { it.isNotEmpty() }
-        return AgentOptionsData(modes, options, modeId, config)
+        return AgentOptionsData(modes, options, modeId, config).also { publishSettingsSummary(it) }
+    }
+
+    /**
+     * Refresh the composer chip's text from the options just loaded.
+     *
+     * The values come from [AgentOptionsData.initialConfig] rather than the raw
+     * `currentValue` fields, because a draft session's selection is the remembered pick,
+     * not the server default — the chip has to show what will actually be used.
+     */
+    private fun publishSettingsSummary(data: AgentOptionsData) {
+        val effective = data.configOptions.map { option ->
+            val value = data.initialConfig[option.id]?.takeIf { it.isNotBlank() }
+            if (value == null) option else {
+                option.copy(kind = option.kind.copy(currentValue = value))
+            }
+        }
+        val modes = data.modes?.let { m ->
+            data.initialModeId?.let { id -> m.copy(currentModeId = id) } ?: m
+        }
+        val summary = sessionSettingsSummary(modes, effective)
+        if (summary != _ui.value.settingsSummary) {
+            _ui.update { it.copy(settingsSummary = summary) }
+        }
     }
 
     /** A live connection to apply options to. Reuses a cached/live connection, and — for a
@@ -2094,6 +2117,14 @@ data class SessionDetailUiState(
     val liveFromReattach: Boolean = false,
     val sessionStats: SessionStats? = null,
     val agent: AgentType = AgentType.CLAUDE_CODE,
+    /**
+     * The active session settings, already ranked and labelled — "Opus 5.5 / High /
+     * Plan".
+     *
+     * Resolved in the view model rather than in composition so the chip has nothing to
+     * compute and the same strings can be asserted in a test.
+     */
+    val settingsSummary: List<String> = emptyList(),
     val isInFlight: Boolean = false,
     val sendStatus: String? = null,
     val notice: String? = null,
