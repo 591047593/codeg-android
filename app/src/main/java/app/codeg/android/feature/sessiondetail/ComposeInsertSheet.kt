@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import app.codeg.android.core.model.AvailableCommandInfo
 import app.codeg.android.core.model.DirectoryItem
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.model.QuickMessage
+import kotlinx.coroutines.launch
 import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Draft transforms for the compose "+" inserts. Port of iOS `ComposeInsertModel`. */
@@ -84,6 +86,10 @@ fun ComposeInsertSheet(
     var fileEntries by remember { mutableStateOf<List<DirectoryItem>>(emptyList()) }
     var fileQuery by remember { mutableStateOf("") }
     var knownIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // Directory navigation happens inside click callbacks, which are not suspend; the
+    // listing call is a network round trip, so it runs on this scope and writes back
+    // through the state above.
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(source) {
         loading = true
@@ -133,20 +139,19 @@ fun ComposeInsertSheet(
                         query = fileQuery,
                         onQuery = { fileQuery = it },
                         onOpenDir = { path ->
-                            fileEntries = runCatching { viewModel.listDirectory(path) }.getOrDefault(emptyList())
                             fileDir = path
                             fileQuery = ""
+                            scope.launch { fileEntries = viewModel.listDirectory(path) }
                         },
                         onUp = {
+                            val root = viewModel.folderPathForInsert
                             val current = fileDir
-                            val parent = current?.substringBeforeLast('/', "")
-                            if (!current.isNullOrEmpty() && current != viewModel.folderPathForInsert) {
-                                val target = if (parent.isEmpty()) viewModel.folderPathForInsert else parent
-                                if (target != null) {
-                                    fileEntries = runCatching { viewModel.listDirectory(target) }.getOrDefault(emptyList())
-                                    fileDir = target
-                                    fileQuery = ""
-                                }
+                            if (root != null && current != null && current != root) {
+                                val parent = current.substringBeforeLast('/', "")
+                                val target = if (parent.isEmpty() || parent.length < root.length) root else parent
+                                fileDir = target
+                                fileQuery = ""
+                                scope.launch { fileEntries = viewModel.listDirectory(target) }
                             }
                         },
                         onPick = { path ->
