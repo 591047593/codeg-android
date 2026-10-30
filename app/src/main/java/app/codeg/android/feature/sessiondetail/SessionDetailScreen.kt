@@ -393,11 +393,21 @@ fun SessionDetailScreen(
                 }
                 // The current model / effort / mode, read out where the desktop client
                 // shows it. Opens the same editor the top-bar avatar does.
-                SessionSettingsChip(
-                    summary = ui.settingsSummary,
-                    onClick = { showOptions = true },
-                    modifier = Modifier.padding(start = 10.dp, top = 2.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SessionSettingsChip(
+                        summary = ui.settingsSummary,
+                        onClick = { showOptions = true },
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // Context-window fullness sits at the trailing edge of the same row:
+                    // it is status, not a control, and on a phone every extra line above
+                    // the composer costs reading area.
+                    ContextUsageRing(stats = ui.sessionStats)
+                }
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
                 ComposeBar(
                     text = draft,

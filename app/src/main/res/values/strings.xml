@@ -574,6 +574,11 @@
     <string name="sessionactions_unpin">Unpin</string>
     <string name="sessionactions_pin">Pin</string>
     <string name="sessionactions_tags">Tags</string>
+    <string name="session_context_usage">Context window</string>
+    <string name="session_context_used">Used</string>
+    <string name="session_context_max">Limit</string>
+    <string name="session_context_percent">Share</string>
+    <string name="common_close">Close</string>
     <string name="session_outline_title">Messages</string>
     <string name="session_outline_empty">No messages yet.</string>
     <string name="session_outline_untitled">(no text)</string>

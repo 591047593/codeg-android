@@ -574,6 +574,11 @@
     <string name="sessionactions_unpin">取消置顶</string>
     <string name="sessionactions_pin">置顶</string>
     <string name="sessionactions_tags">标签</string>
+    <string name="session_context_usage">上下文窗口</string>
+    <string name="session_context_used">已用</string>
+    <string name="session_context_max">上限</string>
+    <string name="session_context_percent">占比</string>
+    <string name="common_close">关闭</string>
     <string name="session_outline_title">消息</string>
     <string name="session_outline_empty">还没有消息。</string>
     <string name="session_outline_untitled">（无文字）</string>
