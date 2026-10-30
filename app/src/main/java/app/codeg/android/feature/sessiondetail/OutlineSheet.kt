@@ -73,11 +73,11 @@ fun OutlineSheet(
     // usable for "where did I ask about the parser".
     val shown = remember(entries, query) {
         val q = query.trim()
-        if (q.isEmpty()) entries
-        else entries.filter {
-            it.preview.contains(q, ignoreCase = true) ||
-                it.role.name.contains(q, ignoreCase = true)
-        }
+        // Preview only. Matching `role.name` also matched the literal words "USER" and
+        // "ASSISTANT", so typing "user" listed every prompt and typing "ass" matched
+        // every reply — a filter that looks like it is doing something while ignoring
+        // what was typed. Role is already carried by the row's icon.
+        if (q.isEmpty()) entries else entries.filter { it.preview.contains(q, ignoreCase = true) }
     }
     // Open at the newest message: that is where the reader is, and the turn they are
     // most likely to jump back to is near the end.

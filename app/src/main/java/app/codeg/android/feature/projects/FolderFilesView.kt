@@ -82,6 +82,10 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
     LaunchedEffect(dir, refreshToken) {
         result = null
         result = runCatching { client.listDirectoryWithFiles(dir) }
+        // Clear the pull-to-refresh spinner here as well as after the status call: either
+        // request can be the last to finish, and a listing that fails used to leave the
+        // spinner turning for ever because only the status effect cleared it.
+        refreshing = false
     }
 
     // Working-tree state for the whole repo, once per directory change. The listing
@@ -92,16 +96,24 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
     // Keyed on the repo root, not the directory: `git_status` reports the whole tree, so
     // re-fetching it on every folder the user opens would pay a full status walk per tap
     // for data that has not changed.
+    // The repo-root-relative prefix of `rootPath`, when the two differ; null when
+    // `rootPath` is the repository root (the common case) or cannot be determined.
+    var repoRootRelative by remember(rootPath) { mutableStateOf<String?>(null) }
     var changes by remember(rootPath) { mutableStateOf<Map<String, GitChange>>(emptyMap()) }
     var dirChanges by remember(rootPath) { mutableStateOf<Map<String, GitChange>>(emptyMap()) }
     LaunchedEffect(rootPath, refreshToken) {
         val statuses = runCatching { client.gitStatus(rootPath) }.getOrDefault(emptyList())
+        // `git status` reports paths relative to the *repository root*, while the browser
+        // may be rooted at a subdirectory of it. Keying straight on the reported path
+        // coloured nothing in that case. `resolveChange` below accepts either reading.
         changes = statuses.associate { it.path to it.change }
+        repoRootRelative = repoPrefixOf(statuses.map { it.path }, rootPath)
         // A directory row shows the strongest change anywhere beneath it, so a folded
         // folder still signals that something inside it is dirty.
         val rolled = mutableMapOf<String, GitChange>()
         for ((path, change) in changes) {
-            var prefix = path.substringBeforeLast('/', "")
+            val local = repoRootRelative?.let { stripPrefix(path, it) } ?: path
+            var prefix = local.substringBeforeLast('/', "")
             while (prefix.isNotEmpty()) {
                 rolled[prefix] = strongest(rolled[prefix], change)
                 prefix = prefix.substringBeforeLast('/', "")
@@ -147,7 +159,8 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
                 }
                 items(items, key = { it.path }) { item ->
                     val rel = if (item.path.startsWith("$rootPath/")) item.path.removePrefix("$rootPath/") else item.path
-                    val change = if (item.isDir) dirChanges[rel] else changes[rel]
+                    val key = repoRootRelative?.let { "$it/$rel" } ?: rel
+                    val change = if (item.isDir) dirChanges[key] ?: dirChanges[rel] else changes[key] ?: changes[rel]
                     FileRow(item, change) {
                         if (item.isDir) stack = stack + item.path else previewPath = item.path
                     }
@@ -300,4 +313,33 @@ private fun strongest(current: GitChange?, next: GitChange): GitChange = when {
     current == GitChange.ADDED || next == GitChange.ADDED -> GitChange.ADDED
     current == GitChange.UNTRACKED || next == GitChange.UNTRACKED -> GitChange.UNTRACKED
     else -> current
+}
+
+/**
+ * The part of [rootPath] below the repository root, or null when they are the same.
+ *
+ * There is no endpoint that asks git for its top level, so this infers it: every
+ * reported path is repo-root-relative, and `rootPath` is an absolute path into the same
+ * tree. The longest suffix of `rootPath` that all reported paths can be matched against
+ * is therefore the prefix to strip. With no changes at all there is nothing to infer from
+ * and null means "treat the two as identical", which is right for the usual case of a
+ * folder that *is* the repo.
+ */
+private fun repoPrefixOf(reportedPaths: List<String>, rootPath: String): String? {
+    if (reportedPaths.isEmpty()) return null
+    val root = rootPath.trimEnd('/')
+    // Prefer the longest suffix of `root` that is a proper prefix of some reported path.
+    val segments = root.split('/')
+    for (i in 1 until segments.size) {
+        val candidate = segments.drop(i).joinToString("/")
+        if (candidate.isEmpty()) continue
+        if (reportedPaths.any { it.startsWith("$candidate/") }) return candidate
+    }
+    return null
+}
+
+/** [path] without a leading `prefix/`, or null when it does not start with it. */
+private fun stripPrefix(path: String, prefix: String): String? {
+    val p = prefix.trim('/')
+    return if (p.isEmpty()) path else if (path.startsWith("$p/")) path.removePrefix("$p/") else null
 }

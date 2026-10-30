@@ -60,6 +60,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -241,14 +242,17 @@ fun SessionDetailScreen(
             .distinctUntilChanged()
             .collect { nearTop -> if (nearTop) viewModel.loadOlderTurns() }
     }
-    // Pre-built id → index map. The previous `indexOfFirst` scanned every node per
-    // click; on a long transcript that is a linear walk on the main thread each time a
-    // citation is tapped.
-    val scrollToId: (String) -> Unit = remember(nodes) {
-        val indexById: Map<String, Int> = nodes.withIndex().associate { (i, n) -> n.id to i }
-        return@remember { id: String ->
-            val idx = indexById[id]
-            if (idx != null) {
+    // The id → index map, rebuilt with the node list. The scroll action itself is NOT
+    // captured in the same `remember`: a navigator jump pages history in first, which
+    // changes `nodes` *after* the callback was handed to the sheet — a closure over the
+    // old map would then resolve the target's stale index, or miss it entirely.
+    val indexById: Map<String, Int> = remember(nodes) {
+        nodes.withIndex().associate { (i, n) -> n.id to i }
+    }
+    val latestIndexById = rememberUpdatedState(indexById)
+    val scrollToId: (String) -> Unit = remember {
+        { id: String ->
+            latestIndexById.value[id]?.let { idx ->
                 stick = false // unpin so the stream doesn't immediately yank us back down
                 scope.launch { listState.animateScrollToItem(idx) }
             }
@@ -500,7 +504,11 @@ fun SessionDetailScreen(
                         }
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize(),
+                            // `weight`, not `fillMaxSize`: in a Column the latter asks for
+                            // the whole parent height regardless of the tags row above it,
+                            // which pushed that row off-screen (and, at a large font scale,
+                            // off the top of the window entirely).
+                            modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                         ) {
                             items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->

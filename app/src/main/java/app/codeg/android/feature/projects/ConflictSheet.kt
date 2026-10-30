@@ -173,6 +173,9 @@ fun ConflictSheet(
                     onResolved = {
                         openFile = null
                         scope.launch {
+                            // Stay in the sheet: a conflicted merge is usually several
+                            // files, and closing on the first resolution made the user
+                            // reopen it (and re-enter the Changes tab) once per file.
                             loadFiles()
                             onResolved()
                         }

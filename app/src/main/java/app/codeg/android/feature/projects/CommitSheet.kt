@@ -92,6 +92,28 @@ fun CommitSheet(
     var generating by remember { mutableStateOf(false) }
     var generateError by remember { mutableStateOf<String?>(null) }
     var generateJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // The request id of the run in flight, kept separately from the job so leaving the
+    // composition can still tell the server to stop: dropping the HTTP call ends the
+    // handler's future, but the explicit cancel is what the endpoint exists for and it is
+    // the only signal that survives a socket that is already gone.
+    var generateRequestId by remember { mutableStateOf<String?>(null) }
+    var generateClient by remember { mutableStateOf<CodegClient?>(null) }
+    // Leaving the sheet (back, dismiss, committing) must not leave an agent writing a
+    // message nobody will read. `rememberCoroutineScope` is cancelled the moment the
+    // composition leaves, so the cancel has to run in a scope of its own — otherwise the
+    // request would be dropped exactly when it is needed.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            val requestId = generateRequestId
+            val active = generateClient
+            generateJob?.cancel()
+            if (requestId != null && active != null) {
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    runCatching { active.gitCancelCommitMessage(requestId) }
+                }
+            }
+        }
+    }
 
     suspend fun load() {
         loadError = null
@@ -209,6 +231,8 @@ fun CommitSheet(
                                             generateError = null
                                             generating = true
                                             val requestId = java.util.UUID.randomUUID().toString()
+                                            generateRequestId = requestId
+                                            generateClient = client
                                             generateJob = scope.launch {
                                                 try {
                                                     val generated = client.gitGenerateCommitMessage(
@@ -231,6 +255,8 @@ fun CommitSheet(
                                                 } finally {
                                                     generating = false
                                                     generateJob = null
+                                                    generateRequestId = null
+                                                    generateClient = null
                                                 }
                                             }
                                         },

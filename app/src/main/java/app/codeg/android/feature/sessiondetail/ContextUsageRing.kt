@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,7 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
@@ -66,14 +64,17 @@ fun ContextUsageRing(stats: SessionStats?, modifier: Modifier = Modifier) {
     val animated by animateFloatAsState(targetValue = fraction, animationSpec = tween(400), label = "ctx")
     var showDetail by remember { mutableStateOf(false) }
 
+    // An 18dp ring is well under the 48dp minimum touch target, and the canvas draws
+    // nothing outside the arc, so the tap area is padded out invisibly rather than
+    // making the ring itself bigger.
     Canvas(
         Modifier
-            .size(18.dp)
-            .clip(RoundedCornerShape(50))
+            .size(40.dp)
             .clickable(
                 onClickLabel = stringResource(R.string.session_context_usage),
                 role = Role.Button,
-            ) { showDetail = true },
+            ) { showDetail = true }
+            .padding(11.dp),
     ) {
         val stroke = 2.2.dp.toPx()
         val inset = stroke / 2

@@ -86,7 +86,9 @@ fun ProjectDetailScreen(
             operation = conflictOperation ?: "merge",
             onDismiss = { showConflicts = false },
             onResolved = {
-                showConflicts = false
+                // Only refresh the underlying lists. The sheet closes itself from its own
+                // Abort path or when the user dismisses it — closing here would kick the
+                // user out after resolving the first of several conflicted files.
                 viewModel.load()
             },
         )
@@ -157,8 +159,14 @@ fun ProjectDetailScreen(
                             when (tab) {
                                 ProjectTab.FILES -> FolderFilesView(client, folder.path)
                                 ProjectTab.CHANGES -> {
-                                    LaunchedEffect(folder.path) {
-                                        conflictOperation = viewModel.detectConflictOperation(folder.path)
+                                    // Re-detect whenever the tab is shown after a git
+                                    // operation: a pull that just conflicted, or an
+                                    // abort that just cleared one, changes the answer and
+                                    // the strip is driven entirely by it.
+                                    LaunchedEffect(folder.path, ui.gitBusy, ui.gitBanner) {
+                                        if (!ui.gitBusy) {
+                                            conflictOperation = viewModel.detectConflictOperation(folder.path)
+                                        }
                                     }
                                     FolderChangesView(
                                         viewModel, client, folder.path,

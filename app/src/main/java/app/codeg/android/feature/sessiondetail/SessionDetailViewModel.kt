@@ -168,6 +168,8 @@ class SessionDetailViewModel @Inject constructor(
     private var windowTotal: Int = 0
     /** Guards against issuing overlapping page requests while one is in flight. */
     private var pagingJob: Job? = null
+    /** Serialises every older-turn page, whoever started it (scroll trigger or jump). */
+    private val pagingMutex = kotlinx.coroutines.sync.Mutex()
     /** Wall-clock time before which a failed older-turns page will not be retried. */
     private var pagingRetryAt: Long = 0L
     /** Guards `load()` against overlapping runs (retry spam, server-switch watcher). */
@@ -458,6 +460,19 @@ class SessionDetailViewModel @Inject constructor(
      * collapse-a-storm-of-reports behaviour is unchanged.
      */
     private suspend fun pageOlder(): Boolean {
+        // One pager at a time. `loadOlderTurns` guards with `pagingJob`, but `jumpToTurn`
+        // calls straight through it — and the two would otherwise both read the same
+        // `windowOffset`, both request the same `beforeIndex`, and both prepend, which
+        // splices the same page twice into the transcript.
+        if (!pagingMutex.tryLock()) return false
+        try {
+            return pageOlderLocked()
+        } finally {
+            pagingMutex.unlock()
+        }
+    }
+
+    private suspend fun pageOlderLocked(): Boolean {
         if (System.currentTimeMillis() < pagingRetryAt) return false
         val current = _ui.value
         if (!current.hasOlderTurns || current.turns.isEmpty()) return false
@@ -1307,8 +1322,16 @@ class SessionDetailViewModel @Inject constructor(
         }
         closeStream()
         clearInteractivePrompts()
-        _ui.update { it.copy(notice = message) }
+        // Clear the in-flight flag *before* anything reads it: `send` refuses to start a
+        // turn while it is set, so a queued prompt flushed below would be re-queued and
+        // the queue would never drain.
+        _ui.update { it.copy(isInFlight = false, notice = message) }
         reconcileAfterTurn()
+        // A prompt queued while this turn ran has to go somewhere. Without this it sat in
+        // the queue for ever — the composer kept showing "1 queued" and the only way to
+        // clear it was to press Stop, which discards the text. A failed turn is exactly
+        // when the user most likely has a follow-up waiting.
+        flushNextQueued()
     }
 
     private fun handleStreamEnded(gen: Int, reason: String?) {
@@ -1609,8 +1632,9 @@ class SessionDetailViewModel @Inject constructor(
         outlineLoading = true
         _ui.update { it.copy(outlineLoading = true) }
         viewModelScope.launch {
-            val above = if (windowOffset > 0) {
-                runCatching { c.conversationOutline(id, windowOffset) }
+            val offset = windowOffset
+            val above = if (offset > 0) {
+                runCatching { c.conversationOutline(id, offset) }
                     .getOrElse { e ->
                         outlineLoading = false
                         _ui.update { it.copy(outlineLoading = false, notice = e.displayMessage(appContext)) }
@@ -1623,6 +1647,11 @@ class SessionDetailViewModel @Inject constructor(
             // The outline's turns are already reduced to id + a one-block preview by the
             // server; the window's own turns carry full blocks, so only the pieces the
             // navigator draws are kept here.
+            //
+            // `outlineBuiltAt` records which window this index was cut against: paging
+            // upward moves the window, and an index that still lists turns from the old
+            // boundary would show duplicates (the same turn once from the outline, once
+            // from the window). See [outlineStale].
             val entries = buildList {
                 for (t in above.turns) {
                     add(OutlineEntry(t.id, t.role, previewOf(t), t.timestamp))
@@ -1631,12 +1660,25 @@ class SessionDetailViewModel @Inject constructor(
                     add(OutlineEntry(t.id, t.role, previewOf(t), t.timestamp))
                 }
             }
+            outlineBuiltAt = offset
             outlineLoading = false
             _ui.update {
                 it.copy(outline = entries, outlineLoading = false)
             }
         }
     }
+
+    /** The `windowOffset` [loadOutline] built its index against. */
+    private var outlineBuiltAt = -1
+
+    /**
+     * True once the loaded window has moved away from the one the index was built for.
+     *
+     * The navigator's list would otherwise keep names of turns that are now also in the
+     * window (duplicated) and miss the pages loaded since.
+     */
+    private val outlineStale: Boolean
+        get() = _ui.value.outline.isNotEmpty() && outlineBuiltAt != windowOffset
 
     private var outlineLoading = false
 
@@ -1659,10 +1701,33 @@ class SessionDetailViewModel @Inject constructor(
                 if (!pageOlder()) break
             }
             if (_ui.value.turns.any { it.id == turnId }) {
+                // `turns` is updated synchronously at the end of the page, but the
+                // flattened `persistedNodes` the list scrolls by are rebuilt on a
+                // background dispatcher. Handing the id over immediately made the scroll
+                // resolve against the previous node list — a miss on the first jump after
+                // a page-in. Wait for the target's node to exist.
+                awaitNode(turnId)
                 onRevealed(turnId)
+                // Paging moved the window, so the index that was just used is out of date;
+                // refresh it in the background for the next open rather than leaving a
+                // list with holes in it.
+                if (outlineStale) loadOutline()
             } else {
                 _ui.update { it.copy(notice = appContext.getString(R.string.session_jump_not_found)) }
             }
+        }
+    }
+
+    /**
+     * Suspend until [turnId] appears in the flattened timeline, or give up.
+     *
+     * Bounded: the node list is rebuilt off the main thread and normally lands within a
+     * frame or two, but a rebuild superseded by another one would never publish this id.
+     */
+    private suspend fun awaitNode(turnId: String) {
+        repeat(AWAIT_NODE_TICKS) {
+            if (_ui.value.persistedNodes.any { it.id == turnId }) return
+            kotlinx.coroutines.delay(AWAIT_NODE_INTERVAL_MS)
         }
     }
 
@@ -2317,13 +2382,22 @@ data class OutlineEntry(
  * about X", and a tool name is never that.
  */
 private fun previewOf(turn: MessageTurn): String {
-    val text = turn.blocks
+    // One pass over the blocks, first non-blank text wins. The previous version built two
+    // filtered lists per turn just to fall back to an empty string, and a prompt that was
+    // only an image still shows nothing — which is honest, and the row's icon and
+    // timestamp still place it.
+    val text = turn.blocks.asSequence()
         .filterIsInstance<ContentBlock.Text>()
         .firstOrNull { it.text.isNotBlank() }
         ?.text
-        ?: turn.blocks.filterIsInstance<ContentBlock.Text>().firstOrNull()?.text
-        ?: ""
-    val line = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+        .orEmpty()
+    // A prompt is often several paragraphs; the navigator only has room for the first
+    // line, and collapsing whitespace here is what keeps a markdown heading from
+    // rendering its `#` as the preview.
+    val line = text.lineSequence()
+        .map { it.trim().trimStart('#', '>', '-', '*', ' ').trim() }
+        .firstOrNull { it.isNotEmpty() }
+        .orEmpty()
     return if (line.length > PREVIEW_MAX_CHARS) line.take(PREVIEW_MAX_CHARS) + "…" else line
 }
 
@@ -2550,6 +2624,10 @@ private const val INITIAL_TURN_WINDOW = 120
  */
 /** Most pages a single jump will page in before giving up. */
 private const val MAX_JUMP_PAGES = 40
+
+/** How long a navigator jump waits for the rebuilt node list, in 20ms ticks (≈1s). */
+private const val AWAIT_NODE_TICKS = 50
+private const val AWAIT_NODE_INTERVAL_MS = 20L
 
 private const val MIN_TURN_WINDOW = 1
 

@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -122,7 +124,7 @@ fun ComposeInsertSheet(
                 onSelect = { source = sources[it] },
             )
 
-            Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 420.dp)) {
+            Box(Modifier.fillMaxWidth().height(420.dp)) {
                 when {
                     loading -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = colors.accent) }
                     source == InsertSource.QUICK -> InsertList(quick.isEmpty(), stringResource(R.string.insert_empty_quick)) {
@@ -138,9 +140,11 @@ fun ComposeInsertSheet(
                         entries = fileEntries,
                         query = fileQuery,
                         onQuery = { fileQuery = it },
+                        // The filter deliberately survives a directory change: the user
+                        // is usually looking for a name, not for one particular folder, so
+                        // clearing it on every step meant retyping it.
                         onOpenDir = { path ->
                             fileDir = path
-                            fileQuery = ""
                             scope.launch { fileEntries = viewModel.listDirectory(path) }
                         },
                         onUp = {
@@ -148,10 +152,15 @@ fun ComposeInsertSheet(
                             val current = fileDir
                             if (root != null && current != null && current != root) {
                                 val parent = current.substringBeforeLast('/', "")
-                                val target = if (parent.isEmpty() || parent.length < root.length) root else parent
-                                fileDir = target
-                                fileQuery = ""
-                                scope.launch { fileEntries = viewModel.listDirectory(target) }
+                                // Never step above the session's folder: `parent` is a
+                                // plain string prefix, so compare by containment rather
+                                // than by length — a sibling directory can be longer than
+                                // the root and a length check would wrongly accept it.
+                                val target = if (parent.length >= root.length && parent.startsWith(root)) parent else root
+                                if (target != current) {
+                                    fileDir = target
+                                    scope.launch { fileEntries = viewModel.listDirectory(target) }
+                                }
                             }
                         },
                         onPick = { path ->
@@ -233,7 +242,10 @@ private fun InsertFilesBrowser(
             .sortedWith(compareByDescending<DirectoryItem> { it.isDir }.thenBy { it.name.lowercase() })
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // `fillMaxHeight` + a weighted list: the caller bounds this in height, and a
+    // LazyColumn inside a Column without a weight is measured with an infinite maximum
+    // height — it then either throws or lays out a single row.
+    Column(Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (dir != root) {
                 Text(
@@ -270,7 +282,7 @@ private fun InsertFilesBrowser(
                 Text(stringResource(R.string.insert_empty_files), fontSize = 13.sp, color = colors.textTertiary)
             }
         } else {
-            LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(shown, key = { it.path }) { entry ->
                     InsertRow(
                         title = entry.name,
