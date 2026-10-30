@@ -53,6 +53,7 @@ import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.designsystem.theme.CodegMono
 
 /** Recursive file browser with an internal directory stack + file preview. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun FolderFilesView(client: CodegClient, rootPath: String) {
     val colors = CodegTheme.colors
