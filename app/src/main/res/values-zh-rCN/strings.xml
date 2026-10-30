@@ -842,6 +842,10 @@
     <string name="cred_invalid_token">令牌无效。</string>
 
     <!-- ===== Session Detail · Insert sheet ===== -->
+    <string name="insert_files">文件</string>
+    <string name="insert_files_folder">文件夹</string>
+    <string name="insert_files_filter">筛选当前文件夹</string>
+    <string name="insert_empty_files">这里没有内容。</string>
     <string name="insert_quick_messages">快捷消息</string>
     <string name="insert_experts">专家</string>
     <string name="insert_commands">命令</string>

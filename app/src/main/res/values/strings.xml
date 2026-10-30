@@ -855,6 +855,10 @@
     <string name="cred_invalid_token">Invalid token.</string>
 
     <!-- ===== Session Detail · Insert sheet ===== -->
+    <string name="insert_files">Files</string>
+    <string name="insert_files_folder">Folder</string>
+    <string name="insert_files_filter">Filter this folder</string>
+    <string name="insert_empty_files">Nothing here.</string>
     <string name="insert_quick_messages">Quick Messages</string>
     <string name="insert_experts">Experts</string>
     <string name="insert_commands">Commands</string>

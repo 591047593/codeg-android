@@ -34,10 +34,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
+import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.component.CodegSegmented
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.AvailableCommandInfo
+import app.codeg.android.core.model.DirectoryItem
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.model.QuickMessage
 import app.codeg.android.core.designsystem.theme.CodegMono
@@ -59,7 +61,7 @@ object ComposeInsert {
     }
 }
 
-private enum class InsertSource { QUICK, EXPERTS, COMMANDS }
+private enum class InsertSource { QUICK, FILES, EXPERTS, COMMANDS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,12 +77,23 @@ fun ComposeInsertSheet(
     var quick by remember { mutableStateOf<List<QuickMessage>>(emptyList()) }
     var experts by remember { mutableStateOf<List<ExpertListItem>>(emptyList()) }
     var commands by remember { mutableStateOf<List<AvailableCommandInfo>>(emptyList()) }
+    // Directory browser state for the Files source: one level at a time, rooted at the
+    // session's folder, because a phone cannot show a full tree and the flat listing
+    // the server returns is already everything a picker needs.
+    var fileDir by remember { mutableStateOf<String?>(null) }
+    var fileEntries by remember { mutableStateOf<List<DirectoryItem>>(emptyList()) }
+    var fileQuery by remember { mutableStateOf("") }
     var knownIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(source) {
         loading = true
         when (source) {
             InsertSource.QUICK -> quick = viewModel.loadQuickMessages()
+            InsertSource.FILES -> {
+                val root = viewModel.folderPathForInsert
+                fileDir = root
+                fileEntries = root?.let { r -> runCatching { viewModel.listDirectory(r) }.getOrDefault(emptyList()) } ?: emptyList()
+            }
             InsertSource.EXPERTS -> { experts = viewModel.loadExpertsForInsert(); knownIds = viewModel.knownExpertIds() }
             InsertSource.COMMANDS -> commands = viewModel.loadSlashCommands()
         }
@@ -93,6 +106,7 @@ fun ComposeInsertSheet(
             val sources = InsertSource.entries
             val sourceLabels = listOf(
                 stringResource(R.string.insert_quick_messages),
+                stringResource(R.string.insert_files),
                 stringResource(R.string.insert_experts),
                 stringResource(R.string.insert_commands),
             )
@@ -112,6 +126,34 @@ fun ComposeInsertSheet(
                             }
                         }
                     }
+                    source == InsertSource.FILES -> InsertFilesBrowser(
+                        dir = fileDir,
+                        root = viewModel.folderPathForInsert,
+                        entries = fileEntries,
+                        query = fileQuery,
+                        onQuery = { fileQuery = it },
+                        onOpenDir = { path ->
+                            fileEntries = runCatching { viewModel.listDirectory(path) }.getOrDefault(emptyList())
+                            fileDir = path
+                            fileQuery = ""
+                        },
+                        onUp = {
+                            val current = fileDir
+                            val parent = current?.substringBeforeLast('/', "")
+                            if (!current.isNullOrEmpty() && current != viewModel.folderPathForInsert) {
+                                val target = if (parent.isEmpty()) viewModel.folderPathForInsert else parent
+                                if (target != null) {
+                                    fileEntries = runCatching { viewModel.listDirectory(target) }.getOrDefault(emptyList())
+                                    fileDir = target
+                                    fileQuery = ""
+                                }
+                            }
+                        },
+                        onPick = { path ->
+                            onInsert { draft -> appendFileReference(draft, path) }
+                            onDismiss()
+                        },
+                    )
                     source == InsertSource.EXPERTS -> InsertList(experts.isEmpty(), stringResource(R.string.insert_empty_experts)) {
                         items(experts, key = { it.id }) { ex ->
                             InsertRow(ex.metadata.title(), ex.metadata.desc()) {
@@ -149,4 +191,99 @@ private fun InsertRow(title: String, subtitle: String, mono: Boolean = false, on
         Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, fontFamily = if (mono) CodegMono else FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (subtitle.isNotEmpty()) Text(subtitle, fontSize = 12.sp, color = colors.textTertiary, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/**
+ * The file picker behind the "+" sheet: one directory at a time, with a filter box.
+ *
+ * A phone has no room for a horizontal splitter, and the server's listing endpoint
+ * returns exactly one level, so this is a folder-at-a-time browser with a search field
+ * for jumping straight to a name. Picking a file inserts its `@` reference and closes the
+ * sheet — the desktop's file mention, reduced to the one gesture that fits.
+ */
+@Composable
+private fun InsertFilesBrowser(
+    dir: String?,
+    root: String?,
+    entries: List<DirectoryItem>,
+    query: String,
+    onQuery: (String) -> Unit,
+    onOpenDir: (String) -> Unit,
+    onUp: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    if (dir == null || root == null) {
+        Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.insert_empty_files), fontSize = 13.sp, color = colors.textTertiary)
+        }
+        return
+    }
+
+    // Filtering is on the current directory only, which is what the server gave us; the
+    // empty state says so instead of pretending the name does not exist repo-wide.
+    val shown = remember(entries, query) {
+        val q = query.trim().lowercase()
+        (if (q.isEmpty()) entries else entries.filter { it.name.lowercase().contains(q) })
+            .sortedWith(compareByDescending<DirectoryItem> { it.isDir }.thenBy { it.name.lowercase() })
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (dir != root) {
+                Text(
+                    "..",
+                    fontFamily = CodegMono,
+                    fontSize = 13.sp,
+                    color = colors.accent,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onUp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+            Text(
+                // The path relative to the repo, which is what a prompt reads best as.
+                dir.removePrefix(root).removePrefix("/").ifEmpty { "/" },
+                fontFamily = CodegMono,
+                fontSize = 11.sp,
+                color = colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        CodegTextField(
+            value = query,
+            onValueChange = onQuery,
+            label = stringResource(R.string.insert_files_filter),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        if (shown.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.insert_empty_files), fontSize = 13.sp, color = colors.textTertiary)
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                items(shown, key = { it.path }) { entry ->
+                    InsertRow(
+                        title = entry.name,
+                        subtitle = if (entry.isDir) stringResource(R.string.insert_files_folder) else formatSize(entry.size),
+                        mono = !entry.isDir,
+                    ) {
+                        if (entry.isDir) onOpenDir(entry.path) else onPick(entry.path)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Compact byte size for a file row; directories have none. */
+private fun formatSize(bytes: Long?): String = when {
+    bytes == null -> ""
+    bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
+    bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }

@@ -26,6 +26,7 @@ import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.ConversationOutline
+import app.codeg.android.core.model.DirectoryItem
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.FolderDetail
@@ -1853,6 +1854,14 @@ class SessionDetailViewModel @Inject constructor(
 
     /** The session's agent — drives the expert mention prefix (`$` for codex, `/` otherwise). */
     val agentForInsert: AgentType get() = agent
+
+    /** The folder this session runs in, used to root the "+" file picker and its paths. */
+    val folderPathForInsert: String? get() = _ui.value.folderPath
+
+    /** One directory level for the "+" file picker. */
+    suspend fun listDirectory(path: String): List<DirectoryItem> =
+        client?.let { runCatching { it.listDirectoryWithFiles(path) }.getOrDefault(emptyList()) }
+            ?: emptyList()
 
     suspend fun loadQuickMessages(): List<QuickMessage> =
         client?.let { runCatching { it.quickMessagesList() }.getOrDefault(emptyList()) } ?: emptyList()
