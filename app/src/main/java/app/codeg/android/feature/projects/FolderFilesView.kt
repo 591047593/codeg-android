@@ -48,6 +48,7 @@ import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.DirectoryItem
+import app.codeg.android.core.model.GitChange
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.designsystem.theme.CodegMono
 
@@ -69,9 +70,45 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
         return
     }
 
+    // Bumped by pull-to-refresh; both the listing and the status re-fetch on it, because
+    // a file the user just wrote on the server is exactly the case where the cached
+    // colours would be stale.
+    var refreshToken by remember(rootPath) { mutableStateOf(0) }
+    var refreshing by remember(rootPath) { mutableStateOf(false) }
+
     val dir = stack.last()
     var result by remember(dir) { mutableStateOf<Result<List<DirectoryItem>>?>(null) }
-    LaunchedEffect(dir) { result = runCatching { client.listDirectoryWithFiles(dir) } }
+    LaunchedEffect(dir, refreshToken) {
+        result = null
+        result = runCatching { client.listDirectoryWithFiles(dir) }
+    }
+
+    // Working-tree state for the whole repo, once per directory change. The listing
+    // endpoint carries no git data, so the colours come from a separate `git_status`
+    // mapped onto repo-relative paths — the same source the desktop tree paints from.
+    // A repo-less folder (or a failed call) simply has no colours; it must never take
+    // the browser down with it.
+    // Keyed on the repo root, not the directory: `git_status` reports the whole tree, so
+    // re-fetching it on every folder the user opens would pay a full status walk per tap
+    // for data that has not changed.
+    var changes by remember(rootPath) { mutableStateOf<Map<String, GitChange>>(emptyMap()) }
+    var dirChanges by remember(rootPath) { mutableStateOf<Map<String, GitChange>>(emptyMap()) }
+    LaunchedEffect(rootPath, refreshToken) {
+        val statuses = runCatching { client.gitStatus(rootPath) }.getOrDefault(emptyList())
+        changes = statuses.associate { it.path to it.change }
+        // A directory row shows the strongest change anywhere beneath it, so a folded
+        // folder still signals that something inside it is dirty.
+        val rolled = mutableMapOf<String, GitChange>()
+        for ((path, change) in changes) {
+            var prefix = path.substringBeforeLast('/', "")
+            while (prefix.isNotEmpty()) {
+                rolled[prefix] = strongest(rolled[prefix], change)
+                prefix = prefix.substringBeforeLast('/', "")
+            }
+        }
+        dirChanges = rolled
+        refreshing = false
+    }
 
     val r = result
     when {
@@ -84,6 +121,14 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
             // O(n log n) compare over the whole directory listing; the list itself
             // only changes when the fetch result does.
             val items = remember(r) { sortItems(r.getOrDefault(emptyList())) }
+            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = {
+                    refreshing = true
+                    refreshToken += 1
+                },
+                modifier = Modifier.fillMaxSize(),
+            ) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
                 if (stack.size > 1) {
                     item("up") {
@@ -100,21 +145,35 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
                     item("empty") { Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { EmptyState(Icons.Rounded.Folder, stringResource(R.string.files_empty_folder), stringResource(R.string.files_empty_folder_message)) } }
                 }
                 items(items, key = { it.path }) { item ->
-                    FileRow(item) {
+                    val rel = if (item.path.startsWith("$rootPath/")) item.path.removePrefix("$rootPath/") else item.path
+                    val change = if (item.isDir) dirChanges[rel] else changes[rel]
+                    FileRow(item, change) {
                         if (item.isDir) stack = stack + item.path else previewPath = item.path
                     }
                 }
+            }
             }
         }
     }
 }
 
 @Composable
-private fun FileRow(item: DirectoryItem, onClick: () -> Unit) {
+private fun FileRow(item: DirectoryItem, change: GitChange?, onClick: () -> Unit) {
     val colors = CodegTheme.colors
     val sizeLabel = item.size?.takeIf { !item.isDir }?.let { formatBytes(it) }
+    val tint = change?.let { GitChangeColors[it] }
     ListItem(
-        headlineContent = { Text(item.name, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = {
+            Text(
+                item.name,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                // A changed file's name is tinted the way the desktop tree tints it, so
+                // the eye finds dirty files without reading the badge column.
+                color = tint ?: colors.textPrimary,
+            )
+        },
         leadingContent = {
             Icon(
                 if (item.isDir) Icons.Rounded.Folder else Icons.AutoMirrored.Rounded.InsertDriveFile,
@@ -123,7 +182,12 @@ private fun FileRow(item: DirectoryItem, onClick: () -> Unit) {
                 modifier = Modifier.size(20.dp),
             )
         },
-        trailingContent = sizeLabel?.let { { Text(it, fontSize = 11.sp, color = colors.textTertiary) } },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                sizeLabel?.let { Text(it, fontSize = 11.sp, color = colors.textTertiary) }
+                if (change != null) GitChangeBadge(change)
+            }
+        },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary),
         modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onClick() },
     )
@@ -223,4 +287,16 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
     bytes >= 1024 -> String.format("%.1f KB", bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/** The more alarming of two change categories, for rolling a folder's state up. */
+private fun strongest(current: GitChange?, next: GitChange): GitChange = when {
+    current == null -> next
+    current == GitChange.CONFLICTED || next == GitChange.CONFLICTED -> GitChange.CONFLICTED
+    current == GitChange.DELETED || next == GitChange.DELETED -> GitChange.DELETED
+    current == GitChange.MODIFIED || next == GitChange.MODIFIED -> GitChange.MODIFIED
+    current == GitChange.RENAMED || next == GitChange.RENAMED -> GitChange.RENAMED
+    current == GitChange.ADDED || next == GitChange.ADDED -> GitChange.ADDED
+    current == GitChange.UNTRACKED || next == GitChange.UNTRACKED -> GitChange.UNTRACKED
+    else -> current
 }
