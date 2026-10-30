@@ -942,6 +942,12 @@ object AgentConfig {
             // Kimi & Pi are self-contained (saved via acp_update_kimi_code_config /
             // acp_update_pi_config), not the shared draft.
             AgentType.KIMI_CODE, AgentType.PI -> Unit
+            // Standard ACP agents: nothing structured to write back — their env is
+            // handled by the shared path and their config by the raw editor.
+            AgentType.DEEPSEEK, AgentType.QODER, AgentType.ANTIGRAVITY,
+            AgentType.KIRO, AgentType.ZCODE, AgentType.TRAE,
+            AgentType.COMMAND_CODE, AgentType.MINIMAX_CODE,
+            -> Unit
         }
         return Applied(configText, envText, codexConfigTomlText, codexAuthJsonText)
     }
