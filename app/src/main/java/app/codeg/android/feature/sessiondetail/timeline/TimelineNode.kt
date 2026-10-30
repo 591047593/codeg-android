@@ -109,7 +109,17 @@ data class TimelineNode(
 
 /** A turn's text blocks, joined — the renderable system-note text (and the empty-skip check). */
 internal fun systemText(turn: MessageTurn): String =
-    turn.blocks.mapNotNull { (it as? ContentBlock.Text)?.text }.joinToString("\n").trim()
+    turn.blocks.mapNotNull { block ->
+        when (block) {
+            is ContentBlock.Text -> block.text
+            // A failed round is a System turn holding one TurnError block and nothing
+            // else. Collecting only Text saw an empty turn and dropped it, so the reason
+            // a turn failed disappeared from the transcript after a reload — while the
+            // desktop client still showed it.
+            is ContentBlock.TurnError -> block.message
+            else -> null
+        }
+    }.joinToString("\n").trim()
 
 /** Drop the trailing run of assistant turns (those after the last non-assistant turn).
  *  On reattach the live turn rebuilt from the snapshot owns the in-flight reply, so the

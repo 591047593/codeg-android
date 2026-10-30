@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -105,9 +106,17 @@ class EventStream(
             val root = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject
                 ?: return null
 
-            // Legacy global side-channel frames.
+            // Global side-channel frames: `{channel, payload}`.
+            //
+            // Only `__ready__` used to be recognised; every other channel was returned as
+            // null and dropped, so a conversation renamed, pinned or deleted from the
+            // desktop client never reached this one. The payload is passed through as-is —
+            // the channel names and shapes are the server's, and the consumers that care
+            // (conversation list, folder list) decode the ones they understand.
             (root["channel"] as? JsonPrimitive)?.let { ch ->
-                return if (ch.contentOrNull == "__ready__") StreamFrame.Ready else null
+                val channel = ch.contentOrNull ?: return null
+                if (channel == "__ready__") return StreamFrame.Ready
+                return StreamFrame.SideChannel(channel, root["payload"] ?: JsonNull)
             }
 
             // Attach-protocol frames.

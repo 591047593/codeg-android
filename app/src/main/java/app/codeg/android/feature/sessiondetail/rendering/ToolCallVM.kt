@@ -178,6 +178,9 @@ object MessageRender {
                     )
                 }
                 is ContentBlock.Unknown -> parts.add(RenderPart.Unknown(block.type))
+                // Handled by `systemText` when the turn is rendered as a system note;
+                // it produces no render part of its own.
+                is ContentBlock.TurnError -> Unit
             }
         }
         return groupConsecutiveTools(parts)

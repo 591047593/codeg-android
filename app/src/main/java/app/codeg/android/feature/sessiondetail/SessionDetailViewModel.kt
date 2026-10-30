@@ -763,6 +763,10 @@ class SessionDetailViewModel @Inject constructor(
                         }
                     }
                     StreamFrame.Pong -> Unit
+                    // Broadcast notifications about changes made elsewhere. The detail
+                    // screen does not act on them yet — the list screens are their
+                    // consumers — but they must not fall through to a reconnect.
+                    is StreamFrame.SideChannel -> Unit
                     is StreamFrame.Closed -> {
                         if (awaitAttach && !attached.isCompleted) {
                             attached.completeExceptionally(StreamAttachFailed(frame.reason))

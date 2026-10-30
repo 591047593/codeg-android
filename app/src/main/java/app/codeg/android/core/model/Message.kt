@@ -90,6 +90,13 @@ sealed interface ContentBlock {
         val meta: JsonObject? = null,
     ) : ContentBlock
     data class ToolResult(val id: String?, val outputPreview: String?, val isError: Boolean) : ContentBlock
+    /**
+     * The round failed, in the agent's own words.
+     *
+     * A parser puts this alone in a `System` turn that closes the round; the transcript
+     * renders it as the failure notice that the live stream showed inline.
+     */
+    data class TurnError(val message: String) : ContentBlock
     data class Unknown(val type: String) : ContentBlock
 
     companion object {
@@ -125,6 +132,13 @@ sealed interface ContentBlock {
                     outputPreview = obj.stringOrNull("output_preview"),
                     isError = obj.boolOrNull("is_error") ?: false,
                 )
+                // A parser closes a failed round with a System turn holding one of these,
+                // in the agent's own words ("stream disconnected before completion: …").
+                // Without a variant it decoded as Unknown, and `systemText()` — which
+                // collects only Text blocks — saw an empty turn and dropped it, so a
+                // failed turn simply vanished from the transcript on reload while the
+                // desktop client still showed the reason.
+                "turn_error" -> TurnError(obj.stringOrNull("message").orEmpty())
                 else -> Unknown(type)
             }
         }

@@ -2,6 +2,7 @@ package app.codeg.android.core.network
 
 import app.codeg.android.core.model.EventEnvelope
 import app.codeg.android.core.model.LiveSessionSnapshot
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -36,6 +37,16 @@ object WsClientMessage {
 sealed interface StreamFrame {
     /** Legacy `{channel:"__ready__"}` — the link is usable; safe to attach/prompt. */
     data object Ready : StreamFrame
+    /**
+     * A `{channel, payload}` notification the server broadcasts to every client.
+     *
+     * Distinct from the attach protocol's per-connection frames: these describe changes
+     * made *elsewhere* — a conversation renamed or deleted from the desktop client, a
+     * folder opened, a task updated. They used to be dropped on the floor (only
+     * `__ready__` was recognised), so the Android list kept showing whatever it fetched
+     * at screen entry and never matched the desktop.
+     */
+    data class SideChannel(val channel: String, val payload: JsonElement) : StreamFrame
     data class Snapshot(val snapshot: LiveSessionSnapshot) : StreamFrame
     data class Replay(val events: List<EventEnvelope>) : StreamFrame
     data class Event(val envelope: EventEnvelope) : StreamFrame
