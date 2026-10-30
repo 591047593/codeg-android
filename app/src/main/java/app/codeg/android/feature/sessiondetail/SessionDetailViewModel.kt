@@ -237,7 +237,18 @@ class SessionDetailViewModel @Inject constructor(
         // which can be the older one. It also doubles the transcript transfer at exactly
         // the moment the network is already the problem.
         if (loadJob?.isActive == true) return
-        _ui.update { it.copy(loading = true, error = null) }
+        // The transcript is about to be re-read. The message index is always dropped: it
+        // is a cache of a window that is being replaced. The send queue is only dropped
+        // when the conversation itself changed (a fork moved us to a new session) — a
+        // plain retry of the same conversation must not swallow prompts the user typed.
+        outlineBuiltAt = -1
+        _ui.update {
+            it.copy(
+                loading = true,
+                error = null,
+                outline = emptyList(),
+            )
+        }
         loadJob = viewModelScope.launch {
             try {
                 // Bind to the CURRENT selection on an explicit (re)load; afterwards the
@@ -1591,6 +1602,9 @@ class SessionDetailViewModel @Inject constructor(
             // The row that now holds the pre-fork history is new; the list must refetch.
             repository.notifyConversationsChanged()
             onConversationForked?.invoke(result.getOrThrow().siblingConversationId)
+            // The live connection now points at the forked session, so a prompt queued
+            // against the old one has nowhere to go.
+            _ui.update { it.copy(queuedPrompts = emptyList()) }
             load()
         }
     }
@@ -1884,20 +1898,36 @@ class SessionDetailViewModel @Inject constructor(
     fun toggleTag(tag: ConversationTag, assign: Boolean) {
         val c = client ?: return
         val id = conversationId ?: return
-        val previous = _ui.value.summary ?: return
-        val nextIds = if (assign) previous.tagIds + tag.id else previous.tagIds - tag.id
-        _ui.update { it.copy(summary = it.summary?.copy(tagIds = nextIds)) }
+        if (_ui.value.summary == null) return
+        // Only this tag's membership is changed, both optimistically and on rollback.
+        // Restoring a whole captured summary used to undo a *second* tag the user had
+        // toggled in the meantime: the snapshot predated that request, so a single
+        // failure reverted a change that had already succeeded.
+        fun applyMembership(ids: List<Int>): List<Int> =
+            if (assign) (ids + tag.id).distinct() else ids.filterNot { it == tag.id }
+
+        _ui.update { it.copy(summary = it.summary?.copy(tagIds = applyMembership(it.summary.tagIds))) }
         viewModelScope.launch {
             runCatching {
                 if (assign) c.updateConversationTags(id, add = listOf(tag.id))
                 else c.updateConversationTags(id, remove = listOf(tag.id))
             }
                 .onSuccess { updated ->
+                    // The server's row is authoritative (it also re-reads `tag_ids`), so
+                    // adopt it wholesale once it lands.
                     _ui.update { it.copy(summary = updated) }
                     repository.notifyConversationsChanged()
                 }
                 .onFailure { e ->
-                    _ui.update { it.copy(summary = previous, notice = e.displayMessage(appContext)) }
+                    _ui.update { state ->
+                        val summary = state.summary ?: return@update state
+                        val reverted = if (assign) summary.tagIds.filterNot { it == tag.id }
+                        else (summary.tagIds + tag.id).distinct()
+                        state.copy(
+                            summary = summary.copy(tagIds = reverted),
+                            notice = e.displayMessage(appContext),
+                        )
+                    }
                 }
         }
     }

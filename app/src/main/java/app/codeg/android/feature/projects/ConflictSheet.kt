@@ -251,10 +251,17 @@ private fun ConflictFileEditor(
     var content by remember(file) { mutableStateOf<String?>(null) }
     var saving by remember(file) { mutableStateOf(false) }
     var error by remember(file) { mutableStateOf<String?>(null) }
+    // Retry has to move this, not just clear `versions`: a `LaunchedEffect(file)` keyed on
+    // the file alone would not re-run, so the spinner would show and every retry would do
+    // nothing.
+    var reloadToken by remember(file) { mutableStateOf(0) }
 
-    LaunchedEffect(file) {
+    LaunchedEffect(file, reloadToken) {
+        versions = null
         val r = runCatching { client.gitConflictFileVersions(rootPath, file) }
         versions = r
+        // Only seed the editor on the first successful read: a retry after a failure must
+        // not throw away text the user already typed.
         if (content == null) content = r.getOrNull()?.merged.orEmpty()
     }
 
@@ -282,7 +289,7 @@ private fun ConflictFileEditor(
                 Icons.Rounded.WarningAmber,
                 stringResource(R.string.conflict_load_failed),
                 r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error),
-                onRetry = { versions = null },
+                onRetry = { reloadToken += 1 },
             )
 
             else -> {

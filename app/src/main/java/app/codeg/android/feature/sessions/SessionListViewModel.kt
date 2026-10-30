@@ -182,7 +182,12 @@ class SessionListViewModel @Inject constructor(
         fetchGeneration += 1
         val token = fetchGeneration
         if (force) {
-            _ui.update { it.copy(folders = emptyList(), conversations = emptyList(), hasLoaded = false) }
+            // Tags belong to the server that defined them: ids are per-database, so
+            // keeping the old set across a switch would paint rows with another
+            // workspace's colours for as long as the fetch takes.
+            _ui.update {
+                it.copy(folders = emptyList(), conversations = emptyList(), tags = emptyList(), hasLoaded = false)
+            }
         }
         _ui.update {
             if (isInitial) it.copy(isLoading = true, error = null)

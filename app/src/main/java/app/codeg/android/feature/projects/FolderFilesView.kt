@@ -127,7 +127,9 @@ fun FolderFilesView(client: CodegClient, rootPath: String) {
     when {
         r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(message = stringResource(R.string.common_loading)) }
         r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null })
+            // Retry bumps the same token pull-to-refresh uses: clearing `result` alone did
+            // nothing, because the effect is keyed on the directory and never re-ran.
+            InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_load_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { refreshToken += 1 })
         }
         else -> {
             // Sorting on every recomposition (scroll, selection, theme) re-ran an
@@ -213,7 +215,11 @@ private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) 
     val appContext = LocalContext.current
     val rel = if (absPath.startsWith("$rootPath/")) absPath.removePrefix("$rootPath/") else absPath.substringAfterLast('/')
     var result by remember(absPath) { mutableStateOf<Result<String>?>(null) }
-    LaunchedEffect(absPath) { result = runCatching { client.readFilePreview(rootPath, rel).content } }
+    var reloadToken by remember(absPath) { mutableStateOf(0) }
+    LaunchedEffect(absPath, reloadToken) {
+        result = null
+        result = runCatching { client.readFilePreview(rootPath, rel).content }
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -224,7 +230,7 @@ private fun FilePreview(client: CodegClient, rootPath: String, absPath: String) 
         when {
             r == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
             r.isFailure -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { result = null })
+                InlineError(Icons.AutoMirrored.Rounded.InsertDriveFile, stringResource(R.string.files_read_failed), r.exceptionOrNull()?.displayMessage(appContext) ?: stringResource(R.string.files_error), onRetry = { reloadToken += 1 })
             }
             else -> {
                 val content = r.getOrDefault("")
