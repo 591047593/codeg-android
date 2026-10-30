@@ -585,6 +585,8 @@
     <string name="session_context_max">Limit</string>
     <string name="session_context_percent">Share</string>
     <string name="common_close">Close</string>
+    <string name="session_outline_filter">Filter messages</string>
+    <string name="session_outline_no_match">No message matches.</string>
     <string name="session_outline_title">Messages</string>
     <string name="session_outline_empty">No messages yet.</string>
     <string name="session_outline_untitled">(no text)</string>

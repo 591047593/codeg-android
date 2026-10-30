@@ -27,7 +27,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,7 @@ import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
 import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.model.TurnRole
 
 /**
@@ -62,6 +66,19 @@ fun OutlineSheet(
     val colors = CodegTheme.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
+    var query by remember { mutableStateOf("") }
+    // Filtering runs over the outline that is already in memory — the server reduces each
+    // turn to one preview line, so this is a scan of a few hundred short strings, not of
+    // the transcript. Prompts and replies are both searchable, which is what makes it
+    // usable for "where did I ask about the parser".
+    val shown = remember(entries, query) {
+        val q = query.trim()
+        if (q.isEmpty()) entries
+        else entries.filter {
+            it.preview.contains(q, ignoreCase = true) ||
+                it.role.name.contains(q, ignoreCase = true)
+        }
+    }
     // Open at the newest message: that is where the reader is, and the turn they are
     // most likely to jump back to is near the end.
     LaunchedEffect(entries.size) {
@@ -90,6 +107,21 @@ fun OutlineSheet(
                     )
                 }
             }
+            CodegTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = stringResource(R.string.session_outline_filter),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                singleLine = true,
+            )
+            if (shown.isEmpty() && entries.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.session_outline_no_match),
+                    fontSize = 14.sp,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
+                )
+            }
             if (entries.isEmpty() && !loading) {
                 Text(
                     stringResource(R.string.session_outline_empty),
@@ -107,7 +139,7 @@ fun OutlineSheet(
                     bottom = 24.dp,
                 ),
             ) {
-                items(entries, key = { it.turnId }) { entry ->
+                items(shown, key = { it.turnId }) { entry ->
                     OutlineRow(entry, onClick = { onJump(entry.turnId) })
                 }
             }
