@@ -204,6 +204,9 @@ fun SessionListScreen(
                     ) {
                         SessionList(
                             sections = sections,
+                            expandedParents = ui.expandedParents,
+                            loadingChildren = ui.loadingChildren,
+                            onToggleChildren = viewModel::toggleChildren,
                             collapsed = collapsed,
                             onToggleSection = { id ->
                                 collapsed = if (id in collapsed) collapsed - id else collapsed + id
@@ -253,6 +256,9 @@ fun SessionListScreen(
 @Composable
 private fun SessionList(
     sections: List<SessionSection>,
+    expandedParents: Set<Int>,
+    loadingChildren: Set<Int>,
+    onToggleChildren: (ConversationSummary) -> Unit,
     collapsed: Set<String>,
     onToggleSection: (String) -> Unit,
     onOpenConversation: (Int) -> Unit,
@@ -316,6 +322,10 @@ private fun SessionList(
                         modifier = Modifier.animateItem(),
                         folderName = row.folderName,
                         showDivider = !isLast,
+                        depth = row.depth,
+                        expanded = row.conversation.id in expandedParents,
+                        loadingChildren = row.conversation.id in loadingChildren,
+                        onToggleChildren = { onToggleChildren(row.conversation) },
                         shape = RoundedCornerShape(
                             topStart = if (isFirst) 16.dp else 0.dp,
                             topEnd = if (isFirst) 16.dp else 0.dp,

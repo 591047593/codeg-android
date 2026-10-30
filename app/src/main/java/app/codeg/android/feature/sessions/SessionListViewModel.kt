@@ -60,9 +60,23 @@ class SessionListViewModel @Inject constructor(
      */
     val sections: StateFlow<List<SessionSection>> =
         _ui
-            .map { GroupingInput(it.folders, it.conversations) }
+            .map {
+                GroupingInput(
+                    folders = it.folders,
+                    conversations = it.conversations,
+                    expandedParents = it.expandedParents,
+                    childrenByParent = it.childrenByParent,
+                )
+            }
             .distinctUntilChanged()
-            .map { buildSessionSections(it.folders, it.conversations) }
+            .map {
+                buildSessionSections(
+                    folders = it.folders,
+                    allConversations = it.conversations,
+                    expandedParents = it.expandedParents,
+                    childrenByParent = it.childrenByParent,
+                )
+            }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -70,6 +84,8 @@ class SessionListViewModel @Inject constructor(
     private data class GroupingInput(
         val folders: List<FolderDetail>,
         val conversations: List<ConversationSummary>,
+        val expandedParents: Set<Int> = emptySet(),
+        val childrenByParent: Map<Int, List<ConversationSummary>> = emptyMap(),
     )
 
     private var client: CodegClient? = null
@@ -288,12 +304,61 @@ class SessionListViewModel @Inject constructor(
     }
 
     fun dismissError() = _ui.update { it.copy(error = null) }
+
+    /**
+     * Show or hide a conversation's delegation children inline.
+     *
+     * Children are fetched the first time a row is expanded and then kept, so toggling
+     * twice costs one request. The desktop sidebar does the same thing with a chevron
+     * driven by the parent's `child_count`; here the rows are indented into the same
+     * flat list instead of opening a subtree.
+     */
+    fun toggleChildren(conversation: ConversationSummary) {
+        val id = conversation.id
+        if (id in _ui.value.expandedParents) {
+            _ui.update { it.copy(expandedParents = it.expandedParents - id) }
+            return
+        }
+        _ui.update { it.copy(expandedParents = it.expandedParents + id) }
+        if (_ui.value.childrenByParent.containsKey(id)) return
+
+        val c = client ?: return
+        _ui.update { it.copy(loadingChildren = it.loadingChildren + id) }
+        viewModelScope.launch {
+            val fetched = runCatching { c.listChildConversations(id) }.getOrNull()
+            _ui.update { state ->
+                state.copy(
+                    childrenByParent = if (fetched != null) {
+                        state.childrenByParent + (id to fetched)
+                    } else {
+                        state.childrenByParent
+                    },
+                    loadingChildren = state.loadingChildren - id,
+                    // A failed fetch collapses the row again rather than leaving an
+                    // expanded parent with nothing under it.
+                    expandedParents = if (fetched == null) state.expandedParents - id else state.expandedParents,
+                    error = if (fetched == null) state.error else state.error,
+                )
+            }
+        }
+    }
 }
 
 /** Raw list state; the grouped display is derived by [SessionGrouping]. */
 data class SessionListUiState(
     val folders: List<FolderDetail> = emptyList(),
     val conversations: List<ConversationSummary> = emptyList(),
+    /**
+     * Delegation children already fetched, by parent id.
+     *
+     * Loaded on demand when a row with `childCount > 0` is expanded, then kept so
+     * collapsing and re-expanding does not refetch.
+     */
+    val childrenByParent: Map<Int, List<ConversationSummary>> = emptyMap(),
+    /** Parents whose children are currently shown inline. */
+    val expandedParents: Set<Int> = emptySet(),
+    /** Parents whose children are being fetched, so the row can show a spinner. */
+    val loadingChildren: Set<Int> = emptySet(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val hasLoaded: Boolean = false,

@@ -40,6 +40,14 @@ data class SessionRowItem(
     /** Dim folder tag shown on cross-folder rows (Pinned/Other); `null` inside a
      * folder group, where the folder is already the header. */
     val folderName: String?,
+    /**
+     * How deep this row sits in a delegation tree. `0` is a root conversation; a child
+     * of an expanded parent is `1`.
+     *
+     * The desktop sidebar nests children under their parent; this list is flat, so the
+     * depth is expressed as an indent instead.
+     */
+    val depth: Int = 0,
 )
 
 /**
@@ -55,6 +63,13 @@ data class SessionRowItem(
 fun buildSessionSections(
     folders: List<FolderDetail>,
     allConversations: List<ConversationSummary>,
+    /**
+     * Parents whose delegation children should be listed inline, and the children
+     * themselves once they have been fetched. A parent with no fetched entry renders as
+     * a plain row; the expand affordance is driven by `childCount` on the row itself.
+     */
+    expandedParents: Set<Int> = emptySet(),
+    childrenByParent: Map<Int, List<ConversationSummary>> = emptyMap(),
 ): List<SessionSection> {
     // Two kinds of row the desktop sidebar never shows at the top level:
     //
@@ -70,12 +85,26 @@ fun buildSessionSections(
     val folderNames = SessionGrouping.folderNames(folders)
     val out = ArrayList<SessionSection>()
 
+    /**
+     * A parent row followed by its children when expanded.
+     *
+     * Children are indented rather than nested in a subtree: this list is a flat
+     * LazyColumn, so depth is a visual indent plus a stable id per row.
+     */
+    fun rowsFor(summary: ConversationSummary, folderName: String?): List<SessionRowItem> {
+        val row = SessionRowItem(summary, folderName)
+        if (summary.id !in expandedParents) return listOf(row)
+        val kids = childrenByParent[summary.id].orEmpty()
+        if (kids.isEmpty()) return listOf(row)
+        return listOf(row) + kids.map { SessionRowItem(it, folderName, depth = 1) }
+    }
+
     val pinned = SessionGrouping.pinned(conversations)
     if (pinned.isNotEmpty()) {
         out += SessionSection(
             id = "pinned",
             kind = SectionKind.Pinned,
-            rows = pinned.map { SessionRowItem(it, folderNames[it.folderId]) },
+            rows = pinned.flatMap { rowsFor(it, folderNames[it.folderId]) },
         )
     }
 
@@ -83,7 +112,7 @@ fun buildSessionSections(
         out += SessionSection(
             id = "folder-${group.folder.id}",
             kind = SectionKind.Folder(group.folder.name, group.folder.color),
-            rows = group.conversations.map { SessionRowItem(it, folderName = null) },
+            rows = group.conversations.flatMap { rowsFor(it, folderName = null) },
         )
     }
 
@@ -92,7 +121,7 @@ fun buildSessionSections(
         out += SessionSection(
             id = "other",
             kind = SectionKind.Other,
-            rows = other.map { SessionRowItem(it, folderNames[it.folderId]) },
+            rows = other.flatMap { rowsFor(it, folderNames[it.folderId]) },
         )
     }
 

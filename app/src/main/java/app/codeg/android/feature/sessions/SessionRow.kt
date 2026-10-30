@@ -1,6 +1,7 @@
 package app.codeg.android.feature.sessions
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -17,9 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +71,14 @@ fun SessionRow(
     selected: Boolean = false,
     /** Draw the inset hairline under this row (all but the last in a grouped card). */
     showDivider: Boolean = false,
+    /** Indent level for a delegation child; `0` for a root conversation. */
+    depth: Int = 0,
+    /** Whether this row's delegation children are currently shown. */
+    expanded: Boolean = false,
+    /** Whether the children are being fetched, so the chevron can show a spinner. */
+    loadingChildren: Boolean = false,
+    /** Invoked when a row with children is tapped on its chevron. */
+    onToggleChildren: (() -> Unit)? = null,
     /**
      * Corner shape for the row's own background.
      *
@@ -120,7 +132,10 @@ fun SessionRow(
                         null
                     },
                 )
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                // A delegation child is indented one step, which is how the desktop
+                // sidebar shows depth without opening a separate panel. 24dp per level
+                // lines the child's avatar up under the parent's title.
+                .padding(start = 8.dp + 24.dp * depth, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(11.dp),
         ) {
@@ -209,6 +224,28 @@ fun SessionRow(
                 }
             }
 
+            // A row with delegation children carries a chevron, the way the desktop
+            // sidebar expands a conversation into its sub-session subtree. It sits
+            // before the status glyph so the expand target is always in the same place.
+            if (conversation.childCount > 0 && onToggleChildren != null) {
+                if (loadingChildren) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 1.5.dp,
+                        color = colors.textTertiary,
+                    )
+                } else {
+                    Icon(
+                        Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .rotate(if (expanded) 0f else -90f)
+                            .clickable(onClick = onToggleChildren),
+                    )
+                }
+            }
             if (conversation.status.isLive) {
                 LivePulse()
             } else if (conversation.isPinned) {

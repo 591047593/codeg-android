@@ -349,6 +349,14 @@ fun SessionDetailScreen(
                 // it. The text is still in `turns`, so retry is one tap away from the
                 // composer where the user is already looking.
                 if (ui.canRetryLastTurn) RetryBar(onRetry = viewModel::retryLastTurn)
+                // The current model / effort / mode, read out where the desktop client
+                // shows it. Opens the same editor the top-bar avatar does.
+                SessionSettingsChip(
+                    modes = ui.modes,
+                    configOptions = ui.configOptions,
+                    onClick = { showOptions = true },
+                    modifier = Modifier.padding(start = 10.dp, top = 2.dp),
+                )
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
                 ComposeBar(
                     text = draft,
