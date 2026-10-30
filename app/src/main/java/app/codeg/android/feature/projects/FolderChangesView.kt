@@ -76,6 +76,9 @@ fun FolderChangesView(
     client: CodegClient,
     rootPath: String,
     onCommit: () -> Unit,
+    /** The operation to abort when the user opens the conflict screen (`merge`/`pull`/`rebase`). */
+    conflictOperation: String? = null,
+    onOpenConflicts: (String) -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val appContext = LocalContext.current
@@ -132,6 +135,32 @@ fun FolderChangesView(
         }
 
         val entries = result?.getOrNull().orEmpty()
+        // Unmerged paths read as ordinary changes in `git_status`, so without this the
+        // only hint that the repo is mid-merge is a commit that keeps failing. The strip
+        // is the way into the resolver.
+        val conflicted = entries.count { it.change == GitChange.CONFLICTED }
+        if (conflicted > 0 && conflictOperation != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CodegTheme.colors.danger.copy(alpha = 0.12f))
+                    .clickable { onOpenConflicts(conflictOperation) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Rounded.Difference, null, tint = CodegTheme.colors.danger, modifier = Modifier.size(15.dp))
+                Text(
+                    stringResource(R.string.conflict_banner, conflicted),
+                    fontSize = 12.sp,
+                    color = CodegTheme.colors.danger,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(stringResource(R.string.conflict_resolve_action), fontSize = 12.sp, color = CodegTheme.colors.danger)
+            }
+        }
         if (entries.isNotEmpty()) {
             PrimaryButton(
                 text = stringResource(R.string.changes_commit_button),

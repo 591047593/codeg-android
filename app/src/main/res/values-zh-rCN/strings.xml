@@ -796,6 +796,21 @@
         <item quantity="other">拉取产生了 %d 个文件的冲突 — 请在桌面端或通过智能体解决</item>
     </plurals>
     <!-- Commit sheet -->
+    <string name="conflict_title">解决 %1$s 冲突</string>
+    <string name="conflict_load_failed">无法读取冲突</string>
+    <string name="conflict_none_title">没有待解决的冲突</string>
+    <string name="conflict_none_message">冲突已全部解决，提交即可完成。</string>
+    <string name="conflict_ours">我方（HEAD）</string>
+    <string name="conflict_theirs">对方（合入）</string>
+    <string name="conflict_resolution">解决结果</string>
+    <string name="conflict_resolution_hint">把文件改成要保留的内容，然后标记为已解决。</string>
+    <string name="conflict_mark_resolved">标记已解决</string>
+    <string name="conflict_abort">中止 %1$s</string>
+    <string name="conflict_abort_message">这将放弃本次未完成的操作并恢复工作区。</string>
+    <string name="conflict_banner">%1$d 个文件有冲突</string>
+    <string name="conflict_resolve_action">处理</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_saving">保存中…</string>
     <string name="commit_title">提交</string>
     <string name="commit_load_failed">无法加载更改</string>
     <string name="commit_nothing_title">没有可提交的内容</string>

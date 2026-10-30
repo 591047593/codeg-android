@@ -808,6 +808,21 @@
         <item quantity="other">Pull produced conflicts in %d files — resolve them on desktop or via an agent</item>
     </plurals>
     <!-- Commit sheet -->
+    <string name="conflict_title">Resolve %1$s conflicts</string>
+    <string name="conflict_load_failed">Could not read the conflicts</string>
+    <string name="conflict_none_title">Nothing left to resolve</string>
+    <string name="conflict_none_message">Every conflict is resolved. Commit to finish.</string>
+    <string name="conflict_ours">Ours (HEAD)</string>
+    <string name="conflict_theirs">Theirs (incoming)</string>
+    <string name="conflict_resolution">Resolution</string>
+    <string name="conflict_resolution_hint">Edit the file to the text that should be kept, then mark it resolved.</string>
+    <string name="conflict_mark_resolved">Mark resolved</string>
+    <string name="conflict_abort">Abort %1$s</string>
+    <string name="conflict_abort_message">This throws away the in-progress operation and restores the working tree.</string>
+    <string name="conflict_banner">%1$d file(s) in conflict</string>
+    <string name="conflict_resolve_action">Resolve</string>
+    <string name="common_confirm">Confirm</string>
+    <string name="common_saving">Saving…</string>
     <string name="commit_title">Commit</string>
     <string name="commit_load_failed">Couldn\'t load changes</string>
     <string name="commit_nothing_title">Nothing to commit</string>

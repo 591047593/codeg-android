@@ -508,3 +508,11 @@ data class GenerateCommitMessageBody(
 /** `git_generate_commit_message_cancel` — stop a run started with [GenerateCommitMessageBody]. */
 @Serializable
 data class CancelCommitMessageBody(val requestId: String)
+
+/** `git_resolve_conflict` — write the resolved text and mark the file resolved. */
+@Serializable
+data class ResolveConflictBody(val path: String, val file: String, val content: String)
+
+/** `git_abort_operation` — `merge`, `pull` or `rebase`. */
+@Serializable
+data class AbortOperationBody(val path: String, val operation: String)

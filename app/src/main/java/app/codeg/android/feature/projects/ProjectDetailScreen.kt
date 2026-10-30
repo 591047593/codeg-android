@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -68,11 +69,28 @@ fun ProjectDetailScreen(
     var tab by remember { mutableStateOf(ProjectTab.FILES) }
     var showBranchPicker by remember { mutableStateOf(false) }
     var showCommit by remember { mutableStateOf(false) }
+    // Which operation the conflict screen should abort. Detection runs when the Changes
+    // tab needs it, not on every frame — a repo with no operation in progress simply
+    // leaves it null and the strip never appears.
+    var conflictOperation by remember { mutableStateOf<String?>(null) }
+    var showConflicts by remember { mutableStateOf(false) }
 
     if (showBranchPicker) BranchPickerSheet(viewModel, onDismiss = { showBranchPicker = false })
 
     val commitClient = ui.client
     val commitFolder = ui.folder
+    if (showConflicts && commitClient != null && commitFolder != null) {
+        ConflictSheet(
+            client = commitClient,
+            rootPath = commitFolder.path,
+            operation = conflictOperation ?: "merge",
+            onDismiss = { showConflicts = false },
+            onResolved = {
+                showConflicts = false
+                viewModel.load()
+            },
+        )
+    }
     if (showCommit && commitClient != null && commitFolder != null) {
         CommitSheet(
             viewModel = viewModel,
@@ -138,7 +156,17 @@ fun ProjectDetailScreen(
                         if (client != null) {
                             when (tab) {
                                 ProjectTab.FILES -> FolderFilesView(client, folder.path)
-                                ProjectTab.CHANGES -> FolderChangesView(viewModel, client, folder.path, onCommit = { showCommit = true })
+                                ProjectTab.CHANGES -> {
+                                    LaunchedEffect(folder.path) {
+                                        conflictOperation = viewModel.detectConflictOperation(folder.path)
+                                    }
+                                    FolderChangesView(
+                                        viewModel, client, folder.path,
+                                        onCommit = { showCommit = true },
+                                        conflictOperation = conflictOperation,
+                                        onOpenConflicts = { showConflicts = true },
+                                    )
+                                }
                                 ProjectTab.COMMITS -> FolderCommitsView(viewModel, client, folder.path)
                             }
                         }

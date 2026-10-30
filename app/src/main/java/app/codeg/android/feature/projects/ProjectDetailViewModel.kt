@@ -369,6 +369,23 @@ class ProjectDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Which git operation left the repo in a conflicted state, or null when it is clean.
+     *
+     * git leaves a marker for each kind (`MERGE_HEAD`, `rebase-merge`/`rebase-apply`,
+     * `CHERRY_PICK_HEAD`), but the only marker the app can ask about directly is
+     * `git_has_merge_head`; a rebase in progress also reads as unmerged paths, and aborting
+     * with the wrong verb would fail harmlessly rather than corrupt anything, so the
+     * caller gets the specific verb when it is known and `merge` as the default.
+     */
+    suspend fun detectConflictOperation(path: String): String? {
+        val c = client ?: return null
+        val conflicts = runCatching { c.gitListConflicts(path) }.getOrDefault(emptyList())
+        if (conflicts.isEmpty()) return null
+        val merging = runCatching { c.gitHasMergeHead(path) }.getOrDefault(false)
+        return if (merging) "merge" else "rebase"
+    }
+
     private fun pushBanner(result: GitPushResult): GitBanner = when {
         result.pushedCommits == 0 -> GitBanner(GitBannerKind.SUCCESS, appContext.getString(R.string.git_push_up_to_date))
         result.upstreamSet -> GitBanner(GitBannerKind.SUCCESS, quantity(R.plurals.git_pushed_upstream, result.pushedCommits))

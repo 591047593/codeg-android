@@ -203,3 +203,17 @@ data class GeneratedCommitMessage(
     /** The project's settings ask for the commit to be made straight away. */
     val autoCommit: Boolean = false,
 )
+
+/**
+ * The three sides of a conflicted file plus the working copy (`git_conflict_file_versions`).
+ *
+ * `base` is the common ancestor, `ours` HEAD, `theirs` the incoming side, and `merged`
+ * whatever is currently on disk (conflict markers included).
+ */
+@Serializable
+data class GitConflictFileVersions(
+    val base: String = "",
+    val ours: String = "",
+    val theirs: String = "",
+    val merged: String = "",
+)

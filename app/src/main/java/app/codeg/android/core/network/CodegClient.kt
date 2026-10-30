@@ -45,6 +45,9 @@ import app.codeg.android.core.model.FilePreviewContent
 import app.codeg.android.core.model.AccountTokenBody
 import app.codeg.android.core.model.GitAddFilesBody
 import app.codeg.android.core.model.GeneratedCommitMessage
+import app.codeg.android.core.model.AbortOperationBody
+import app.codeg.android.core.model.ResolveConflictBody
+import app.codeg.android.core.model.GitConflictFileVersions
 import app.codeg.android.core.model.GenerateCommitMessageBody
 import app.codeg.android.core.model.CancelCommitMessageBody
 import app.codeg.android.core.model.GitBranchList
@@ -532,6 +535,36 @@ class CodegClient(
     /** Stop a generation started with [gitGenerateCommitMessage]. */
     suspend fun gitCancelCommitMessage(requestId: String) {
         send("git_generate_commit_message_cancel", encode(CancelCommitMessageBody(requestId)))
+    }
+
+    /** True while a merge is in progress (`git_has_merge_head`). */
+    suspend fun gitHasMergeHead(path: String): Boolean =
+        decode(send("git_has_merge_head", encode(PathBody(path))), Boolean.serializer())
+
+    /** Paths git reports as unmerged (`git_list_conflicts`). */
+    suspend fun gitListConflicts(path: String): List<String> =
+        decode(send("git_list_conflicts", encode(PathBody(path))), ListSerializer(String.serializer()))
+
+    /** The base / ours / theirs / working versions of one conflicted file. */
+    suspend fun gitConflictFileVersions(path: String, file: String): GitConflictFileVersions =
+        decode(
+            send("git_conflict_file_versions", encode(PathFileBody(path, file))),
+            GitConflictFileVersions.serializer(),
+        )
+
+    /** Write [content] as the resolution and stage the file. */
+    suspend fun gitResolveConflict(path: String, file: String, content: String) {
+        send("git_resolve_conflict", encode(ResolveConflictBody(path, file, content)))
+    }
+
+    /**
+     * Abandon an in-progress merge / pull / rebase.
+     *
+     * The only way out of a conflicted operation that does not require a terminal, which
+     * on a phone is the difference between "stuck" and "recovered".
+     */
+    suspend fun gitAbortOperation(path: String, operation: String) {
+        send("git_abort_operation", encode(AbortOperationBody(path, operation)))
     }
 
     /** Commit history (newest first). */
