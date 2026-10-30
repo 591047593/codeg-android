@@ -488,3 +488,23 @@ data class CursorStructuredConfig(
     val permissionsAllow: List<String>? = null,
     val permissionsDeny: List<String>? = null,
 )
+
+/**
+ * `git_generate_commit_message` — ask an agent to write the message for a commit.
+ *
+ * `requestId` is chosen by the caller so the run can be cancelled while it waits; the
+ * server holds the HTTP response open for as long as the agent runs.
+ */
+@Serializable
+data class GenerateCommitMessageBody(
+    val requestId: String,
+    val path: String,
+    val folderId: Int? = null,
+    val files: List<String> = emptyList(),
+    val draft: String? = null,
+    val fallbackAgent: String? = null,
+)
+
+/** `git_generate_commit_message_cancel` — stop a run started with [GenerateCommitMessageBody]. */
+@Serializable
+data class CancelCommitMessageBody(val requestId: String)

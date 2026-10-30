@@ -87,6 +87,11 @@ fun CommitSheet(
     var loadError by remember { mutableStateOf<String?>(null) }
     var committing by remember { mutableStateOf(false) }
     var commitError by remember { mutableStateOf<String?>(null) }
+    // Commit-message generation: the server keeps the HTTP call open for the whole run,
+    // so the job is held here purely so Cancel can abandon it and stop the agent.
+    var generating by remember { mutableStateOf(false) }
+    var generateError by remember { mutableStateOf<String?>(null) }
+    var generateJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     suspend fun load() {
         loadError = null
@@ -164,14 +169,87 @@ fun CommitSheet(
                         Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        Box(Modifier.padding(top = 8.dp)) {
+                        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             CodegTextField(
                                 value = message,
-                                onValueChange = { message = it },
+                                onValueChange = { message = it; generateError = null },
                                 label = stringResource(R.string.commit_message_label),
                                 placeholder = stringResource(R.string.commit_message_placeholder),
                                 singleLine = false,
                             )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (generating) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = colors.accent,
+                                    )
+                                    Text(
+                                        stringResource(R.string.commit_generating),
+                                        fontSize = 12.sp,
+                                        color = colors.textSecondary,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = {
+                                        generateJob?.cancel()
+                                        generateJob = null
+                                        generating = false
+                                    }) { Text(stringResource(R.string.common_cancel), fontSize = 12.sp, color = colors.textSecondary) }
+                                } else {
+                                    TextButton(
+                                        onClick = {
+                                            if (selected.isEmpty()) {
+                                                generateError = appContext.getString(R.string.commit_generate_need_files)
+                                                return@TextButton
+                                            }
+                                            generateError = null
+                                            generating = true
+                                            val requestId = java.util.UUID.randomUUID().toString()
+                                            generateJob = scope.launch {
+                                                try {
+                                                    val generated = client.gitGenerateCommitMessage(
+                                                        requestId = requestId,
+                                                        path = rootPath,
+                                                        files = selected.toList(),
+                                                        draft = message,
+                                                    )
+                                                    // A late answer must not overwrite text the user
+                                                    // typed while the run was in flight, so the
+                                                    // result only lands in an untouched field.
+                                                    if (message.isBlank()) message = generated.message
+                                                } catch (e: CancellationException) {
+                                                    // Cancelling also stops the agent server-side —
+                                                    // dropping the HTTP call ends its future.
+                                                    runCatching { client.gitCancelCommitMessage(requestId) }
+                                                    throw e
+                                                } catch (e: Exception) {
+                                                    generateError = e.displayMessage(appContext)
+                                                } finally {
+                                                    generating = false
+                                                    generateJob = null
+                                                }
+                                            }
+                                        },
+                                        enabled = !committing,
+                                    ) {
+                                        Text(stringResource(R.string.commit_generate), fontSize = 12.sp, color = colors.accent)
+                                    }
+                                    if (generateError != null) {
+                                        Text(
+                                            generateError!!,
+                                            fontSize = 12.sp,
+                                            color = colors.danger,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                }
+                            }
                         }
                         SelectionHeader(
                             selectedCount = selected.size,

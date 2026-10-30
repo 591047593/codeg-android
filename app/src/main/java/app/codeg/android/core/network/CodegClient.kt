@@ -44,6 +44,9 @@ import app.codeg.android.core.model.DirectoryItem
 import app.codeg.android.core.model.FilePreviewContent
 import app.codeg.android.core.model.AccountTokenBody
 import app.codeg.android.core.model.GitAddFilesBody
+import app.codeg.android.core.model.GeneratedCommitMessage
+import app.codeg.android.core.model.GenerateCommitMessageBody
+import app.codeg.android.core.model.CancelCommitMessageBody
 import app.codeg.android.core.model.GitBranchList
 import app.codeg.android.core.model.GitCheckoutBody
 import app.codeg.android.core.model.GitCommitBody
@@ -494,6 +497,42 @@ class CodegClient(
     /** Working-tree changes. Throws [ApiError.Server] with code `not_a_git_repository` if not a repo. */
     suspend fun gitStatus(path: String, showAllUntracked: Boolean = true): List<GitStatusEntry> =
         decode(send("git_status", encode(GitStatusBody(path, showAllUntracked))), ListSerializer(GitStatusEntry.serializer()))
+
+    /**
+     * Ask an agent to write the commit message for [files] in [path].
+     *
+     * The server holds this call open for the whole run, so it belongs on a coroutine
+     * the caller can abandon — cancelling it also stops the agent (the handler drops the
+     * future). [requestId] is the caller's handle for the explicit cancel endpoint.
+     */
+    suspend fun gitGenerateCommitMessage(
+        requestId: String,
+        path: String,
+        folderId: Int? = null,
+        files: List<String>,
+        draft: String? = null,
+        fallbackAgent: AgentType? = null,
+    ): GeneratedCommitMessage = decode(
+        send(
+            "git_generate_commit_message",
+            encode(
+                GenerateCommitMessageBody(
+                    requestId = requestId,
+                    path = path,
+                    folderId = folderId,
+                    files = files,
+                    draft = draft?.takeIf { it.isNotBlank() },
+                    fallbackAgent = fallbackAgent?.wire,
+                ),
+            ),
+        ),
+        GeneratedCommitMessage.serializer(),
+    )
+
+    /** Stop a generation started with [gitGenerateCommitMessage]. */
+    suspend fun gitCancelCommitMessage(requestId: String) {
+        send("git_generate_commit_message_cancel", encode(CancelCommitMessageBody(requestId)))
+    }
 
     /** Commit history (newest first). */
     suspend fun gitLog(path: String, limit: Int? = null): GitLogResult =

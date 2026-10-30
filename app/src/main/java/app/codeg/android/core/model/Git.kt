@@ -1,5 +1,6 @@
 package app.codeg.android.core.model
 
+import app.codeg.android.core.model.AgentType.AgentTypeSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -191,4 +192,14 @@ data class WorktreeResolution(
     val path: String? = null,
     @SerialName("folder_id")
     val folderId: Int? = null,
+)
+
+/** What `git_generate_commit_message` returns (Rust `GeneratedCommitMessage`). */
+@Serializable
+data class GeneratedCommitMessage(
+    val message: String,
+    @Serializable(with = AgentTypeSerializer::class)
+    val agentType: AgentType = AgentType.CLAUDE_CODE,
+    /** The project's settings ask for the commit to be made straight away. */
+    val autoCommit: Boolean = false,
 )

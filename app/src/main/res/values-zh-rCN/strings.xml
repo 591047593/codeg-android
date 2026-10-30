@@ -800,6 +800,9 @@
     <string name="commit_load_failed">无法加载更改</string>
     <string name="commit_nothing_title">没有可提交的内容</string>
     <string name="commit_nothing_message">工作区是干净的。</string>
+    <string name="commit_generate">生成</string>
+    <string name="commit_generating">正在生成提交信息…</string>
+    <string name="commit_generate_need_files">请先选择要描述的文件。</string>
     <string name="commit_message_label">提交信息</string>
     <string name="commit_message_placeholder">描述你的更改</string>
     <string name="commit_section_changes">更改</string>

@@ -812,6 +812,9 @@
     <string name="commit_load_failed">Couldn\'t load changes</string>
     <string name="commit_nothing_title">Nothing to commit</string>
     <string name="commit_nothing_message">The working tree is clean.</string>
+    <string name="commit_generate">Generate</string>
+    <string name="commit_generating">Writing a message…</string>
+    <string name="commit_generate_need_files">Select the files to describe first.</string>
     <string name="commit_message_label">Message</string>
     <string name="commit_message_placeholder">Describe your changes</string>
     <string name="commit_section_changes">Changes</string>
