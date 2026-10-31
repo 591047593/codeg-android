@@ -2095,6 +2095,8 @@ class SessionDetailViewModel @Inject constructor(
                 _ui.update { it.copy(currentBranch = cur) }
             }
             list
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _ui.update { it.copy(notice = e.displayMessage(appContext)) }
             null
@@ -2197,6 +2199,8 @@ class SessionDetailViewModel @Inject constructor(
             currentBranch = trimmed
             _ui.update { it.copy(currentBranch = trimmed) }
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _ui.update { it.copy(notice = e.displayMessage(appContext)) }
             false

@@ -83,6 +83,10 @@ class ExpertsViewModel @Inject constructor(
                     c.acpListAgents().filter { it.available && it.enabled }.sortedBy { it.sortOrder }.map { it.agentType }
                 }.getOrDefault(emptyList())
                 _ui.update { it.copy(phase = ExpertsPhase.LOADED, experts = experts, agents = agents, refreshError = null) }
+            } catch (e: CancellationException) {
+                // The screen went away. Treating this as a load failure flashed an error
+                // over a list the user had already left.
+                throw e
             } catch (e: Exception) {
                 if (_ui.value.experts.isEmpty()) _ui.update { it.copy(phase = ExpertsPhase.FAILED, error = e.displayMessage(appContext)) }
                 else _ui.update { it.copy(refreshError = e.displayMessage(appContext)) }
@@ -106,6 +110,8 @@ class ExpertsViewModel @Inject constructor(
                     if (d == null || d.expert.id != expert.id) st // superseded
                     else st.copy(detail = d.copy(loading = false, content = content, statusByAgent = statuses, error = null))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _ui.update { st ->
                     val d = st.detail
