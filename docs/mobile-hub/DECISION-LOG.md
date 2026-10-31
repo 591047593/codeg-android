@@ -9,3 +9,5 @@
 - D7 (v140)：回查（probe）匹配规则 = 精确标题(限120) + folderId 严格相等 + 发送时刻-5min 起的时间窗；多条候选或 folderId 缺失一律不确认，保持 UNKNOWN 交人工。
 - D8 (v141)：v141 增量=结构化交接包→跨设备派发+Git预检；fork 既有 v121 同机重连式 handoff（引用+JSON导出+新会话播种）保留不动，两者互补。
 - D9 (v141)：DispatchService 为唯一派发管线，收件箱与交接共用；交接派发 UNKNOWN 后在本面板禁止重发，回查统一走收件箱派发记录（ideaId=null 的 ref 渲染已验证安全）。
+- D10 (v142)：加密文本只经系统剪贴板传递（API33+ 标记 IS_SENSITIVE）；密码字段用 remember 不入 SavedInstance Bundle；payload 只导 server_id/name/base_url/token/visible/include_in_all，其余不导。
+- D11 (v142)：导入校验（解密+schema+字段+数量上限）全部先于首笔写入；写入按台顺序、失败即停并报已写入数（每台 save 为 profile upsert + Keystore put 两步，中途失败可能留下部分覆盖，文案已提示重编辑）。

@@ -29,3 +29,9 @@
 - 双重审查（对抗+墨菲）发现并修复：loader 失败清空设备芯片（中回归）；模式B路径未知时伪造"0未提交"；UNKNOWN 后按钮仍可点（加 unknownRef 禁用）；旋转丢 Sheet（rememberSaveable）；巨量 transcript 主线程全量拼接（改尾部反向扫描）；cap 改码点安全截断；runCatching 吞 CE；菜单静默失败；onDone 时序；profiles 双写。
 - 测试：HandoffPackageTest 4 例 + 双 flavor 编译 + testLegacyDebugUnitTest 绿。
 - 发版：tag v1.0.1-fengx.30（versionCode 32）。
+
+## 批v142：双手机加密配置同步（2026-11-01）
+- 交付：ConfigSyncCrypto（AES-256-GCM AES/GCM/NoPadding + PBKDF2-HMAC-SHA256 600k、每导出新 salt16/nonce12、SecureRandom、Base64-URL-safe JSON envelope、解密参数上限 iterations 10万-100万/salt≤64B/密文≤1MB、BadTag→"密码错误或被篡改"、ignoreUnknownKeys 前向兼容）；ConfigSyncViewModel（导出读 profiles+Keystore token→payload（只导完整条目，跳过计数提示）；previewImport 解密+schema 校验先于一切写入、≤200 台上限；applyImport 顺序写、失败带已写入计数并停、覆盖当前选中设备加提示；ImportCandidate 全条目可勾选，新设备默认导入、冲突默认保留本地）；ConfigSyncContent（导出/导入对话框、密码字段 remember 不进 Bundle、进入页面清残留、剪贴板 API33+ IS_SENSITIVE 标记、复制失败提示）；设置页 CONFIG_SYNC leaf。全程零网络。
+- 双重审查发现并修复：密码 rememberSaveable 落 Bundle（高危）；applyImport 无 busy 守卫；粘贴文本清洗 \r\n/零宽字符；导出跳过无提示；新设备无法排除导入；1MB→数千行预览拖垮对话框；覆盖选中设备静默换后端；部分导入失败丢计数；剪贴板失败仍显示成功；envelope Json 未开 ignoreUnknownKeys。
+- 测试：ConfigSyncCryptoTest 7 例（roundtrip/错密码/篡改/每次新盐nonce/版本拒绝/坏文本/恶意KDF参数）+ 454 全量单测 + 双 flavor 编译绿。
+- 发版：tag v1.0.1-fengx.31（versionCode 33）。

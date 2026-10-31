@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Policy
 import androidx.compose.material.icons.rounded.School
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Tune
@@ -90,13 +91,14 @@ private enum class SettingsLeaf(@StringRes val titleRes: Int, val icon: ImageVec
     VERSION_CONTROL(R.string.settings_leaf_version_control, Icons.Rounded.Difference, R.string.settings_group_integrations, true),
     CHAT_CHANNELS(R.string.settings_leaf_chat_channels, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_integrations, true),
     SYSTEM(R.string.settings_leaf_system, Icons.Rounded.Settings, R.string.settings_group_system, true),
+    CONFIG_SYNC(R.string.settings_leaf_config_sync, Icons.Rounded.Sync, R.string.settings_group_system, true),
     OPEN_SOURCE_LICENSES(R.string.settings_leaf_open_source_licenses, Icons.Rounded.Policy, R.string.settings_group_system, true),
     ABOUT(R.string.settings_leaf_about, Icons.Rounded.Info, R.string.settings_group_system, true),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel(), configSyncViewModel: ConfigSyncViewModel = hiltViewModel()) {
     val colors = CodegTheme.colors
     var leaf by remember { mutableStateOf<SettingsLeaf?>(null) }
     // A second level beneath the Agents leaf: the per-agent config editor.
@@ -159,6 +161,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 SettingsLeaf.FLOATING_BALL -> FloatingBallContent(viewModel)
                 SettingsLeaf.MODEL_PROVIDERS -> ModelProvidersContent()
                 SettingsLeaf.SYSTEM -> SystemContent()
+                SettingsLeaf.CONFIG_SYNC -> ConfigSyncContent(configSyncViewModel)
                 SettingsLeaf.OPEN_SOURCE_LICENSES -> OpenSourceLicensesScreen()
                 SettingsLeaf.MCP -> McpContent()
                 SettingsLeaf.AGENTS ->

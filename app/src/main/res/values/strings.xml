@@ -1174,4 +1174,24 @@
     <string name="handoff_no_code_note">交接包只含上下文，不含代码；Git 同步需自行提交/推送/拉取。</string>
     <string name="handoff_menu">生成交接包</string>
     <string name="handoff_no_source">当前会话未同步到服务器，无法交接</string>
+    <!-- v142 config sync -->
+    <string name="settings_leaf_config_sync">服务器配置同步</string>
+    <string name="configsync_intro">在两台手机之间通过加密文本迁移服务器配置。全程本地完成，不联网、不调用服务器。</string>
+    <string name="configsync_export_title">导出服务器配置</string>
+    <string name="configsync_export_desc">设置一次性临时密码，加密后复制到剪贴板。密码不保存，请当面告知另一台手机。</string>
+    <string name="configsync_export_button">导出并复制</string>
+    <string name="configsync_export_done">已加密并复制到剪贴板。剪贴板中只有密文，不含明文 Token；但系统或第三方键盘可能保留剪贴板内容，建议尽快粘贴使用。</string>
+    <string name="configsync_import_title">导入服务器配置</string>
+    <string name="configsync_import_desc">粘贴另一台手机导出的加密文本，输入临时密码解密。</string>
+    <string name="configsync_import_button">从剪贴板导入</string>
+    <string name="configsync_password">临时密码</string>
+    <string name="configsync_password_confirm">再次输入临时密码</string>
+    <string name="configsync_password_hint">至少 12 位。此密码仅本次使用，不保存。请勿使用任何服务器 Token 作为密码。</string>
+    <string name="configsync_paste_hint">粘贴加密文本</string>
+    <string name="configsync_decrypt">解密预览</string>
+    <string name="configsync_preview_title">即将导入以下服务器（同名设备请选择是否用导入配置覆盖本地）</string>
+    <string name="configsync_conflict">与本地「%1$s」冲突，勾选使用导入配置</string>
+    <string name="configsync_new_server">新设备，将新增</string>
+    <string name="configsync_apply">确认导入</string>
+    <string name="configsync_clipboard_note">安全提示：加密文本不含明文 Token；剪贴板可能被系统或第三方键盘保留，可事后手动清空。</string>
 </resources>
