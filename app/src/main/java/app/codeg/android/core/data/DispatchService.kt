@@ -182,9 +182,14 @@ class DispatchService @Inject constructor(
         if (scheduleLocalMillis != null) {
             val client = repository.client(profile)
             val scheduled = client?.let {
-                runCatching {
+                try {
                     it.workTaskSchedule(todoId, DispatchPipeline.toUtcRfc3339(scheduleLocalMillis))
-                }.isSuccess
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    false
+                }
             } == true
             if (!scheduled) scheduleNote = "任务已创建，但定时设置失败，可在任务中心手动处理"
         } else if (autoStart) {
@@ -195,7 +200,14 @@ class DispatchService @Inject constructor(
             // todo and the note tells the user where to start it by hand.
             val client = repository.client(profile)
             val started = client?.let {
-                runCatching { it.workTaskStart(todoId) }.isSuccess
+                try {
+                    it.workTaskStart(todoId)
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    false
+                }
             } == true
             if (!started) scheduleNote = "任务已创建，但自动开始失败，可到任务中心手动开始"
         }

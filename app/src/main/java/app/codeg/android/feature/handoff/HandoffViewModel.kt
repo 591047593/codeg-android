@@ -63,8 +63,15 @@ class HandoffViewModel @Inject constructor(
         // Device chips are owned here (collected from the profile store), never
         // written by the target loader — a failed health check can't blank them.
         viewModelScope.launch {
-            repository.visibleProfiles.collect { profiles ->
-                _ui.value = _ui.value.copy(targets = _ui.value.targets.copy(profiles = profiles))
+            try {
+                repository.visibleProfiles.collect { profiles ->
+                    _ui.value = _ui.value.copy(targets = _ui.value.targets.copy(profiles = profiles))
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Profiles unreadable: the sheet shows an empty device list and
+                // dispatch refuses ("设备不可用") — never a crash from init.
             }
         }
         // Crash mid-dispatch: surface any PENDING ledger entry as resolvable.
@@ -123,7 +130,13 @@ class HandoffViewModel @Inject constructor(
     private var gitSeq = 0
 
     private suspend fun runPrecheck(serverId: String, pkg: HandoffPackage): GitPrecheck {
-        val profile = repository.profiles.first().firstOrNull { it.id == serverId }
+        val profile = try {
+            repository.profiles.first().firstOrNull { it.id == serverId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
         val client = profile?.let { repository.client(it) }
             ?: return GitPrecheck(null, 0, emptyList(), "设备不可用，无法检查 Git 状态")
         return precheckGit(client, pkg)

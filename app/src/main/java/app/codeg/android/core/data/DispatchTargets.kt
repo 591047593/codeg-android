@@ -31,7 +31,13 @@ class DispatchTargetLoader @Inject constructor(
     private val repository: ServerRepository,
 ) {
     suspend fun load(serverId: String, foldersLoading: Boolean = false): DispatchTargets {
-        val profile = repository.profiles.first().firstOrNull { it.id == serverId }
+        val profile = try {
+            repository.profiles.first().firstOrNull { it.id == serverId }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
         val client = profile?.let { repository.client(it) }
             ?: return DispatchTargets(error = "无法连接目标设备")
         val health = runCatching { client.health() }

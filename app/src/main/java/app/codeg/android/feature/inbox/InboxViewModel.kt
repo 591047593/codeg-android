@@ -18,6 +18,8 @@ import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -80,24 +82,30 @@ class InboxViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            try {
-                combine(ideaStore.ideas, dispatchStore.refs, repository.visibleProfiles) { ideas, refs, profiles ->
-                    Triple(ideas, refs, profiles)
-                }.collect { (ideas, refs, profiles) ->
-                    _ui.value = _ui.value.copy(
-                        ideas = ideas,
-                        pendingRefs = refs.filter { it.state == DispatchState.UNKNOWN },
-                        confirmedRefs = refs.filter { it.state == DispatchState.CONFIRMED }.take(20),
-                    )
-                    if (_target.value.profiles != profiles) {
-                        _target.value = _target.value.copy(profiles = profiles)
+            // Resubscribe loop: a DataStore failure must degrade to "empty for a
+            // moment", not (a) crash, nor (b) a one-shot .catch that freezes the
+            // inbox empty forever — an empty inbox invites blind re-dispatch of
+            // an unresolved task (double create, PRD §7.5).
+            while (currentCoroutineContext().isActive) {
+                try {
+                    combine(ideaStore.ideas, dispatchStore.refs, repository.visibleProfiles) { ideas, refs, profiles ->
+                        Triple(ideas, refs, profiles)
+                    }.collect { (ideas, refs, profiles) ->
+                        _ui.value = _ui.value.copy(
+                            ideas = ideas,
+                            pendingRefs = refs.filter { it.state == DispatchState.UNKNOWN },
+                            confirmedRefs = refs.filter { it.state == DispatchState.CONFIRMED }.take(20),
+                        )
+                        if (_target.value.profiles != profiles) {
+                            _target.value = _target.value.copy(profiles = profiles)
+                        }
                     }
+                    break // completed normally (scope cancelling)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    kotlinx.coroutines.delay(2_000)
                 }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Ledger/settings unreadable: degrade to an empty inbox rather
-                // than crash — dispatch itself re-validates everything it needs.
             }
         }
     }
@@ -115,7 +123,15 @@ class InboxViewModel @Inject constructor(
                 updatedAt = now,
                 sourceServerId = null,
             )
-        viewModelScope.launch { ideaStore.upsert(entry) }
+        viewModelScope.launch {
+            try {
+                ideaStore.upsert(entry)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.value = _ui.value.copy(dispatchError = "想法保存失败（本地存储异常）")
+            }
+        }
     }
 
     /** Seed a new idea from a conversation (traceability only). */
@@ -131,7 +147,15 @@ class InboxViewModel @Inject constructor(
             sourceSessionId = sessionId,
         )
 
-    fun deleteIdea(id: String) = viewModelScope.launch { ideaStore.delete(id) }
+    fun deleteIdea(id: String) = viewModelScope.launch {
+        try {
+            ideaStore.delete(id)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Delete failed: the idea stays; harmless retryable.
+        }
+    }
 
     fun clearDispatchError() { _ui.value = _ui.value.copy(dispatchError = null) }
 
@@ -271,6 +295,13 @@ class InboxViewModel @Inject constructor(
                 } else {
                     _ui.value = _ui.value.copy(dispatchError = "服务端未找到该任务，可重新派发或放弃")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Ledger read or confirm-write failed: stay UNKNOWN and say so —
+                // never let a bare coroutine crash the process, never report
+                // "not found" on an unverified check.
+                _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
             } finally {
                 synchronized(probing) { probing.remove(requestId) }
             }
@@ -280,8 +311,14 @@ class InboxViewModel @Inject constructor(
     /** Give up on an UNKNOWN request (the user checked the server themselves). */
     fun discard(requestId: String) {
         viewModelScope.launch {
-            dispatchStore.remove(requestId)
-            _ui.value = _ui.value.copy(dispatchError = null)
+            try {
+                dispatchStore.remove(requestId)
+                _ui.value = _ui.value.copy(dispatchError = null)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.value = _ui.value.copy(dispatchError = "放弃失败（本地存储异常），记录保留")
+            }
         }
     }
 
@@ -294,7 +331,16 @@ class InboxViewModel @Inject constructor(
         viewModelScope.launch {
             // Remove the old ledger entry only after the guard, so a rejected
             // re-dispatch can never drop the only trace of an unresolved request.
-            dispatchStore.remove(ref.requestId)
+            // A failed remove aborts the re-send entirely: dispatch() would
+            // create a SECOND task while the original trace is still UNKNOWN.
+            try {
+                dispatchStore.remove(ref.requestId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.value = _ui.value.copy(dispatchError = "本地记录更新失败，未重新派发（结果未知，勿手动重试创建）")
+                return@launch
+            }
             // Re-send exactly what was sent the first time (the idea may have been
             // edited since; the ledger snapshot is what the ambiguous request carried).
             dispatch(

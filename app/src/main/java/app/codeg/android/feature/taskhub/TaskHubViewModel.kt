@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -110,6 +111,9 @@ class TaskHubViewModel @Inject constructor(
                 .toList()
             buildBoard(rows)
         }
+            // Upstream (profiles) is a DataStore flow: a read failure must keep
+            // the last-good board, not kill the sharing coroutine (crash).
+            .catch { /* keep the last-good board */ }
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
@@ -120,9 +124,13 @@ class TaskHubViewModel @Inject constructor(
             .distinctUntilChanged()
             .onEach { _refreshTick.value += 1 }
             // DataStore failure on the profiles read must not kill the process
-            // (bare init coroutine = crash from the Activity tab, v130 class);
-            // the next successful profiles emission re-arms the tick.
-            .catch { /* drop the failed collection; VM scope stays alive */ }
+            // (bare init coroutine = crash from the Activity tab, v130 class).
+            // retryWhen (not .catch) so the collection survives and the next
+            // successful profiles emission re-arms the tick.
+            .retryWhen { _, attempt ->
+                kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
+                true
+            }
             .launchIn(viewModelScope)
     }
 
@@ -287,6 +295,12 @@ class TaskHubViewModel @Inject constructor(
                 val profile = deviceById(serverId) ?: error("设备不存在")
                 val client = repository.client(profile) ?: error("Token 缺失")
                 block(client)
+                // The action moved the task (status/列/events); the cached detail
+                // is a pre-action snapshot and loadDetail's existing!=null check
+                // would keep serving it — drop it so the next expand refetches.
+                _ui.update { state ->
+                    state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
+                }
                 fetchDevices(setOf(serverId))
             } catch (e: CancellationException) {
                 throw e
@@ -345,6 +359,8 @@ class TaskHubViewModel @Inject constructor(
                         )
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // detail loads are best-effort; the board stays usable
             }

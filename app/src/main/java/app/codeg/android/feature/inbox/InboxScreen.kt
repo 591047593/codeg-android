@@ -119,6 +119,18 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // probe/redispatch fire from the cards below with no sheet open —
+                // without this line their failures ("检查失败…勿直接重派") would
+                // be set on the VM but never rendered anywhere.
+                ui.dispatchError?.takeIf { dispatching == null }?.let { error ->
+                    item(key = "dispatch-error") {
+                        Text(
+                            error,
+                            color = colors.danger,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
                 ui.pendingRefs.forEach { ref ->
                     item(key = "pending-${ref.requestId}", contentType = { "unknown-ref" }) {
                         UnknownRefCard(
@@ -382,6 +394,16 @@ private fun DispatchSheet(
     var showTimePicker by remember { mutableStateOf(false) }
     var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var result by remember { mutableStateOf<DispatchRef?>(null) }
+    // Composition-time "is the schedule in the past" goes stale as the wall
+    // clock advances (no state change → no recompose → button stays enabled).
+    // A 30s ticker keeps the guard honest for as long as the sheet is open.
+    var clockTick by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            clockTick = System.currentTimeMillis()
+        }
+    }
 
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onClose) {
         Column(
@@ -482,14 +504,17 @@ private fun DispatchSheet(
                         )
                     }
                 }
-                ui.dispatchError?.let {
+                // Suppressed once the success dialog is up: a schedule/auto-start
+                // note rides the same field and would render in error styling
+                // behind the dialog.
+                if (result == null) ui.dispatchError?.let {
                     Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
                 }
                 // Murphy guard: a schedule switch without a time would silently
                 // dispatch as IMMEDIATE, and a past time would fire right away —
                 // both look "scheduled" to the user. Block the button and say why.
                 val scheduleNotSet = scheduled && scheduleMillis <= 0L
-                val scheduleInPast = scheduled && scheduleMillis in 1..System.currentTimeMillis()
+                val scheduleInPast = scheduled && scheduleMillis in 1..clockTick
                 if (scheduleNotSet) {
                     Text(
                         stringResource(R.string.dispatch_schedule_not_set),

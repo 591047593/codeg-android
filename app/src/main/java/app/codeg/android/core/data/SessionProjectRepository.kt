@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,13 +34,18 @@ class SessionProjectRepository @Inject constructor(
     private val store: SessionProjectStore,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
+    // .catch guards: these share on the APPLICATION scope (no VM to die with),
+    // so an upstream DataStore failure here would kill the whole process from
+    // any screen. Degrade to the empty initial instead.
     val projects: StateFlow<List<SessionProject>> =
         store.projects
             .map { list -> list.sortedBy { it.sortOrder } }
+            .catch { /* keep the empty initial */ }
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     val members: StateFlow<Map<String, List<SessionRef>>> =
         store.members
+            .catch { /* keep the empty initial */ }
             .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     private val _activeProjectId = MutableStateFlow<String?>(null)

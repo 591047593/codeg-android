@@ -400,7 +400,7 @@ private fun TaskCard(
                 )
             }
             if (expanded) {
-                TaskActions(task, onLoadDiff, onStart, onCancel, onRetry, onRequeue, onMerge, onComplete)
+                TaskActions(task, busy, onLoadDiff, onStart, onCancel, onRetry, onRequeue, onMerge, onComplete)
                 TaskDetailBody(detail, onLoadDiff)
             }
         }
@@ -429,6 +429,7 @@ private fun Tag(text: String, danger: Boolean = false) {
 @Composable
 private fun TaskActions(
     task: app.codeg.android.core.model.WorkTaskInfo,
+    busy: Boolean,
     onLoadDiff: () -> Unit,
     onStart: () -> Unit,
     onCancel: () -> Unit,
@@ -437,6 +438,10 @@ private fun TaskActions(
     onMerge: () -> Unit,
     onComplete: () -> Unit,
 ) {
+    // Disable while an action is in flight: post() silently drops concurrent
+    // calls, so enabled buttons would let a user "confirm" an action that
+    // never runs, with zero feedback.
+    if (busy) return
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier

@@ -112,6 +112,12 @@ class ActivityViewModel @Inject constructor(
             buildActivitySections(narrowed, readMarks)
         }
         .distinctUntilChanged()
+        // DataStore failure upstream must not kill the sharing coroutine while
+        // the feed is on screen; resubscribe with backoff, keep last-good UI.
+        .retryWhen { _, attempt ->
+            kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
+            true
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -244,9 +250,16 @@ class ActivityViewModel @Inject constructor(
     private fun restartPoll(manual: Boolean) {
         manualOnce = manual
         viewModelScope.launch {
-            pollJob?.cancelAndJoin()
-            repository.selectedProfile.first()?.let { profile ->
-                onMode(profile, repository.activityAll.value, reset = false)
+            try {
+                pollJob?.cancelAndJoin()
+                repository.selectedProfile.first()?.let { profile ->
+                    onMode(profile, repository.activityAll.value, reset = false)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Pull-to-refresh must not crash on a failed DataStore read;
+                // the next poll round re-reads.
             }
         }
     }
@@ -260,7 +273,13 @@ class ActivityViewModel @Inject constructor(
      */
     fun delete(row: ActivityRow) {
         viewModelScope.launch(Dispatchers.Main) {
-            val profile = repository.profiles.first().orEmpty().firstOrNull { it.id == row.serverId }
+            val profile = try {
+                repository.profiles.first().orEmpty().firstOrNull { it.id == row.serverId }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
             val client = profile?.let { repository.client(it) }
             if (client == null) {
                 _ui.update { it.copy(error = appContext.getString(R.string.sessions_missing_token)) }
@@ -309,7 +328,13 @@ class ActivityViewModel @Inject constructor(
      *  ordering data — rename has no optimistic local state to revert. */
     fun rename(row: ActivityRow, title: String) {
         viewModelScope.launch(Dispatchers.Main) {
-            val profile = repository.profiles.first().orEmpty().firstOrNull { it.id == row.serverId }
+            val profile = try {
+                repository.profiles.first().orEmpty().firstOrNull { it.id == row.serverId }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
             val client = profile?.let { repository.client(it) }
             if (client == null) {
                 _ui.update { it.copy(error = appContext.getString(R.string.sessions_missing_token)) }
@@ -345,11 +370,29 @@ class ActivityViewModel @Inject constructor(
     val activeProjectId = projectRepo.activeProjectId
 
     fun toggleProjectMembership(projectId: String, ref: SessionRef, member: Boolean) {
-        viewModelScope.launch { projectRepo.setMembership(projectId, ref, member) }
+        viewModelScope.launch {
+            try {
+                projectRepo.setMembership(projectId, ref, member)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // DataStore edit failure: membership stays unchanged; the sheet
+                // reflects the store truth on next emission.
+            }
+        }
     }
 
     fun createProject(name: String, onCreated: (app.codeg.android.core.datastore.SessionProject) -> Unit = {}) {
-        viewModelScope.launch { onCreated(projectRepo.create(name)) }
+        viewModelScope.launch {
+            try {
+                onCreated(projectRepo.create(name))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Create failed: onCreated simply never fires; the sheet keeps
+                // its input instead of crashing.
+            }
+        }
     }
 
     /** Refresh one device's feed (also resolves its folder names, once). */
