@@ -66,20 +66,38 @@ class InboxViewModel @Inject constructor(
         // Crash mid-flight sweep: a PENDING ledger entry means the request was
         // already sent but its outcome is unobservable — flip it to UNKNOWN so it
         // surfaces as a resolvable card instead of silently rotting (or being
-        // blindly re-sent, which could double-create on the server).
-        viewModelScope.launch { dispatchService.sweepPendingToUnknown() }
+        // blindly re-sent, which could double-create on the server). The sweep
+        // itself is self-guarded in DispatchService; these outer nets keep any
+        // OTHER DataStore/flow failure from killing the process (a bare init
+        // coroutine crashing here took the whole Activity tab down, v130 class).
         viewModelScope.launch {
-            combine(ideaStore.ideas, dispatchStore.refs, repository.visibleProfiles) { ideas, refs, profiles ->
-                Triple(ideas, refs, profiles)
-            }.collect { (ideas, refs, profiles) ->
-                _ui.value = _ui.value.copy(
-                    ideas = ideas,
-                    pendingRefs = refs.filter { it.state == DispatchState.UNKNOWN },
-                    confirmedRefs = refs.filter { it.state == DispatchState.CONFIRMED }.take(20),
-                )
-                if (_target.value.profiles != profiles) {
-                    _target.value = _target.value.copy(profiles = profiles)
+            try {
+                dispatchService.sweepPendingToUnknown()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Sweep already logged its own failure path; nothing else to do.
+            }
+        }
+        viewModelScope.launch {
+            try {
+                combine(ideaStore.ideas, dispatchStore.refs, repository.visibleProfiles) { ideas, refs, profiles ->
+                    Triple(ideas, refs, profiles)
+                }.collect { (ideas, refs, profiles) ->
+                    _ui.value = _ui.value.copy(
+                        ideas = ideas,
+                        pendingRefs = refs.filter { it.state == DispatchState.UNKNOWN },
+                        confirmedRefs = refs.filter { it.state == DispatchState.CONFIRMED }.take(20),
+                    )
+                    if (_target.value.profiles != profiles) {
+                        _target.value = _target.value.copy(profiles = profiles)
+                    }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Ledger/settings unreadable: degrade to an empty inbox rather
+                // than crash — dispatch itself re-validates everything it needs.
             }
         }
     }
@@ -179,6 +197,7 @@ class InboxViewModel @Inject constructor(
                         description = description,
                         agentTypeWire = agentType?.wire,
                         scheduleLocalMillis = scheduleLocalMillis,
+                        autoStart = true,
                         restoreOnHardFail = restoreOnHardFail,
                     ),
                 )
@@ -240,7 +259,11 @@ class InboxViewModel @Inject constructor(
                     // double create).
                     .minusSeconds(300)
                 val match = DispatchPipeline.findCreatedTask(
-                    tasks, ref.title, ref.folderId, started, Instant.now().plusSeconds(60),
+                    tasks, ref.title, ref.folderId, started,
+                    // End of window is anchored on the phone clock too, so a FAST
+                    // server clock needs symmetric slack (+10min) — a false
+                    // "not found" here invites a re-dispatch, i.e. a double create.
+                    Instant.now().plusSeconds(600),
                 )
                 if (match != null) {
                     dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))

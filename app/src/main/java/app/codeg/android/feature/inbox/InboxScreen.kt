@@ -485,7 +485,26 @@ private fun DispatchSheet(
                 ui.dispatchError?.let {
                     Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
                 }
-                val canDispatch = device != null && folderId != null && title.isNotBlank() && !ui.dispatching
+                // Murphy guard: a schedule switch without a time would silently
+                // dispatch as IMMEDIATE, and a past time would fire right away —
+                // both look "scheduled" to the user. Block the button and say why.
+                val scheduleNotSet = scheduled && scheduleMillis <= 0L
+                val scheduleInPast = scheduled && scheduleMillis in 1..System.currentTimeMillis()
+                if (scheduleNotSet) {
+                    Text(
+                        stringResource(R.string.dispatch_schedule_not_set),
+                        color = CodegTheme.colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else if (scheduleInPast) {
+                    Text(
+                        stringResource(R.string.dispatch_schedule_past),
+                        color = CodegTheme.colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                val canDispatch = device != null && folderId != null && title.isNotBlank() &&
+                    !ui.dispatching && !scheduleNotSet && !scheduleInPast
                 TextButton(
                     onClick = {
                         val dev = device ?: return@TextButton
@@ -519,7 +538,14 @@ private fun DispatchSheet(
         AlertDialog(
             onDismissRequest = { result = null; onClose() },
             title = { Text(stringResource(R.string.dispatch_ok, ref.remoteTodoId ?: 0)) },
-            text = { Text("${ref.serverName} · ${ref.title}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("${ref.serverName} · ${ref.title}")
+                    ui.dispatchError?.let { note ->
+                        Text(note, style = MaterialTheme.typography.bodySmall, color = CodegTheme.colors.textSecondary)
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { result = null; onClose() }) { Text(stringResource(android.R.string.ok)) }
             },

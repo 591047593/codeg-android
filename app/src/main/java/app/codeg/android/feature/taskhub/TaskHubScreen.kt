@@ -74,6 +74,15 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     val colors = CodegTheme.colors
     var confirm by remember { mutableStateOf<ConfirmAction?>(null) }
 
+    // The 25s poll runs only while the board is actually on screen: entering
+    // this composable arms it, leaving the Activity tab (or switching back to
+    // the feed page) disposes it and stops the radio. The VM survives tab
+    // switches, so without this the poll leaked forever after one visit.
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        viewModel.setActive(true)
+        onDispose { viewModel.setActive(false) }
+    }
+
     PullToRefreshBox(
         isRefreshing = ui.deviceStates.any { it.status == DeviceLoadStatus.LOADING } && ui.tasks.isEmpty(),
         onRefresh = viewModel::refresh,
@@ -148,10 +157,10 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                         busy = ui.busyKey == "${entry.serverId}:${entry.task.id}",
                         onExpand = { viewModel.loadDetail(entry.serverId, entry.task.id) },
                         onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
-                        onStart = { viewModel.start(entry.serverId, entry.task.id) },
+                        onStart = { confirm = ConfirmAction.START(entry) },
                         onCancel = { confirm = ConfirmAction.CANCEL(entry) },
-                        onRetry = { viewModel.retry(entry.serverId, entry.task.id) },
-                        onRequeue = { viewModel.requeue(entry.serverId, entry.task.id) },
+                        onRetry = { confirm = ConfirmAction.RETRY(entry) },
+                        onRequeue = { confirm = ConfirmAction.REQUEUE(entry) },
                         onMerge = { confirm = ConfirmAction.MERGE(entry) },
                         onComplete = { confirm = ConfirmAction.COMPLETE(entry) },
                     )
@@ -177,6 +186,21 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                 R.string.task_confirm_complete_msg,
                 { viewModel.complete(action.entry.serverId, action.entry.task.id) },
             )
+            is ConfirmAction.START -> Triple(
+                R.string.task_confirm_start_title,
+                R.string.task_confirm_start_msg,
+                { viewModel.start(action.entry.serverId, action.entry.task.id) },
+            )
+            is ConfirmAction.RETRY -> Triple(
+                R.string.task_confirm_retry_title,
+                R.string.task_confirm_retry_msg,
+                { viewModel.retry(action.entry.serverId, action.entry.task.id) },
+            )
+            is ConfirmAction.REQUEUE -> Triple(
+                R.string.task_confirm_requeue_title,
+                R.string.task_confirm_requeue_msg,
+                { viewModel.requeue(action.entry.serverId, action.entry.task.id) },
+            )
         }
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -198,6 +222,9 @@ private sealed interface ConfirmAction {
     data class CANCEL(override val entry: TaskBoardEntry) : ConfirmAction
     data class MERGE(override val entry: TaskBoardEntry) : ConfirmAction
     data class COMPLETE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class START(override val entry: TaskBoardEntry) : ConfirmAction
+    data class RETRY(override val entry: TaskBoardEntry) : ConfirmAction
+    data class REQUEUE(override val entry: TaskBoardEntry) : ConfirmAction
 }
 
 @Composable

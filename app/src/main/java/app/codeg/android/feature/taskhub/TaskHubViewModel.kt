@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -118,6 +119,10 @@ class TaskHubViewModel @Inject constructor(
             .map { list -> list.filter { it.visible && it.includeInAll } }
             .distinctUntilChanged()
             .onEach { _refreshTick.value += 1 }
+            // DataStore failure on the profiles read must not kill the process
+            // (bare init coroutine = crash from the Activity tab, v130 class);
+            // the next successful profiles emission re-arms the tick.
+            .catch { /* drop the failed collection; VM scope stays alive */ }
             .launchIn(viewModelScope)
     }
 
@@ -131,8 +136,15 @@ class TaskHubViewModel @Inject constructor(
         val retryIds = _ui.value.deviceStates.retryableIds()
         if (retryIds.isEmpty()) return
         viewModelScope.launch {
-            _ui.update { it.copy(deviceStates = it.deviceStates.retrying(retryIds)) }
-            fetchDevices(retryIds)
+            try {
+                _ui.update { it.copy(deviceStates = it.deviceStates.retrying(retryIds)) }
+                fetchDevices(retryIds)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Bare DataStore read in fetchDevices' targets branch must not
+                // crash the process; the devices keep their FAILED state.
+            }
         }
     }
 
@@ -165,6 +177,21 @@ class TaskHubViewModel @Inject constructor(
     }
 
     private suspend fun fetchAll() {
+        // Top-level guard: this runs from bare init/poll coroutines, and a
+        // DataStore failure on the profiles read must degrade to "this round
+        // failed" — never kill the process from the Activity tab's VM.
+        try {
+            fetchAllInner()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Profiles unreadable: skip this round (poll retries in ≤25s) —
+            // never kill the process from the Activity tab's VM.
+            android.util.Log.w("TaskHubViewModel", "fetchAll round failed")
+        }
+    }
+
+    private suspend fun fetchAllInner() {
         val devices = repository.profiles.first()
             .filter { it.visible && it.includeInAll }
         if (devices.isEmpty()) {

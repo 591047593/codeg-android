@@ -20,9 +20,10 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -92,8 +93,13 @@ fun ActivityScreen(
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    var tasksMode by rememberSaveable { mutableStateOf(false) }
-    var inboxMode by rememberSaveable { mutableStateOf(false) }
+    // Page switcher: 0 = feed, 1 = task board, 2 = idea inbox. One Int keeps
+    // the three pages mutually exclusive and survives process death. Rendered
+    // as a TabRow (not filter chips): these are PAGES, and the chip styling is
+    // why the task board / inbox went unnoticed by real users.
+    var pageMode by rememberSaveable { mutableStateOf(0) }
+    val tasksMode = pageMode == 1
+    val inboxMode = pageMode == 2
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
@@ -167,12 +173,6 @@ fun ActivityScreen(
         }
     }
 
-    val taskHubViewModel: app.codeg.android.feature.taskhub.TaskHubViewModel =
-        androidx.hilt.navigation.compose.hiltViewModel(key = "taskhub")
-    val inboxViewModel: app.codeg.android.feature.inbox.InboxViewModel =
-        androidx.hilt.navigation.compose.hiltViewModel(key = "inbox")
-    LaunchedEffect(tasksMode, inboxMode) { taskHubViewModel.setActive(tasksMode && !inboxMode) }
-
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -185,32 +185,28 @@ fun ActivityScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            TabRow(
+                selectedTabIndex = pageMode,
+                containerColor = Color.Transparent,
+                contentColor = colors.textPrimary,
             ) {
-                FilterChip(
-                    selected = !tasksMode && !inboxMode,
-                    onClick = { tasksMode = false; inboxMode = false },
-                    label = { Text(stringResource(R.string.task_toggle_feed)) },
-                )
-                FilterChip(
-                    selected = tasksMode && !inboxMode,
-                    onClick = { tasksMode = true; inboxMode = false },
-                    label = { Text(stringResource(R.string.task_toggle_tasks)) },
-                )
-                FilterChip(
-                    selected = inboxMode,
-                    onClick = { inboxMode = true; tasksMode = false },
-                    label = { Text(stringResource(R.string.inbox_title)) },
-                )
+                listOf(R.string.task_toggle_feed, R.string.task_toggle_tasks, R.string.inbox_title)
+                    .forEachIndexed { index, labelRes ->
+                        Tab(
+                            selected = pageMode == index,
+                            onClick = { pageMode = index },
+                            text = { Text(stringResource(labelRes)) },
+                        )
+                    }
             }
             if (inboxMode) {
-                app.codeg.android.feature.inbox.InboxScreen(
-                    inboxViewModel
-                )
+                // Lazy VM creation: an inbox/task-hub ViewModel is built only
+                // when its page is first shown — its init fetches must not run
+                // just because the feed is on screen, and a failing init can
+                // never take the feed down with it.
+                app.codeg.android.feature.inbox.InboxScreen()
             } else if (tasksMode) {
-                app.codeg.android.feature.taskhub.TaskHubScreen(taskHubViewModel)
+                app.codeg.android.feature.taskhub.TaskHubScreen()
             } else {
         Box(Modifier.fillMaxSize()) {
             when {

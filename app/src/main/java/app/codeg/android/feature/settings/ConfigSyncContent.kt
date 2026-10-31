@@ -203,7 +203,10 @@ private fun ImportDialog(
     onApply: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
+    // Plain `remember` (NOT saveable): the pasted blob is ciphertext, but it is
+    // still a credential-bearing secret — it must never ride the saved-instance
+    // Bundle the same way the password must not.
+    var text by remember { mutableStateOf("") }
     var pw by remember { mutableStateOf("") }
     val preview = ui.preview
     AlertDialog(

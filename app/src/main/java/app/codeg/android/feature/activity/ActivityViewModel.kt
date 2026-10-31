@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import java.time.Duration
@@ -139,6 +140,14 @@ class ActivityViewModel @Inject constructor(
                 // Dropping those keeps a redundant emission from cancelling a healthy
                 // in-flight fetch (same guard the Chats tab uses).
                 .distinctUntilChanged()
+                // A DataStore IO failure anywhere upstream must not kill the
+                // process (this VM owns the whole Activity tab incl. the task
+                // board and idea inbox); resubscribe with backoff and keep the
+                // last-good UI until data comes back.
+                .retryWhen { _, attempt ->
+                    kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
+                    true
+                }
                 .collectLatest { input ->
                     val (profile, all, tick) = input
                     // The fan-out SET is part of the mode, not just the selection:

@@ -1144,6 +1144,14 @@
     <string name="dispatch_unknown_confirm_redispatch">该任务提交结果未知：服务器上可能已经创建成功。重新派发可能造成同一任务重复创建，确定继续吗？</string>
     <string name="dispatch_unknown_confirm_discard">放弃后该记录将被删除。如果任务实际上已在服务器创建，将无法从这里追踪到它，确定放弃吗？</string>
     <string name="dispatch_unknown_confirm_yes">确定</string>
+    <string name="dispatch_schedule_not_set">已开启定时执行，但尚未选择时间——请点「选择时间」，或关闭定时开关改为立即执行。</string>
+    <string name="dispatch_schedule_past">所选时间已经过去，任务会立即执行。请重新选择未来的时间。</string>
+    <string name="task_confirm_start_title">开始此任务？</string>
+    <string name="task_confirm_start_msg">将在对应设备上立即开始执行。如果该任务来自其他设备或另有安排，开始可能打断原计划。</string>
+    <string name="task_confirm_retry_title">重试此任务？</string>
+    <string name="task_confirm_retry_msg">将在对应设备上重新执行该任务。</string>
+    <string name="task_confirm_requeue_title">重新排队？</string>
+    <string name="task_confirm_requeue_msg">任务将回到待办列，等待再次开始。</string>
     <string name="dispatch_redispatch">重新派发</string>
     <string name="dispatch_no_folder">该设备暂无项目</string>
     <!-- v141 handoff -->

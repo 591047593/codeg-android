@@ -47,6 +47,11 @@ class DispatchService @Inject constructor(
         val description: String,
         val agentTypeWire: String? = null,
         val scheduleLocalMillis: Long? = null,
+        /** Immediate (non-scheduled) dispatches start the task right after
+         * create — the server parks new tasks in todo forever, so without this
+         * the "记想法→派发→等它跑" path never runs. Handoff dispatches leave
+         * it false: picking up the work is the receiving side's decision. */
+        val autoStart: Boolean = false,
         /** On a hard failure, put this ref back as UNKNOWN — a re-dispatch must
          * never destroy the only trace of the original ambiguous request. */
         val restoreOnHardFail: DispatchRef? = null,
@@ -57,11 +62,22 @@ class DispatchService @Inject constructor(
      * but its outcome is unobservable — flip it to UNKNOWN so it surfaces as a
      * resolvable card instead of rotting silently. Every dispatch surface calls
      * this on VM init so the sweep doesn't depend on visiting the inbox.
+     *
+     * Self-guarded: callers run it from bare VM-init coroutines, so a DataStore
+     * IO failure here must degrade to "skip the sweep" (PENDING entries still
+     * resolve via probe later), never kill the process — a bare init coroutine
+     * on this page took the whole Activity tab down once before (v130 class).
      */
     suspend fun sweepPendingToUnknown() {
-        dispatchStore.refs.first()
-            .filter { it.state == DispatchState.PENDING }
-            .forEach { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
+        try {
+            dispatchStore.refs.first()
+                .filter { it.state == DispatchState.PENDING }
+                .forEach { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Ledger unreadable: nothing to sweep; probe/dispatch still work.
+        }
     }
 
     /** Code-point-safe truncation (never splits an emoji surrogate pair). */
@@ -106,7 +122,7 @@ class DispatchService @Inject constructor(
         return created.fold(
             onSuccess = { task ->
                 if (task != null) {
-                    confirm(request, task.id, profile, req.scheduleLocalMillis)
+                    confirm(request, task.id, profile, req.scheduleLocalMillis, req.autoStart)
                 } else {
                     // Request reached the server but the row did not decode — ambiguous.
                     markUnknown(request)
@@ -158,6 +174,7 @@ class DispatchService @Inject constructor(
         todoId: Int,
         profile: app.codeg.android.core.datastore.ServerProfile,
         scheduleLocalMillis: Long?,
+        autoStart: Boolean,
     ): DispatchOutcome {
         val ref = request.copy(remoteTodoId = todoId, state = DispatchState.CONFIRMED)
         dispatchStore.put(ref)
@@ -170,6 +187,17 @@ class DispatchService @Inject constructor(
                 }.isSuccess
             } == true
             if (!scheduled) scheduleNote = "任务已创建，但定时设置失败，可在任务中心手动处理"
+        } else if (autoStart) {
+            // PRD main path is 记想法→派发→等它跑: the server parks a freshly
+            // created task in todo forever, so an "immediate" dispatch must also
+            // start it (scheduled ones are pulled by the server scheduler
+            // instead). Best-effort: if the start call fails the task stays in
+            // todo and the note tells the user where to start it by hand.
+            val client = repository.client(profile)
+            val started = client?.let {
+                runCatching { it.workTaskStart(todoId) }.isSuccess
+            } == true
+            if (!started) scheduleNote = "任务已创建，但自动开始失败，可到任务中心手动开始"
         }
         return DispatchOutcome.Confirmed(ref, scheduleNote)
     }
