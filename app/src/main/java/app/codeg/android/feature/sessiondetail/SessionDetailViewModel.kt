@@ -603,6 +603,7 @@ class SessionDetailViewModel @Inject constructor(
                 live = builder.snapshot(),
                 liveFromReattach = false,
                 isInFlight = true,
+                lastTurnFailed = false,
                 sendStatus = appContext.getString(R.string.session_status_connecting),
                 notice = null,
                 restoreDraft = null,
@@ -1336,7 +1337,7 @@ class SessionDetailViewModel @Inject constructor(
         // Clear the in-flight flag *before* anything reads it: `send` refuses to start a
         // turn while it is set, so a queued prompt flushed below would be re-queued and
         // the queue would never drain.
-        _ui.update { it.copy(isInFlight = false, notice = message) }
+        _ui.update { it.copy(isInFlight = false, notice = message, lastTurnFailed = true) }
         reconcileAfterTurn()
         // A prompt queued while this turn ran has to go somewhere. Without this it sat in
         // the queue for ever — the composer kept showing "1 queued" and the only way to
@@ -2493,6 +2494,16 @@ data class SessionDetailUiState(
     val outline: List<OutlineEntry> = emptyList(),
     val outlineLoading: Boolean = false,
     val isInFlight: Boolean = false,
+    /**
+     * True when the most recent send failed and the turn was reconciled away.
+     *
+     * `canRetryLastTurn` used to read only `live.errorMessage`. A failed turn is
+     * reconciled against the server within a second or two, and that reconcile clears
+     * `live` — so the Retry button appeared and then vanished while the user was reaching
+     * for it, leaving no way back to the prompt. This flag survives the reconcile and is
+     * cleared by the next successful send.
+     */
+    val lastTurnFailed: Boolean = false,
     val sendStatus: String? = null,
     val notice: String? = null,
     /** Set when a failed send returns the user's typed text to the composer (consumed once). */
@@ -2523,7 +2534,9 @@ data class SessionDetailUiState(
      * is on [live], and only once the turn has stopped streaming.
      */
     val canRetryLastTurn: Boolean
-        get() = !isInFlight && live?.errorMessage != null && turns.any { it.role == TurnRole.USER }
+        get() = !isInFlight &&
+            (live?.errorMessage != null || lastTurnFailed) &&
+            turns.any { it.role == TurnRole.USER }
 }
 
 /** What to do with a plan approval's revision notes — see [planFollowUpAction]. */
