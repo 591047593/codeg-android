@@ -31,17 +31,7 @@
     <string name="server_none_selected">No server selected</string>
 
     <!-- Home (smoke screen) -->
-    <string name="home_title">Codeg</string>
-    <string name="home_status_checking">Checking connection…</string>
-    <string name="home_status_online">Online · codeg %1$s</string>
-    <string name="home_status_offline">Offline</string>
-    <string name="home_folders_count">%1$d folders</string>
-    <string name="home_conversations_count">%1$d conversations</string>
-    <string name="home_stream_waiting">Event stream: connecting…</string>
-    <string name="home_stream_ready">Event stream: ready</string>
-    <string name="home_stream_closed">Event stream: closed</string>
     <string name="home_manage_servers">Manage Servers</string>
-    <string name="home_scaffold_note">Scaffold build — networking, models, and design system are wired. Feature screens land next.</string>
 
     <!-- Bottom navigation tabs -->
     <string name="tab_chats">Chats</string>
@@ -165,12 +155,9 @@
     <string name="common_delete">Delete</string>
     <string name="common_edit">Edit</string>
     <string name="common_remove">Remove</string>
-    <string name="common_add">Add</string>
     <string name="common_ok">OK</string>
-    <string name="common_done">Done</string>
     <string name="common_back">Back</string>
     <string name="common_loading">Loading…</string>
-    <string name="common_error_generic">Something went wrong.</string>
 
     <!-- ===== Settings · Chat Channels ===== -->
     <string name="cc_loading_channels">Loading channels…</string>
@@ -378,9 +365,7 @@
     <string name="general_max_depth_title">Max depth</string>
     <string name="general_max_depth_subtitle">How many levels deep agents may delegate.</string>
     <string name="general_shell_section">Navigation</string>
-    <string name="general_tab_order_title">Bottom tab order</string>
     <string name="general_tab_order_subtitle">Tap ▲▼ to reorder the bottom bar; tap a row\'s name to make it the tab the app opens on.</string>
-    <string name="general_start_tab_title">Default tab on launch</string>
     <string name="general_activity_swipe_title">Swipe between devices on Activity</string>
     <string name="general_activity_swipe_subtitle">On the Activity tab, horizontal swipes switch devices (All → each device); swiping past the ends moves between tabs.</string>
     <string name="general_folders_swipe_title">Swipe between devices on Folders</string>
@@ -1158,7 +1143,7 @@
     <string name="dispatch_unknown_confirm_redispatch">This task\'s submission result is UNKNOWN — it may already exist on the server. Re-dispatching could create a duplicate task. Continue?</string>
     <string name="dispatch_unknown_confirm_discard">Discarding deletes this record. If the task was actually created on the server, it can no longer be tracked from here. Discard?</string>
     <string name="dispatch_unknown_confirm_yes">Confirm</string>
-    <string name="dispatch_schedule_not_set">Scheduled execution is on but no time is picked — tap "Pick a time", or turn the switch off to run immediately.</string>
+    <string name="dispatch_schedule_not_set">Scheduled execution is on but no time is picked — tap \"Pick a time\", or turn the switch off to run immediately.</string>
     <string name="dispatch_schedule_past">The picked time is already in the past; the task would run immediately. Pick a future time.</string>
     <string name="task_confirm_start_title">Start this task?</string>
     <string name="task_confirm_start_msg">It will start running on its device immediately. If it was created elsewhere or has its own schedule, starting it may interrupt that plan.</string>
@@ -1186,7 +1171,7 @@
     <string name="handoff_menu">Create handoff package</string>
     <string name="handoff_no_source">This session is not synced to a server; handoff unavailable</string>
     <!-- v142 config sync -->
-    <string name="settings_leaf_config_sync">服务器配置同步</string>
+    <string name="settings_leaf_config_sync">Server config sync</string>
     <string name="configsync_intro">Migrate server configs between two phones via encrypted text. Fully local — no network, no server calls.</string>
     <string name="configsync_export_title">Export server config</string>
     <string name="configsync_export_desc">Set a one-time temporary password; the encrypted text is copied to the clipboard. The password is not saved — tell it to the other phone in person.</string>
@@ -1201,9 +1186,12 @@
     <string name="configsync_paste_hint">Paste encrypted text</string>
     <string name="configsync_decrypt">Decrypt &amp; preview</string>
     <string name="configsync_preview_title">About to import these servers (for name conflicts, choose whether to overwrite the local config)</string>
-    <string name="configsync_conflict">Conflicts with local "%1$s" — check the box to use the imported config</string>
+    <string name="configsync_conflict">Conflicts with local \"%1$s\" — check the box to use the imported config</string>
     <string name="configsync_new_server">New device, will be added</string>
     <string name="configsync_apply">Import</string>
     <string name="configsync_clipboard_note">Security note: the encrypted text contains no plaintext tokens; the clipboard may be retained by the system or keyboards — clear it manually afterwards.</string>
     <string name="configsync_export_skipped">%1$d server(s) skipped at export for missing tokens; their configs are NOT in this ciphertext.</string>
+    <string name="task_empty_no_devices">No devices yet — add one in Settings first.</string>
+    <string name="task_empty_hint">Tasks you create (or dispatch from Ideas) will appear here.</string>
+    <string name="dispatch_pending_note">Submitting — waiting for the server receipt.</string>
 </resources>

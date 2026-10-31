@@ -95,7 +95,11 @@ class DispatchService @Inject constructor(
      */
     suspend fun hasUnresolvedDuplicate(serverId: String, folderId: Int, title: String): Boolean =
         dispatchStore.refs.first().any {
-            it.state == DispatchState.UNKNOWN &&
+            // PENDING counts too: it is by definition unconfirmed (in flight, or
+            // left by a killed process until the age-gated sweep flips it) —
+            // creating "the same task" on top of it is exactly the double-create
+            // this gate exists to stop.
+            it.state != DispatchState.CONFIRMED &&
                 it.serverId == serverId &&
                 it.folderId == folderId &&
                 it.title == cap(title.trim(), 120)
@@ -157,11 +161,12 @@ class DispatchService @Inject constructor(
                 when {
                     e is CancellationException -> {
                         // The coroutine is already cancelled: any other suspend
-                        // call here would immediately re-throw. Clean up inside
-                        // NonCancellable, then honour structured cancellation —
-                        // a PENDING entry left behind is swept to UNKNOWN on next
-                        // launch, which is the correct outcome anyway.
-                        withContext(NonCancellable) { dispatchStore.remove(request.requestId) }
+                        // call here would immediately re-throw. Honour structured
+                        // cancellation — but the request may already be on the
+                        // wire, so the ledger trace MUST survive: deleting it (the
+                        // old behavior) orphans a possibly-created task with no
+                        // UNKNOWN card, no probe, and no duplicate guard.
+                        withContext(NonCancellable) { runCatching { markUnknown(request) } }
                         throw e
                     }
                     // Timeout-style failures are ambiguous: the task may exist.

@@ -50,10 +50,16 @@ class InboxViewModel @Inject constructor(
 
     data class UiState(
         val ideas: List<IdeaEntry> = emptyList(),
+        /** Historical name: these are UNKNOWN refs awaiting resolution. */
         val pendingRefs: List<DispatchRef> = emptyList(),
+        /** PENDING refs: request sent, receipt not yet observed (in flight or
+         * left by a dead process until the age-gated sweep flips them). */
+        val inFlightRefs: List<DispatchRef> = emptyList(),
         val confirmedRefs: List<DispatchRef> = emptyList(),
         val dispatching: Boolean = false,
         val dispatchError: String? = null,
+        /** requestIds with a probe (回查) in flight, for card busy feedback. */
+        val probingIds: Set<String> = emptySet(),
         /** serverId:ideaId of the last created task, for the success line. */
         val lastCreated: String? = null,
     )
@@ -94,6 +100,7 @@ class InboxViewModel @Inject constructor(
                         _ui.value = _ui.value.copy(
                             ideas = ideas,
                             pendingRefs = refs.filter { it.state == DispatchState.UNKNOWN },
+                            inFlightRefs = refs.filter { it.state == DispatchState.PENDING },
                             confirmedRefs = refs.filter { it.state == DispatchState.CONFIRMED }.take(20),
                         )
                         if (_target.value.profiles != profiles) {
@@ -106,6 +113,17 @@ class InboxViewModel @Inject constructor(
                 } catch (_: Exception) {
                     kotlinx.coroutines.delay(2_000)
                 }
+            }
+        }
+    }
+
+    init {
+        // PENDING entries are only swept at VM construction; a ref left by a
+        // killed process would sit invisible forever within a long session.
+        viewModelScope.launch {
+            while (currentCoroutineContext().isActive) {
+                kotlinx.coroutines.delay(30_000)
+                dispatchService.sweepPendingToUnknown()
             }
         }
     }
@@ -213,6 +231,13 @@ class InboxViewModel @Inject constructor(
         _ui.value = _ui.value.copy(dispatching = true, dispatchError = null, lastCreated = null)
         viewModelScope.launch {
             try {
+                // Ledger gate: an unresolved (PENDING/UNKNOWN) ref with the same
+                // target+title means a previous request's fate is unconfirmed —
+                // creating again is the classic double-create (PRD §7.5).
+                if (dispatchService.hasUnresolvedDuplicate(serverId, folderId, title)) {
+                    fail("存在同目标「结果未知」的派发记录，请先在派发记录中检查/放弃后再派发，避免重复创建")
+                    return@launch
+                }
                 val outcome = dispatchService.send(
                     DispatchService.SendRequest(
                         ideaId = idea?.id,
@@ -269,6 +294,7 @@ class InboxViewModel @Inject constructor(
      */
     fun probe(requestId: String) {
         synchronized(probing) { if (!probing.add(requestId)) return }
+        _ui.value = _ui.value.copy(probingIds = _ui.value.probingIds + requestId)
         viewModelScope.launch {
             try {
                 val ref = dispatchStore.refs.first().firstOrNull { it.requestId == requestId } ?: return@launch
@@ -326,6 +352,7 @@ class InboxViewModel @Inject constructor(
                 _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
             } finally {
                 synchronized(probing) { probing.remove(requestId) }
+                _ui.value = _ui.value.copy(probingIds = _ui.value.probingIds - requestId)
             }
         }
     }

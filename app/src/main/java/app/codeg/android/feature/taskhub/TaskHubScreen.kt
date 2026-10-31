@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,7 +89,14 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
         onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
     ) {
+        val listState = rememberLazyListState()
+        // On a long board the failure banner at the top is off-screen when
+        // the user acts on a bottom card — pull it into view.
+        LaunchedEffect(ui.actionError) {
+            if (ui.actionError != null) runCatching { listState.animateScrollToItem(0) }
+        }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
@@ -132,12 +140,16 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                 }
             }
             val columns = activeColumns(board)
-            if (columns.isEmpty()) {
+            // hasLoaded gate: before the first round lands, "no tasks" would sit
+            // right next to running spinners, contradicting them.
+            if (ui.hasLoaded && columns.isEmpty()) {
                 item(key = "empty") {
                     EmptyState(
                         icon = Icons.Rounded.Refresh,
-                        title = stringResource(R.string.task_empty_board),
-                        message = "",
+                        title = stringResource(
+                            if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
+                        ),
+                        message = stringResource(R.string.task_empty_hint),
                         modifier = Modifier.padding(top = 64.dp),
                     )
                 }
@@ -155,6 +167,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                         entry = entry,
                         detail = ui.details[entry.serverId]?.get(entry.task.id),
                         busy = ui.busyKey != null,
+                        spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
                         onExpand = { viewModel.loadDetail(entry.serverId, entry.task.id) },
                         onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
                         onStart = { confirm = ConfirmAction.START(entry) },
@@ -335,6 +348,7 @@ private fun TaskCard(
     entry: TaskBoardEntry,
     detail: TaskHubViewModel.TaskDetail?,
     busy: Boolean,
+    spinning: Boolean,
     onExpand: () -> Unit,
     onLoadDiff: () -> Unit,
     onStart: () -> Unit,
@@ -369,7 +383,7 @@ private fun TaskCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                if (spinning) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -403,7 +417,7 @@ private fun TaskCard(
             }
             if (expanded) {
                 TaskActions(task, busy, onLoadDiff, onStart, onCancel, onRetry, onRequeue, onMerge, onComplete)
-                TaskDetailBody(detail, onLoadDiff)
+                TaskDetailBody(detail, onLoadDiff, onRetry = onExpand)
             }
         }
     }
@@ -440,10 +454,6 @@ private fun TaskActions(
     onMerge: () -> Unit,
     onComplete: () -> Unit,
 ) {
-    // Disable while an action is in flight: post() silently drops concurrent
-    // calls, so enabled buttons would let a user "confirm" an action that
-    // never runs, with zero feedback.
-    if (busy) return
     Row(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
@@ -451,29 +461,32 @@ private fun TaskActions(
             .horizontalScroll(rememberScrollState())
             .padding(top = 8.dp),
     ) {
+        // Buttons stay VISIBLE (disabled) while an action is in flight: removing
+        // them made every card's buttons blink out on any unrelated action, and
+        // post() already gates concurrency synchronously.
         when (task.status) {
             "todo", "queued" -> {
-                ActionButton(R.string.task_action_start, onStart)
-                ActionButton(R.string.task_action_cancel, onCancel, danger = true)
+                ActionButton(R.string.task_action_start, onStart, enabled = !busy)
+                ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
             }
-            "preparing", "running", "awaiting_input" -> ActionButton(R.string.task_action_cancel, onCancel, danger = true)
+            "preparing", "running", "awaiting_input" -> ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
             "review" -> {
-                ActionButton(R.string.task_action_merge, onMerge)
-                ActionButton(R.string.task_action_complete, onComplete)
-                ActionButton(R.string.task_action_cancel, onCancel, danger = true)
+                ActionButton(R.string.task_action_merge, onMerge, enabled = !busy)
+                ActionButton(R.string.task_action_complete, onComplete, enabled = !busy)
+                ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
             }
             "failed" -> {
-                ActionButton(R.string.task_action_retry, onRetry)
-                ActionButton(R.string.task_action_requeue, onRequeue)
+                ActionButton(R.string.task_action_retry, onRetry, enabled = !busy)
+                ActionButton(R.string.task_action_requeue, onRequeue, enabled = !busy)
             }
-            "canceled" -> ActionButton(R.string.task_action_requeue, onRequeue)
+            "canceled" -> ActionButton(R.string.task_action_requeue, onRequeue, enabled = !busy)
         }
     }
 }
 
 @Composable
-private fun ActionButton(labelRes: Int, onClick: () -> Unit, danger: Boolean = false) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+private fun ActionButton(labelRes: Int, onClick: () -> Unit, danger: Boolean = false, enabled: Boolean = true) {
+    TextButton(onClick = onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
         Text(
             stringResource(labelRes),
             style = MaterialTheme.typography.labelMedium,
@@ -483,9 +496,31 @@ private fun ActionButton(labelRes: Int, onClick: () -> Unit, danger: Boolean = f
 }
 
 @Composable
-private fun TaskDetailBody(detail: TaskHubViewModel.TaskDetail?, onLoadDiff: () -> Unit) {
+private fun TaskDetailBody(
+    detail: TaskHubViewModel.TaskDetail?,
+    onLoadDiff: () -> Unit,
+    onRetry: () -> Unit = {},
+) {
     val colors = CodegTheme.colors
     if (detail == null) return
+    // The load failed: say so and offer the retry, instead of a blank panel
+    // that looks like "no events / no files".
+    detail.loadError?.let { err ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        ) {
+            Text(
+                err,
+                color = colors.danger,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(stringResource(R.string.task_action_retry), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
     detail.changedFiles?.takeIf { it.isNotEmpty() }?.let { files ->
         DetailSection(stringResource(R.string.task_detail_files)) {
             files.take(20).forEach { file ->

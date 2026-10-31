@@ -192,7 +192,7 @@ class HandoffViewModel @Inject constructor(
                 if (dispatchService.hasUnresolvedDuplicate(targetServerId, folderId, title)) {
                     _ui.value = _ui.value.copy(
                         dispatching = false,
-                        error = "检测到一条同目标的「提交结果未知」记录尚未处理：请先到 想法 页的派发记录中检查/放弃后再派发，否则可能重复创建任务",
+                        error = "检测到一条同目标的「提交结果未知」记录尚未处理：请先到 动态页「想法」页签的派发记录中检查/放弃后再派发，否则可能重复创建任务",
                     )
                     return@launch
                 }
@@ -222,7 +222,7 @@ class HandoffViewModel @Inject constructor(
                     is DispatchOutcome.Unknown -> _ui.value = _ui.value.copy(
                         dispatching = false,
                         unknownRef = outcome.ref,
-                        error = "提交结果未知：请到 想法 页的派发记录回查（检查/放弃），面板已禁止直接重发",
+                        error = "提交结果未知：请到 动态页「想法」页签的派发记录回查（检查/放弃），面板已禁止直接重发",
                     )
                     is DispatchOutcome.HardFailed -> _ui.value = _ui.value.copy(dispatching = false, error = outcome.message)
                 }
@@ -240,8 +240,12 @@ class HandoffViewModel @Inject constructor(
         _ui.value = _ui.value.copy(error = null)
     }
 
-    /** Full reset when the sheet closes, so a reopened sheet starts clean. */
+    /** Full reset when the sheet closes, so a reopened sheet starts clean.
+     * Refused while a dispatch is in flight: the send coroutine belongs to this
+     * VM, and wiping its state would drop the dispatching/UNKNOWN guards and let
+     * a reopened sheet fire a SECOND create for the same intent. */
     fun reset() {
+        if (_ui.value.dispatching) return
         _ui.value = UiState()
     }
 }

@@ -3,6 +3,7 @@ package app.codeg.android.feature.handoff
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -176,7 +177,12 @@ fun HandoffSheet(
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
             }
             targets.error?.let {
-                Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    it,
+                    color = CodegTheme.colors.danger,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
+                )
             }
             if (device != null && !targets.foldersLoading) {
                 SectionLabel(stringResource(R.string.dispatch_project))

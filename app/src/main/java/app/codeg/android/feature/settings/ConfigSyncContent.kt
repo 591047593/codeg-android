@@ -153,6 +153,11 @@ private fun ExportDialog(busy: Boolean, error: String?, onConfirm: (String) -> U
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
+                    // Clipboard may have failed (rare) — the success text alone
+                    // would be a lie.
+                    error?.let {
+                        Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                    }
                 } else {
                     Text(
                         stringResource(R.string.configsync_password_hint),
@@ -231,6 +236,12 @@ private fun ImportDialog(
                     )
                     ui.importError?.let {
                         Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                    }
+                    // applyImport returns here with preview=null: without this,
+                    // the user sees the blank paste form again and cannot tell
+                    // whether the import worked.
+                    ui.importResult?.let {
+                        Text(it, color = CodegTheme.colors.accent, style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
                     Text(

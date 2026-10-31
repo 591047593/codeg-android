@@ -71,6 +71,8 @@ class TaskHubViewModel @Inject constructor(
         val diff: String? = null,
         val diffLoading: Boolean = false,
         val diffError: String? = null,
+        /** Set when the detail loads failed — the body shows it with a retry. */
+        val loadError: String? = null,
     )
 
     data class UiState(
@@ -85,6 +87,9 @@ class TaskHubViewModel @Inject constructor(
         /** serverId:taskId of an in-flight action, for row spinners. */
         val busyKey: String? = null,
         val actionError: String? = null,
+        /** False until the first fetch round completes: without it the board
+         * flashes "no tasks" while the spinners are still running. */
+        val hasLoaded: Boolean = false,
     ) {
         val failedDevices: Int get() = deviceStates.count { it.status == DeviceLoadStatus.FAILED }
         val archivedHidden: Int
@@ -208,7 +213,7 @@ class TaskHubViewModel @Inject constructor(
         val devices = repository.profiles.first()
             .filter { it.visible && it.includeInAll }
         if (devices.isEmpty()) {
-            _ui.update { it.copy(deviceStates = emptyList(), tasks = emptyList(), lastRefreshed = Instant.now()) }
+            _ui.update { it.copy(deviceStates = emptyList(), tasks = emptyList(), lastRefreshed = Instant.now(), hasLoaded = true) }
             return
         }
         generation += 1
@@ -226,10 +231,13 @@ class TaskHubViewModel @Inject constructor(
                 // (rows, and the detail cache that back-expansion would serve).
                 tasks = state.tasks.filter { it.serverId in ids },
                 details = state.details.filterKeys { it in ids },
+                // A filter pointing at a removed device would strand an empty
+                // board with no selected chip — fall back to "all devices".
+                deviceFilter = state.deviceFilter?.takeIf { it in ids },
             )
         }
         fetchDevices(devices.map { it.id }.toSet(), devices, gen)
-        if (gen == generation) _ui.update { it.copy(lastRefreshed = Instant.now()) }
+        if (gen == generation) _ui.update { it.copy(lastRefreshed = Instant.now(), hasLoaded = true) }
     }
 
     private suspend fun fetchDevices(ids: Set<String>, devices: List<ServerProfile>? = null, gen: Int = generation) {
@@ -341,8 +349,13 @@ class TaskHubViewModel @Inject constructor(
     fun loadDetail(serverId: String, taskId: Int, withDiff: Boolean = false) {
         viewModelScope.launch {
             try {
-                val profile = deviceById(serverId) ?: return@launch
-                val client = repository.client(profile) ?: return@launch
+                val client = deviceById(serverId)?.let { repository.client(it) }
+                if (client == null) {
+                    // Silent-return left an expanded card with a blank body and
+                    // no way to retry — surface the failure on the card instead.
+                    _ui.update { mutateDetail(it, serverId, taskId) { it.copy(loadError = "设备不可用，无法加载详情") } }
+                    return@launch
+                }
                 val existing = _ui.value.details[serverId]?.get(taskId)
                 if (withDiff && existing?.diffLoading != true && existing?.diff == null && existing?.diffError == null) {
                     _ui.update { setDiffLoading(it, serverId, taskId, true) }
@@ -350,14 +363,16 @@ class TaskHubViewModel @Inject constructor(
                         .onSuccess { text -> _ui.update { setDiff(it, serverId, taskId, text, null) } }
                         .onFailure { e -> _ui.update { setDiff(it, serverId, taskId, null, e.message ?: "Diff 加载失败") } }
                 }
-                if (existing == null) {
+                if (existing == null || existing.loadError != null) {
                     val events = runCatching { client.workTaskEvents(taskId) }.getOrNull()
                     val files = runCatching { client.workTaskChangedFiles(taskId) }.getOrNull()
                     // A null here means THAT load failed, not "no data" (the
-                    // decoders return emptyList for empty) — caching a half-loaded
-                    // detail would permanently hide the failed half. Leave
-                    // `details` unwritten so the next expand retries (v139 M3).
-                    if (events == null || files == null) return@launch
+                    // decoders return emptyList for empty) — cache the failure so
+                    // the card can show it with a retry instead of a blank body.
+                    if (events == null || files == null) {
+                        _ui.update { mutateDetail(it, serverId, taskId) { it.copy(loadError = "详情加载失败，请重试") } }
+                        return@launch
+                    }
                     _ui.update { state ->
                         state.copy(
                             details = state.details +
@@ -365,6 +380,7 @@ class TaskHubViewModel @Inject constructor(
                                     (taskId to (state.details[serverId]?.get(taskId) ?: TaskDetail()).copy(
                                         events = events,
                                         changedFiles = files,
+                                        loadError = null,
                                     )))),
                         )
                     }

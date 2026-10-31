@@ -31,17 +31,7 @@
     <string name="server_none_selected">未选择服务器</string>
 
     <!-- Home (smoke screen) -->
-    <string name="home_title">Codeg</string>
-    <string name="home_status_checking">正在检查连接…</string>
-    <string name="home_status_online">在线 · codeg %1$s</string>
-    <string name="home_status_offline">离线</string>
-    <string name="home_folders_count">%1$d 个文件夹</string>
-    <string name="home_conversations_count">%1$d 个会话</string>
-    <string name="home_stream_waiting">事件流：连接中…</string>
-    <string name="home_stream_ready">事件流：就绪</string>
-    <string name="home_stream_closed">事件流：已关闭</string>
     <string name="home_manage_servers">管理服务器</string>
-    <string name="home_scaffold_note">脚手架版本 —— 网络层、模型与设计系统已打通，功能界面将陆续上线。</string>
 
     <!-- Bottom navigation tabs -->
     <string name="tab_chats">会话</string>
@@ -165,12 +155,9 @@
     <string name="common_delete">删除</string>
     <string name="common_edit">编辑</string>
     <string name="common_remove">移除</string>
-    <string name="common_add">添加</string>
     <string name="common_ok">确定</string>
-    <string name="common_done">完成</string>
     <string name="common_back">返回</string>
     <string name="common_loading">加载中…</string>
-    <string name="common_error_generic">出错了。</string>
 
     <!-- ===== Settings · Chat Channels ===== -->
     <string name="cc_loading_channels">正在加载频道…</string>
@@ -378,9 +365,7 @@
     <string name="general_max_depth_title">最大深度</string>
     <string name="general_max_depth_subtitle">智能体最多可委派的层级深度。</string>
     <string name="general_shell_section">导航</string>
-    <string name="general_tab_order_title">底部标签排序</string>
     <string name="general_tab_order_subtitle">点 ▲▼ 调整底部栏顺序；点行名把它设为启动时打开的页。</string>
-    <string name="general_start_tab_title">启动时默认打开</string>
     <string name="general_activity_swipe_title">动态页横滑切换设备</string>
     <string name="general_activity_swipe_subtitle">在动态页左右滑动可在全部设备与各设备之间切换；滑到尽头再滑才会切换底部标签。</string>
     <string name="general_folders_swipe_title">文件夹页横滑切换设备</string>
@@ -1192,4 +1177,7 @@
     <string name="configsync_apply">确认导入</string>
     <string name="configsync_clipboard_note">安全提示：加密文本不含明文 Token；剪贴板可能被系统或第三方键盘保留，可事后手动清空。</string>
     <string name="configsync_export_skipped">%1$d 台服务器因缺少 Token 未导出，本次密文不含其配置。</string>
+    <string name="task_empty_no_devices">还没有可用设备，请先到「设置」中添加。</string>
+    <string name="task_empty_hint">创建的任务（或从想法派发的任务）会出现在这里。</string>
+    <string name="dispatch_pending_note">已提交，等待服务端回执…</string>
 </resources>

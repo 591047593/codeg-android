@@ -81,10 +81,14 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val target by viewModel.target.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
-    var editing by remember { mutableStateOf<IdeaEntry?>(null) }
-    var creating by remember { mutableStateOf(false) }
-    var dispatching by remember { mutableStateOf<IdeaEntry?>(null) }
+    // Saveable (ids, not objects): a rotation must not close the editor/sheet —
+    // the text inside is saveable too, and losing it mid-typing loses work.
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var creating by rememberSaveable { mutableStateOf(false) }
+    var dispatchingId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<IdeaEntry?>(null) }
+    val editing = editingId?.let { id -> ui.ideas.firstOrNull { it.id == id } }
+    val dispatching = dispatchingId?.let { id -> ui.ideas.firstOrNull { it.id == id } }
     // UNKNOWN cards: redispatch/discard are destructive or duplicating actions,
     // so they route through a confirmation dialog first.
     var confirmRef by remember { mutableStateOf<DispatchRef?>(null) }
@@ -92,12 +96,6 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.inbox_title)) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-            )
-        },
         floatingActionButton = {
             FloatingActionButton(onClick = { creating = true }) {
                 Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.inbox_new))
@@ -131,10 +129,37 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                         )
                     }
                 }
+                ui.inFlightRefs.forEach { ref ->
+                    item(key = "inflight-${ref.requestId}", contentType = { "pending-ref" }) {
+                        // Display only: the request may still be on the wire —
+                        // offering redispatch/discard here would invite a double
+                        // create. The age-gated sweep promotes it to UNKNOWN if
+                        // the receipt never lands.
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text(
+                                    stringResource(R.string.dispatch_pending_note),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = colors.textSecondary,
+                                )
+                                Text(
+                                    "${ref.title} · ${ref.serverName.ifBlank { ref.serverId }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                }
                 ui.pendingRefs.forEach { ref ->
                     item(key = "pending-${ref.requestId}", contentType = { "unknown-ref" }) {
                         UnknownRefCard(
                             ref = ref,
+                            probing = ref.requestId in ui.probingIds,
                             onProbe = { viewModel.probe(ref.requestId) },
                             onDiscard = { confirmRef = ref; confirmRedispatch = false },
                             onRedispatch = { confirmRef = ref; confirmRedispatch = true },
@@ -162,8 +187,8 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                 items(ui.ideas, key = { it.id }, contentType = { "idea" }) { idea ->
                     IdeaCard(
                         idea = idea,
-                        onDispatch = { dispatching = idea },
-                        onEdit = { editing = idea },
+                        onDispatch = { dispatchingId = idea.id },
+                        onEdit = { editingId = idea.id },
                         onDelete = { pendingDelete = idea },
                     )
                 }
@@ -174,11 +199,11 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
     if (creating || editing != null) {
         IdeaEditorDialog(
             initial = editing,
-            onDismiss = { creating = false; editing = null },
+            onDismiss = { creating = false; editingId = null },
             onSave = { title, desc ->
                 viewModel.saveIdea(editing?.id, title, desc, source = editing)
                 creating = false
-                editing = null
+                editingId = null
             },
         )
     }
@@ -208,7 +233,7 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
             viewModel = viewModel,
             target = target,
             ui = ui,
-            onClose = { dispatching = null },
+            onClose = { dispatchingId = null },
         )
     }
 
@@ -300,6 +325,7 @@ private fun IdeaCard(
 @Composable
 private fun UnknownRefCard(
     ref: DispatchRef,
+    probing: Boolean,
     onProbe: () -> Unit,
     onDiscard: () -> Unit,
     onRedispatch: () -> Unit,
@@ -320,14 +346,18 @@ private fun UnknownRefCard(
                 color = CodegTheme.colors.textSecondary,
                 modifier = Modifier.padding(top = 2.dp),
             )
-            Row(modifier = Modifier.padding(top = 4.dp)) {
-                TextButton(onClick = onProbe, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Row(modifier = Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (probing) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.size(6.dp))
+                }
+                TextButton(onClick = onProbe, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(stringResource(R.string.dispatch_unknown_check), style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = onRedispatch, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                TextButton(onClick = onRedispatch, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(stringResource(R.string.dispatch_redispatch), style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = onDiscard, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                TextButton(onClick = onDiscard, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Text(stringResource(R.string.dispatch_unknown_discard), style = MaterialTheme.typography.labelMedium)
                 }
             }
@@ -436,7 +466,14 @@ private fun DispatchSheet(
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             }
             target.error?.let {
-                Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    it,
+                    color = CodegTheme.colors.danger,
+                    style = MaterialTheme.typography.bodySmall,
+                    // Tappable retry: the only alternative was re-tapping the
+                    // already-selected device chip, which reads as a no-op.
+                    modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
+                )
             }
             if (device != null && !target.foldersLoading) {
                 SectionLabel(stringResource(R.string.dispatch_project))
