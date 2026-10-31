@@ -79,9 +79,11 @@ enum class HomeTab(
     // conversations as Chats, differing only in grouping. Both groups (Running, last 24
     // hours) now sit at the top of the Chats list, so the signal survives without a tab
     // that duplicated the screen next to it.
-    SEARCH("search", R.string.tab_search, Icons.Outlined.Search, Icons.Rounded.Search),
     SETTINGS("settings", R.string.tab_settings, Icons.Outlined.Settings, Icons.Rounded.Settings),
 }
+
+/** Search is a pushed screen reached from the Chats toolbar, not a tab of its own. */
+private const val ROUTE_SEARCH = "search"
 
 private const val ROUTE_SERVERS = "servers"
 private const val ROUTE_EDITOR = "editor"
@@ -152,7 +154,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 // Kept as an alias: an old link must still land somewhere sensible
                 // rather than failing, and the data it pointed at lives in Chats now.
                 "activity" -> toTab(HomeTab.CHATS)
-                "search" -> toTab(HomeTab.SEARCH)
+                "search" -> nav.navigate(ROUTE_SEARCH) { launchSingleTop = true }
                 "settings" -> toTab(HomeTab.SETTINGS)
                 else -> {}
             }
@@ -229,14 +231,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         onOpenSessionInFolder = { folderId ->
                             nav.navigate("$ROUTE_NEW_TASK?folderId=$folderId")
                         },
+                        onOpenSearch = { nav.navigate(ROUTE_SEARCH) { launchSingleTop = true } },
                     )
                 }
             }
             composable(HomeTab.FOLDERS.route) {
                 ProjectListScreen(onOpenFolder = { id -> nav.navigate("project/$id") })
             }
-            composable(HomeTab.SEARCH.route) {
-                SearchScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })
+            composable(ROUTE_SEARCH) {
+                SearchScreen(onBack = { nav.popBackStack() }, onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })
             }
             composable(HomeTab.SETTINGS.route) {
                 SettingsScreen()

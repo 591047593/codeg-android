@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.History
@@ -59,6 +60,7 @@ import app.codeg.android.feature.sessions.SessionRow
 @Composable
 fun SearchScreen(
     onOpenConversation: (Int) -> Unit,
+    onBack: () -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -77,6 +79,15 @@ fun SearchScreen(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.tab_search)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                            tint = colors.textPrimary,
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     titleContentColor = colors.textPrimary,

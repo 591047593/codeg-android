@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
@@ -95,6 +96,8 @@ fun SessionListScreen(
     onOpenFolder: (Int) -> Unit,
     /** Starts a new conversation in a given folder (folder tag → menu). */
     onOpenSessionInFolder: (Int) -> Unit,
+    /** Opens the conversation search screen. */
+    onOpenSearch: () -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -302,6 +305,13 @@ private fun SessionList(
                     onManageServers = onManageServers,
                     modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = onOpenSearch) {
+                    Icon(
+                        Icons.Rounded.Search,
+                        contentDescription = stringResource(R.string.tab_search),
+                        tint = colors.textSecondary,
+                    )
+                }
                 IconButton(onClick = onManageServers) {
                     Icon(
                         Icons.Rounded.Dns,
