@@ -125,6 +125,9 @@ fun ProjectListScreen(
                         EmptyState(Icons.Rounded.FolderOpen, stringResource(R.string.projects_empty_title), stringResource(R.string.projects_empty_message))
                     }
                 else -> PullToRefreshBox(isRefreshing = ui.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
+                    // Sorted outside `LazyListScope`: `remember` is a composable call and
+                    // cannot run in the list's builder lambda.
+                    val foldersSorted = remember(ui.folders) { sortedFolders(ui.folders) }
                     LazyColumn(
                         Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 76.dp),
@@ -140,8 +143,7 @@ fun ProjectListScreen(
                         // Flat rows on the page, split by a hairline — the same list
                         // language as the Chats tab. The grouped card this replaces made
                         // two adjacent screens look like different apps.
-                        val list = remember(ui.folders) { sortedFolders(ui.folders) }
-                        itemsIndexed(list, key = { _, f -> f.id }) { index, folder ->
+                        itemsIndexed(foldersSorted, key = { _, f -> f.id }) { index, folder ->
                             if (index > 0) {
                                 HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 66.dp))
                             }
