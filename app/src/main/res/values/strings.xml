@@ -51,6 +51,7 @@
     <!-- Sessions (Chats) -->
     <string name="session_untitled">Untitled session</string>
     <string name="session_title_fallback">Session</string>
+    <string name="sessions_idle_folders">%1$d folder(s) with no sessions</string>
     <string name="session_open_folder">Open folder</string>
     <string name="session_new_task">New Task</string>
     <string name="session_pin">Pin</string>

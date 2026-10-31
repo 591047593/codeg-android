@@ -24,6 +24,8 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
@@ -92,6 +94,8 @@ fun SessionListScreen(
     onNewTask: () -> Unit,
     /** Open a folder's project page — from the folder tag on a cross-folder row. */
     onOpenFolder: (Int) -> Unit,
+    /** Switch to the Folders tab. */
+    onOpenFolders: () -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -204,6 +208,7 @@ fun SessionListScreen(
                             onTogglePin = { conv -> viewModel.setPinned(conv, !conv.isPinned) },
                             onDelete = { conv -> pendingDelete = conv },
                             onOpenFolder = onOpenFolder,
+                            onOpenFolders = onOpenFolders,
                             // A refresh that failed over a still-populated list: surface
                             // it inline above the rows rather than swallowing it.
                             refreshError = ui.error,
@@ -265,6 +270,8 @@ private fun SessionList(
     onTogglePin: (ConversationSummary) -> Unit,
     onDelete: (ConversationSummary) -> Unit,
     onOpenFolder: (Int) -> Unit,
+    /** Opens the Folders tab — the destination of the trailing idle-folders row. */
+    onOpenFolders: () -> Unit,
     refreshError: String?,
     onRetry: () -> Unit,
     onDismissError: () -> Unit,
@@ -318,6 +325,19 @@ private fun SessionList(
         }
 
         sections.forEach { section ->
+            // Not a group: a single row pointing at the Folders tab. Drawing it through
+            // the header machinery would give it an empty header and a collapse chevron
+            // that toggles nothing.
+            if (section.kind is SectionKind.IdleFolders) {
+                item(key = "idle-folders", contentType = "idle") {
+                    IdleFoldersRow(
+                        count = (section.kind as SectionKind.IdleFolders).count,
+                        onClick = onOpenFolders,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+                return@forEach
+            }
             val isCollapsed = section.id in collapsed
             item(key = "h-${section.id}", contentType = "header") {
                 val style = sectionStyle(section.kind)
@@ -403,6 +423,13 @@ private fun sectionStyle(kind: SectionKind): SectionStyle {
             icon = Icons.Rounded.Inbox,
             tint = colors.textSecondary,
             label = stringResource(R.string.sessions_other),
+        )
+        // Never rendered as a header — handled separately in the list — but the `when`
+        // is exhaustive over the sealed interface.
+        is SectionKind.IdleFolders -> SectionStyle(
+            icon = Icons.Rounded.FolderOpen,
+            tint = colors.textTertiary,
+            label = "",
         )
     }
 }
@@ -579,5 +606,46 @@ private fun NewTaskDock(onClick: () -> Unit, modifier: Modifier = Modifier) {
         ) {
             Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
         }
+    }
+}
+
+/**
+ * The trailing "N folders with nothing in them" row.
+ *
+ * It replaces one empty header per idle folder. Tapping it opens the Folders tab, which
+ * lists every folder with its path, branch, file count and git state — the place where
+ * an empty folder is actually useful.
+ */
+@Composable
+private fun IdleFoldersRow(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = CodegTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            Icons.Rounded.FolderOpen,
+            contentDescription = null,
+            tint = colors.textTertiary,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            stringResource(R.string.sessions_idle_folders, count),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = colors.textTertiary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }

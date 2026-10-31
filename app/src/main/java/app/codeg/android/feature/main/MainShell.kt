@@ -226,6 +226,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         },
                         onNewTask = { nav.navigate(ROUTE_NEW_TASK) },
                         onOpenFolder = { id -> nav.navigate("project/$id") },
+                        onOpenFolders = { onTab(HomeTab.FOLDERS) },
                     )
                 }
             }

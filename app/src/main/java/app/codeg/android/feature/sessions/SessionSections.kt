@@ -46,6 +46,14 @@ sealed interface SectionKind {
 
     /** Non-pinned conversations whose folder isn't in the folder list (orphans). */
     data object Other : SectionKind
+
+    /**
+     * A single trailing row standing in for every folder with nothing to show.
+     *
+     * [count] is how many folders that is, so the row can say it. The row is a link to
+     * the Folders tab, not a container — it has no rows of its own.
+     */
+    data class IdleFolders(val count: Int) : SectionKind
 }
 
 /** One conversation row, with its cross-folder tag pre-resolved. */
@@ -155,11 +163,30 @@ fun buildSessionSections(
         )
     }
 
+    // A folder with nothing left to show gets no section of its own. It used to keep an
+    // empty header, sorted to the bottom: on a phone that is a stack of headings with no
+    // rows under any of them, and it grows with every folder the user adds. The folders
+    // themselves stay reachable — the list closes with one "other folders" row that opens
+    // the Folders tab, where every folder is listed with its files and git state.
+    var idleCount = 0
     for (group in SessionGrouping.folderGroups(folders, remaining)) {
+        if (group.conversations.isEmpty()) {
+            idleCount += 1
+            continue
+        }
         out += SessionSection(
             id = "folder-${group.folder.id}",
             kind = SectionKind.Folder(group.folder.name, group.folder.color),
             rows = group.conversations.flatMap { rowsFor(it, folderName = null) },
+        )
+    }
+    if (idleCount > 0) {
+        // One row, not one header per folder. This is not a folder section — it is the
+        // way out to the Folders tab.
+        out += SessionSection(
+            id = "idle-folders",
+            kind = SectionKind.IdleFolders(idleCount),
+            rows = emptyList(),
         )
     }
 
@@ -183,5 +210,12 @@ fun buildSessionSections(
     //
     // Pinned stays at the very top (it is a cross-folder view, not a folder) and `other`
     // is a catch-all that is only present when non-empty, so neither is reordered.
-    return out.sortedBy { it.count == 0 }
+    // The idle-folders row is a footer, not a group: `count == 0` would sort it to the
+    // very top alongside the empty folders it replaced.
+    return out.sortedWith(
+        compareBy(
+            { it.kind is SectionKind.IdleFolders },
+            { it.count == 0 },
+        ),
+    )
 }
