@@ -118,8 +118,6 @@ fun SessionListScreen(
 
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            // Docked at the bottom of the content area, above the app's navigation bar.
-            NewTaskDock(onClick = onNewTask, modifier = Modifier.align(Alignment.BottomCenter))
             when {
                 ui.isLoading && !ui.hasLoaded -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -205,6 +203,10 @@ fun SessionListScreen(
                     }
                 }
             }
+            // Declared AFTER the content. In a Box the later child draws on top, so with
+            // the dock first the list sat over it and swallowed every tap — "start a new
+            // task" did nothing at all.
+            NewTaskDock(onClick = onNewTask, modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 
