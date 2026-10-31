@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -95,17 +96,15 @@ fun SessionRow(
     cardBackground: Color = Color.Unspecified,
     onTogglePin: (() -> Unit)? = null,
     /**
-     * What tapping this row's folder tag does.
+     * Folder actions for the row's long-press menu.
      *
-     * The tag only appears on cross-folder sections (Pinned / Running / Recent), where
-     * the row has to say which folder it came from. Tapping it used to be impossible
-     * (the row's own click won) and then jumped straight to the project page — which is
-     * the Folders tab's job, so the tag became a second entrance to a screen the user
-     * had a dedicated tab for, with none of this conversation's context.
-     *
-     * It now opens a small menu of folder actions instead.
+     * The folder tag itself is a caption again. Making it tappable put a second target
+     * inside the row, a few pixels from the row's own click, and tapping the row to open
+     * the conversation kept landing on the tag instead. These actions belong in the
+     * long-press menu the row already has.
      */
-    onFolderTagClick: (() -> Unit)? = null,
+    onNewTaskInFolder: (() -> Unit)? = null,
+    onOpenFolder: (() -> Unit)? = null,
     /**
      * This row's tag colours, already resolved from its `tagIds` by the list.
      *
@@ -145,7 +144,7 @@ fun SessionRow(
                     // this on `onTogglePin` meant a screen that passed only `onDelete`
                     // (the activity feed, search results) bound no long-press at all, so
                     // its menu could never open.
-                    onLongClick = if (onTogglePin != null || onDelete != null) {
+                    onLongClick = if (onTogglePin != null || onDelete != null || onNewTaskInFolder != null || onOpenFolder != null) {
                         { menuOpen = true }
                     } else {
                         null
@@ -203,38 +202,24 @@ fun SessionRow(
                             // appears on cross-folder sections, where "which folder is this
                             // from?" is a question the row has to answer — and answering it
                             // with dead text invited taps that opened the wrong screen.
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .then(
-                                        if (onFolderTagClick != null) {
-                                            Modifier
-                                                .clickable(
-                                                    onClickLabel = stringResource(R.string.session_folder_actions),
-                                                ) { onFolderTagClick() }
-                                                .padding(horizontal = 2.dp, vertical = 1.dp)
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Folder,
-                                    contentDescription = null,
-                                    tint = colors.textTertiary,
-                                    modifier = Modifier.size(10.dp),
-                                )
-                                Text(
-                                    text = folderName,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textTertiary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 96.dp),
-                                )
-                            }
+                            // A caption, not a control. It sits inside the row's own
+                            // tap target, so anything tappable here fights the tap that
+                            // opens the conversation; the folder actions live in the
+                            // long-press menu instead.
+                            Icon(
+                                Icons.Rounded.Folder,
+                                contentDescription = null,
+                                tint = colors.textTertiary,
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Text(
+                                text = folderName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 96.dp),
+                            )
                             MetaDot()
                         }
                         // Tag dots lead the metadata line: they are the user's own
@@ -341,6 +326,26 @@ fun SessionRow(
                         onClick = {
                             menuOpen = false
                             onTogglePin?.invoke()
+                        },
+                    )
+                }
+                if (onNewTaskInFolder != null) {
+                    CodegMenuItem(
+                        text = stringResource(R.string.session_new_task_here),
+                        leadingIcon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onNewTaskInFolder.invoke()
+                        },
+                    )
+                }
+                if (onOpenFolder != null) {
+                    CodegMenuItem(
+                        text = stringResource(R.string.session_open_folder),
+                        leadingIcon = { Icon(Icons.Rounded.Folder, contentDescription = null) },
+                        onClick = {
+                            menuOpen = false
+                            onOpenFolder.invoke()
                         },
                     )
                 }

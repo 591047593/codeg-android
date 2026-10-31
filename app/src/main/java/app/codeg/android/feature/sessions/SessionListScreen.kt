@@ -112,8 +112,6 @@ fun SessionListScreen(
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
     // Confirmed before deleting: a conversation and its transcript are gone for good.
     var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
-    // The row whose folder tag was tapped; its menu offers the folder actions.
-    var folderMenuFor by remember { mutableStateOf<ConversationSummary?>(null) }
     val colors = CodegTheme.colors
     val selectedName = servers.firstOrNull { it.id == selectedId }?.name
         ?: stringResource(R.string.app_name)
@@ -213,7 +211,6 @@ fun SessionListScreen(
                             onTogglePin = { conv -> viewModel.setPinned(conv, !conv.isPinned) },
                             onDelete = { conv -> pendingDelete = conv },
                             onOpenFolder = onOpenFolder,
-                            onShowFolderMenu = { conv -> folderMenuFor = conv },
                             onOpenSessionInFolder = onOpenSessionInFolder,
                             onOpenFolders = onOpenFolders,
                             // A refresh that failed over a still-populated list: surface
@@ -230,52 +227,6 @@ fun SessionListScreen(
             // task" did nothing at all.
             NewTaskDock(onClick = onNewTask, modifier = Modifier.align(Alignment.BottomCenter))
         }
-    }
-
-    // Folder tag menu. Two actions, both genuinely "about the folder": start a new
-    // conversation there, or go look at its code. The second is the same screen the
-    // Folders tab opens — that is fine as a *choice*, and different from the previous
-    // behaviour where the tag was a blind second entrance to it.
-    folderMenuFor?.let { conv ->
-        AlertDialog(
-            onDismissRequest = { folderMenuFor = null },
-            containerColor = colors.bgElevated,
-            title = {
-                Text(
-                    ui.folders.firstOrNull { it.id == conv.folderId }?.name
-                        ?: stringResource(R.string.session_folder_actions),
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    FolderActionRow(
-                        label = stringResource(R.string.session_new_task_here),
-                        onClick = {
-                            val folderId = conv.folderId
-                            folderMenuFor = null
-                            onOpenSessionInFolder(folderId)
-                        },
-                    )
-                    FolderActionRow(
-                        label = stringResource(R.string.session_open_folder),
-                        onClick = {
-                            val folderId = conv.folderId
-                            folderMenuFor = null
-                            onOpenFolder(folderId)
-                        },
-                    )
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { folderMenuFor = null }) {
-                    Text(stringResource(R.string.common_cancel), color = colors.textSecondary)
-                }
-            },
-        )
     }
 
     pendingDelete?.let { conv ->
@@ -325,8 +276,6 @@ private fun SessionList(
     onOpenFolder: (Int) -> Unit,
     /** Opens the Folders tab — the destination of the trailing idle-folders row. */
     onOpenFolders: () -> Unit,
-    /** Opens the folder-actions menu for a row's folder tag. */
-    onShowFolderMenu: (ConversationSummary) -> Unit,
     /** Starts a new conversation in the given folder. */
     onOpenSessionInFolder: (Int) -> Unit,
     refreshError: String?,
@@ -438,8 +387,13 @@ private fun SessionList(
                         onDelete = { onDelete(row.conversation) },
                         // Only meaningful where the row shows a folder tag; the row
                         // decides whether to draw a tappable tag from this being non-null.
-                        onFolderTagClick = if (row.folderName != null) {
-                            { onShowFolderMenu(row.conversation) }
+                        // Folder actions ride the row's long-press menu, and only where
+                        // the row actually shows a folder tag (cross-folder sections).
+                        onNewTaskInFolder = if (row.folderName != null) {
+                            { onOpenSessionInFolder(row.conversation.folderId) }
+                        } else null,
+                        onOpenFolder = if (row.folderName != null) {
+                            { onOpenFolder(row.conversation.folderId) }
                         } else null,
                         tagColors = row.conversation.tagIds.mapNotNull { tagsById[it] }.map(::tagColor),
                     )
@@ -705,20 +659,4 @@ private fun IdleFoldersRow(count: Int, onClick: () -> Unit, modifier: Modifier =
             modifier = Modifier.size(18.dp),
         )
     }
-}
-
-/** One tappable line inside the folder-actions dialog. */
-@Composable
-private fun FolderActionRow(label: String, onClick: () -> Unit) {
-    val colors = CodegTheme.colors
-    Text(
-        label,
-        style = MaterialTheme.typography.bodyMedium,
-        color = colors.accent,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-    )
 }
