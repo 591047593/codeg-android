@@ -193,6 +193,8 @@ class InboxViewModel @Inject constructor(
         description: String,
         scheduleLocalMillis: Long?,
         onDone: (ref: DispatchRef) -> Unit,
+        /** Immediate dispatches start the task after create (idea path). */
+        autoStart: Boolean = true,
         /** On a hard (non-ambiguous) failure, put this ref back as UNKNOWN — used by
          * redispatch so a failed re-send never destroys the only trace of the
          * original ambiguous request. */
@@ -221,7 +223,7 @@ class InboxViewModel @Inject constructor(
                         description = description,
                         agentTypeWire = agentType?.wire,
                         scheduleLocalMillis = scheduleLocalMillis,
-                        autoStart = true,
+                        autoStart = autoStart,
                         restoreOnHardFail = restoreOnHardFail,
                     ),
                 )
@@ -244,7 +246,13 @@ class InboxViewModel @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 // Last-resort guard: a DataStore IO failure inside send() must
-                // never crash the process — degrade to a dispatch error.
+                // never crash the process — degrade to a dispatch error. If this
+                // was a redispatch, send() may have died BEFORE consuming
+                // restoreOnHardFail — put the original UNKNOWN trace back so the
+                // only evidence of the ambiguous request is not lost.
+                restoreOnHardFail?.let { old ->
+                    runCatching { dispatchStore.put(old.copy(state = DispatchState.UNKNOWN)) }
+                }
                 fail(e.message ?: "派发失败")
             }
         }
@@ -282,16 +290,30 @@ class InboxViewModel @Inject constructor(
                     // can't push the real task below the window (false negative →
                     // double create).
                     .minusSeconds(300)
-                val match = DispatchPipeline.findCreatedTask(
-                    tasks, ref.title, ref.folderId, started,
-                    // End of window is anchored on the phone clock too, so a FAST
-                    // server clock needs symmetric slack (+10min) — a false
-                    // "not found" here invites a re-dispatch, i.e. a double create.
+                // End of window: symmetric clock slack (+10min) against a FAST
+                // server clock, but capped relative to the dispatch moment —
+                // an unbounded "now+10min" would keep absorbing unrelated
+                // same-titled tasks forever as the probe gets later.
+                val refDispatched = ref.dispatchedAtEpochMs?.let { Instant.ofEpochMilli(it) } ?: started
+                val windowEnd = minOf(
                     Instant.now().plusSeconds(600),
+                    refDispatched.plusSeconds(3_600),
                 )
-                if (match != null) {
+                val matches = DispatchPipeline.findCreatedTasks(
+                    tasks, ref.title, ref.folderId, started, windowEnd,
+                )
+                if (matches.size == 1) {
+                    val match = matches.single()
                     dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))
                     _ui.value = _ui.value.copy(dispatchError = null, lastCreated = "${ref.serverId}:${match.id}")
+                } else if (matches.size > 1) {
+                    // Multiple same-titled candidates: claiming one risks binding
+                    // the wrong id. Stay UNKNOWN — and do NOT say "not found",
+                    // which invites a re-dispatch (double create). The task
+                    // almost certainly EXISTS.
+                    _ui.value = _ui.value.copy(
+                        dispatchError = "服务端找到 ${matches.size} 个同名任务，无法确认归属；请到设备上人工核对后再处理，未确认前勿重新派发",
+                    )
                 } else {
                     _ui.value = _ui.value.copy(dispatchError = "服务端未找到该任务，可重新派发或放弃")
                 }
@@ -348,12 +370,18 @@ class InboxViewModel @Inject constructor(
                 serverId = ref.serverId,
                 folderId = ref.folderId,
                 folderName = ref.folderName,
-                agentType = ref.agentTypeWire?.let { AgentType.fromWire(it) },
+                autoStart = ref.autoStart,
+                // fromWire maps unknown wires to UNKNOWN — re-sending that would
+                // create a task on the default agent instead of the chosen one.
+                agentType = ref.agentTypeWire?.let { AgentType.fromWire(it) }?.takeIf { it != AgentType.UNKNOWN },
                 title = ref.title,
                 description = ref.description,
-                // Preserve the original schedule intent instead of silently
-                // demoting a timed dispatch to "run now".
-                scheduleLocalMillis = ref.scheduleLocalMillis ?: scheduleLocalMillis,
+                // Preserve the original schedule intent — but a timestamp already
+                // in the past can't be honored by re-sending it; drop it so the
+                // re-dispatch runs immediately instead of landing in a dead slot.
+                scheduleLocalMillis = ref.scheduleLocalMillis
+                    ?.takeIf { it > System.currentTimeMillis() }
+                    ?: scheduleLocalMillis,
                 onDone = {},
                 restoreOnHardFail = ref,
             )

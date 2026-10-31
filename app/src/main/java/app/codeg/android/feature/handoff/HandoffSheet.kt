@@ -55,7 +55,9 @@ fun HandoffSheet(
     androidx.compose.runtime.LaunchedEffect(source.conversationId) {
         viewModel.generate(source)
         viewModel.loadTarget(source.serverId)
-        device = source.serverId
+        // rememberSaveable restores the picked device on rotation — re-running
+        // this effect must not silently snap the selection back to the source.
+        if (device == null) device = source.serverId
     }
 
     ModalBottomSheet(onDismissRequest = { viewModel.reset(); onClose() }) {

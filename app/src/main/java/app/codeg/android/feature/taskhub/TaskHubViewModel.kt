@@ -112,8 +112,13 @@ class TaskHubViewModel @Inject constructor(
             buildBoard(rows)
         }
             // Upstream (profiles) is a DataStore flow: a read failure must keep
-            // the last-good board, not kill the sharing coroutine (crash).
-            .catch { /* keep the last-good board */ }
+            // the board ALIVE, not silently dead. `.catch` would terminate the
+            // sharing coroutine forever (board frozen until VM recreation);
+            // retryWhen re-subscribes so the next good emission repaints.
+            .retryWhen { _, attempt ->
+                kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
+                true
+            }
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
@@ -217,8 +222,10 @@ class TaskHubViewModel @Inject constructor(
                             ?: DeviceLoad(d.id, d.name, DeviceLoadStatus.LOADING)
                     }
                 },
-                // A deleted or "skipped in All" device must not leave ghost rows.
+                // A deleted or "skipped in All" device must not leave ghost rows
+                // (rows, and the detail cache that back-expansion would serve).
                 tasks = state.tasks.filter { it.serverId in ids },
+                details = state.details.filterKeys { it in ids },
             )
         }
         fetchDevices(devices.map { it.id }.toSet(), devices, gen)
@@ -299,7 +306,8 @@ class TaskHubViewModel @Inject constructor(
                 // is a pre-action snapshot and loadDetail's existing!=null check
                 // would keep serving it — drop it so the next expand refetches.
                 _ui.update { state ->
-                    state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
+                    if (!state.details.containsKey(serverId)) state
+                    else state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
                 }
                 fetchDevices(setOf(serverId))
             } catch (e: CancellationException) {
@@ -345,9 +353,11 @@ class TaskHubViewModel @Inject constructor(
                 if (existing == null) {
                     val events = runCatching { client.workTaskEvents(taskId) }.getOrNull()
                     val files = runCatching { client.workTaskChangedFiles(taskId) }.getOrNull()
-                    // Both null = the loads failed, not "no data": leave `details`
-                    // unwritten so the next expand retries instead of caching a lie (v139 M3).
-                    if (events == null && files == null) return@launch
+                    // A null here means THAT load failed, not "no data" (the
+                    // decoders return emptyList for empty) — caching a half-loaded
+                    // detail would permanently hide the failed half. Leave
+                    // `details` unwritten so the next expand retries (v139 M3).
+                    if (events == null || files == null) return@launch
                     _ui.update { state ->
                         state.copy(
                             details = state.details +

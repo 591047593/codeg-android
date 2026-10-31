@@ -771,9 +771,11 @@ class CodegClient(
             put("id", id)
             file?.let { put("file", it) }
         }.toString())
+        val el = runCatching { CodegJson.response.parseToJsonElement(raw) }
+            .getOrElse { throw ApiError.Decoding("work_task_diff returned invalid JSON") }
+        if (el is JsonNull) return ""
         // If the server wraps the diff as a JSON string, unwrap it; plain text passes through.
-        return (CodegJson.response.parseToJsonElement(raw) as? JsonPrimitive)
-            ?.takeIf { it.isString }?.content ?: raw
+        return (el as? JsonPrimitive)?.takeIf { it.isString }?.content ?: raw
     }
 
     suspend fun workTaskChangedFiles(id: Int): List<WorkTaskChangedFile> {
@@ -797,8 +799,13 @@ class CodegClient(
 
     /** Top-level list decoder — drops rows that do not decode instead of failing. */
     fun decodeWorkTaskList(text: String): List<WorkTaskInfo> {
-        val arr = runCatching { CodegJson.response.parseToJsonElement(text) }
-            .getOrNull() as? JsonArray ?: return emptyList()
+        val root = runCatching { CodegJson.response.parseToJsonElement(text) }
+            .getOrElse { throw ApiError.Decoding("work_task_list returned invalid JSON") }
+        // JsonNull = server said "no data" — a genuinely empty board. Any other
+        // non-array shape is a protocol change: failing loudly marks the device
+        // unhealthy instead of painting an empty board that looks like success.
+        if (root is JsonNull) return emptyList()
+        val arr = root as? JsonArray ?: throw ApiError.Decoding("work_task_list returned non-array body")
         return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskInfo::fromWire) }
     }
 

@@ -77,8 +77,13 @@ private fun taskSortKey(entry: TaskBoardEntry): String =
  * Normalize an RFC3339 timestamp to an epoch-millis string so sorting is order-
  * safe regardless of the wire offset (`+08:00` vs `Z`); unparsable → null.
  */
-private fun timestampKey(iso: String?): String? =
-    iso?.let { raw -> runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()?.toString() }
+private fun timestampKey(iso: String?): String? = iso?.let { raw ->
+    runCatching { java.time.Instant.parse(raw).toEpochMilli() }
+        // Offset form (…+08:00) throws in Instant.parse below API 34 — without
+        // this fallback those rows sort as "no time" (bottom of every column).
+        .recoverCatching { java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli() }
+        .getOrNull()?.toString()
+}
 
 /** Columns that actually have rows, in board order — for the section headers. */
 fun activeColumns(board: Map<TaskColumn, List<TaskBoardEntry>>): List<TaskColumn> =

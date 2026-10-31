@@ -93,6 +93,10 @@ data class DispatchRef(
     val dispatchedAtEpochMs: Long? = null,
     /** Original schedule intent, preserved across a re-dispatch. */
     val scheduleLocalMillis: Long? = null,
+    /** Whether an immediate (non-scheduled) send should also start the task.
+     * Idea dispatches true; handoff dispatches false (receiving side decides).
+     * Default true keeps pre-field ledger rows (idea-era) behaving as before. */
+    val autoStart: Boolean = true,
 )
 
 @Singleton

@@ -1123,7 +1123,7 @@
     <string name="task_confirm_cancel_title">Cancel this task?</string>
     <string name="task_confirm_cancel_msg">The task stops running. It can be requeued on the server later.</string>
     <string name="task_confirm_merge_title">Merge this task?</string>
-    <string name="task_confirm_merge_msg">The result will be merged into the project branch. This cannot be undone here.</string>
+    <string name="task_confirm_merge_msg">The result will be merged into the project branch and the task worktree deleted. This cannot be undone here.</string>
     <string name="task_confirm_complete_title">Accept without merging?</string>
     <string name="task_confirm_complete_msg">Marks the task done without merging any changes.</string>
     <string name="task_detail_events">Events</string>

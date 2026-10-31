@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
 
 
@@ -59,9 +60,19 @@ object DispatchPipeline {
         folderId: Int,
         windowStart: Instant,
         windowEnd: Instant,
-    ): WorkTaskInfo? {
-        if (title.isBlank()) return null
-        val matches = tasks.filter { task ->
+    ): WorkTaskInfo? = findCreatedTasks(tasks, title, folderId, windowStart, windowEnd).singleOrNull()
+
+    /** All same-titled candidates in the window — the caller distinguishes
+     * 0 (maybe not created) from >1 (created, but attribution ambiguous). */
+    fun findCreatedTasks(
+        tasks: List<WorkTaskInfo>,
+        title: String,
+        folderId: Int,
+        windowStart: Instant,
+        windowEnd: Instant,
+    ): List<WorkTaskInfo> {
+        if (title.isBlank()) return emptyList()
+        return tasks.filter { task ->
             // A row with no folderId can't be attributed to our request — leaving
             // it unmatched keeps the ref UNKNOWN (fail-safe) instead of riskily
             // confirming someone else's same-titled task.
@@ -69,16 +80,18 @@ object DispatchPipeline {
                 task.folderId == folderId &&
                 createdAtInRange(task, windowStart, windowEnd)
         }
-        // Several same-titled candidates in the window: claiming one risks
-        // confirming the wrong id — stay UNKNOWN (fail-safe) instead.
-        return matches.singleOrNull()
     }
 
     private fun createdAtInRange(task: WorkTaskInfo, start: Instant, end: Instant): Boolean {
-        val created = task.createdAt?.let { raw -> runCatching { Instant.parse(raw) }.getOrNull() }
-            ?: return false
+        val created = task.createdAt?.let(::parseTimestamp) ?: return false
         return !created.isBefore(start) && !created.isAfter(end)
     }
+
+    /** RFC3339 comes in two shapes: UTC `…Z` (Instant.parse) and offset
+     * `…+08:00` (only OffsetDateTime.parse handles it below API 34, where
+     * Instant.parse throws on offsets — the same hole TaskBoard's key had). */
+    private fun parseTimestamp(raw: String): Instant? =
+        runCatching { Instant.parse(raw) }.recoverCatching { OffsetDateTime.parse(raw).toInstant() }.getOrNull()
 
     /**
      * The server stores `scheduledAt` as an absolute UTC moment (RFC3339) and has

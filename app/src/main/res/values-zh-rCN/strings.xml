@@ -1109,7 +1109,7 @@
     <string name="task_confirm_cancel_title">确认取消该任务？</string>
     <string name="task_confirm_cancel_msg">任务将停止执行，之后可在服务端重新排队。</string>
     <string name="task_confirm_merge_title">确认合并该任务？</string>
-    <string name="task_confirm_merge_msg">结果将合并进项目分支，此操作无法在此撤销。</string>
+    <string name="task_confirm_merge_msg">结果将合并进项目分支，任务工作树将被删除。此操作无法在此撤销。</string>
     <string name="task_confirm_complete_title">确认无变更验收？</string>
     <string name="task_confirm_complete_msg">将任务标记为完成，不合并任何改动。</string>
     <string name="task_detail_events">事件历史</string>

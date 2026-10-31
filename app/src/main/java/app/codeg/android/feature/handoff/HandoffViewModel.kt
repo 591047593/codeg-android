@@ -183,14 +183,38 @@ class HandoffViewModel @Inject constructor(
         _ui.value = _ui.value.copy(dispatching = true, error = null)
         viewModelScope.launch {
             try {
+                val title = "交接：${pkg.sourceSessionTitle.ifBlank { "会话#${pkg.sourceSessionId}" }}"
+                // Ledger gate: the sheet's unknownRef guard dies with the sheet
+                // (reset on close). An unresolved UNKNOWN with the same
+                // server+folder+title means the previous attempt's fate is still
+                // unobservable — re-sending here would double-create. Refuse and
+                // point at the resolvable card instead.
+                if (dispatchService.hasUnresolvedDuplicate(targetServerId, folderId, title)) {
+                    _ui.value = _ui.value.copy(
+                        dispatching = false,
+                        error = "检测到一条同目标的「提交结果未知」记录尚未处理：请先到 想法 页的派发记录中检查/放弃后再派发，否则可能重复创建任务",
+                    )
+                    return@launch
+                }
+                // The folder list reloads when the target device changes; a stale
+                // selection (rotation restore) could carry another device's
+                // folder id into this dispatch — task landing in the wrong project.
+                val folders = _ui.value.targets.folders
+                if (folders.isNotEmpty() && folders.none { it.id == folderId }) {
+                    _ui.value = _ui.value.copy(dispatching = false, error = "目标项目已失效，请重新选择项目后再派发")
+                    return@launch
+                }
                 val outcome = dispatchService.send(
                     DispatchService.SendRequest(
                         serverId = targetServerId,
                         folderId = folderId,
                         folderName = folderName,
-                        title = "交接：${pkg.sourceSessionTitle.ifBlank { "会话#${pkg.sourceSessionId}" }}",
+                        title = title,
                         description = pkg.toTaskDescription(gitNote),
                         agentTypeWire = agentType?.wire,
+                        // Handoff: starting the task is the receiving side's
+                        // decision — never auto-start from the sender.
+                        autoStart = false,
                     ),
                 )
                 when (outcome) {

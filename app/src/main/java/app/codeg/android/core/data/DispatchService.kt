@@ -70,8 +70,14 @@ class DispatchService @Inject constructor(
      */
     suspend fun sweepPendingToUnknown() {
         try {
+            val now = System.currentTimeMillis()
             dispatchStore.refs.first()
-                .filter { it.state == DispatchState.PENDING }
+                // Only PENDING entries old enough to be corpses. A fresh PENDING
+                // may be a request STILL IN FLIGHT from another surface — flipping
+                // it to UNKNOWN mid-flight invites a concurrent redispatch (double
+                // create). A create that takes >2 min will surface UNKNOWN on the
+                // next sweep round anyway.
+                .filter { it.state == DispatchState.PENDING && now - it.createdAt > PENDING_SWEEP_AGE_MS }
                 .forEach { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
         } catch (e: CancellationException) {
             throw e
@@ -79,6 +85,24 @@ class DispatchService @Inject constructor(
             // Ledger unreadable: nothing to sweep; probe/dispatch still work.
         }
     }
+
+    /**
+     * True when an UNRESOLVED (UNKNOWN) ledger entry exists that looks like the
+     * same dispatch — same server, folder and capped title. Surfaces whose
+     * UNKNOWN guard lives only in memory (handoff sheet reset) must consult
+     * this before sending, or a reopened sheet can blind-re-send an ambiguous
+     * request (double create).
+     */
+    suspend fun hasUnresolvedDuplicate(serverId: String, folderId: Int, title: String): Boolean =
+        dispatchStore.refs.first().any {
+            it.state == DispatchState.UNKNOWN &&
+                it.serverId == serverId &&
+                it.folderId == folderId &&
+                it.title == cap(title.trim(), 120)
+        }
+
+    /** PENDING entries younger than this are considered in flight, not dead. */
+    private val PENDING_SWEEP_AGE_MS = 120_000L
 
     /** Code-point-safe truncation (never splits an emoji surrogate pair). */
     fun cap(text: String, max: Int): String =
@@ -106,6 +130,7 @@ class DispatchService @Inject constructor(
             // the response and the anchor must survive.
             dispatchedAtEpochMs = now,
             scheduleLocalMillis = req.scheduleLocalMillis,
+            autoStart = req.autoStart,
         )
         if (client == null) {
             restoreOnHardFail(req.restoreOnHardFail)

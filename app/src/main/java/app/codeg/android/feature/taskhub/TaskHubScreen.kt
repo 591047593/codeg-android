@@ -154,7 +154,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                     TaskCard(
                         entry = entry,
                         detail = ui.details[entry.serverId]?.get(entry.task.id),
-                        busy = ui.busyKey == "${entry.serverId}:${entry.task.id}",
+                        busy = ui.busyKey != null,
                         onExpand = { viewModel.loadDetail(entry.serverId, entry.task.id) },
                         onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
                         onStart = { confirm = ConfirmAction.START(entry) },
@@ -347,7 +347,9 @@ private fun TaskCard(
     val task = entry.task
     val colors = CodegTheme.colors
     var expanded by rememberSaveable(key = "${entry.serverId}-${task.id}-expanded") { mutableStateOf(false) }
-    LaunchedEffect(expanded) { if (expanded && detail == null) onExpand() }
+    // Keyed on detail==null too: post() drops the cached detail after an action;
+    // without the key a sheet left open through the action would never refetch.
+    LaunchedEffect(expanded, detail == null) { if (expanded && detail == null) onExpand() }
 
     Card(
         modifier = Modifier
