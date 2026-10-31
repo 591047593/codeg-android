@@ -523,7 +523,11 @@ fun SessionDetailScreen(
                             // which pushed that row off-screen (and, at a large font scale,
                             // off the top of the window entirely).
                             modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                            // Symmetric 20dp gutters. The old 12/16 asymmetry was there
+                            // to leave room for the timeline rail on the left; the rail is
+                            // a thin marker, not a column, and the lopsided measure was
+                            // visible as text that never quite lined up with itself.
+                            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
                         ) {
                             items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->
                                 TimelineRow(

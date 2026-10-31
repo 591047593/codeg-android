@@ -89,7 +89,7 @@ fun ComposeBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(colors.bg)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -100,7 +100,7 @@ fun ComposeBar(
             }
             if (onAttach != null) {
                 IconButton(onClick = onAttach) {
-                    Icon(Icons.Rounded.Image, contentDescription = stringResource(R.string.compose_attach_image), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Image, contentDescription = stringResource(R.string.compose_attach_image), modifier = Modifier.size(21.dp))
                 }
             }
             Box(
@@ -154,6 +154,7 @@ fun ComposeBar(
             FilledIconButton(
                 onClick = { if (showStop) onStop() else onSend() },
                 enabled = canSend || showStop,
+                modifier = Modifier.size(36.dp),
                 // A true circle. `FilledIconButton` defaults to Material's 12dp rounded
                 // square, which next to the pill-shaped input reads as a different family;
                 // iOS pairs a round send button with a rounded field.
