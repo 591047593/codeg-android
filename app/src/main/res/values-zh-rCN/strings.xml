@@ -238,6 +238,10 @@
     <string name="system_http_proxy">HTTP 代理</string>
     <string name="system_enable_proxy">启用代理</string>
     <string name="system_proxy_url">代理地址</string>
+    <string name="system_diagnostics">诊断</string>
+    <string name="system_view_crash_log">查看上次崩溃</string>
+    <string name="system_crash_log">上次崩溃</string>
+    <string name="system_clear">清除</string>
     <string name="system_server_update">服务器更新</string>
     <string name="system_check_for_updates">检查更新</string>
     <string name="system_current_version">当前：codeg %1$s</string>

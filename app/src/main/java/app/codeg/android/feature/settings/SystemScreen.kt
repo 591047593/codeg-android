@@ -2,10 +2,12 @@ package app.codeg.android.feature.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -13,25 +15,33 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.common.CrashLog
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegMono
 
 @Composable
 fun SystemContent(viewModel: SystemViewModel = hiltViewModel()) {
@@ -67,6 +77,41 @@ fun SystemContent(viewModel: SystemViewModel = hiltViewModel()) {
                 }
             }
         }
+        // Crash log. The app had no way to report why it died; this is the read side of
+        // the handler installed in CodegApplication. Shown only when a trace exists, so
+        // a healthy install never sees the row.
+        val context = LocalContext.current
+        var crashLog by remember { mutableStateOf(CrashLog.read(context)) }
+        var showCrash by remember { mutableStateOf(false) }
+        if (crashLog != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.system_diagnostics), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PillButton(stringResource(R.string.system_view_crash_log), loading = false, onClick = { showCrash = true })
+                    TextButton(onClick = { CrashLog.clear(context); crashLog = null }) {
+                        Text(stringResource(R.string.system_clear), fontSize = 14.sp, color = colors.danger)
+                    }
+                }
+            }
+        }
+        if (showCrash && crashLog != null) {
+            AlertDialog(
+                onDismissRequest = { showCrash = false },
+                containerColor = colors.bgElevated,
+                title = { Text(stringResource(R.string.system_crash_log), color = colors.textPrimary) },
+                text = {
+                    Box(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                        Text(crashLog!!, fontFamily = CodegMono, fontSize = 11.sp, color = colors.textSecondary)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showCrash = false }) {
+                        Text(stringResource(R.string.common_close), color = colors.accent)
+                    }
+                },
+            )
+        }
+
         ui.error?.let { Text(it, fontSize = 13.sp, color = colors.danger) }
     }
 }

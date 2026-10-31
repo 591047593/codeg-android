@@ -109,18 +109,19 @@ class SearchViewModel @Inject constructor(
     fun rememberCurrentQuery() {
         val q = _query.value.trim()
         if (q.isEmpty()) return
-        viewModelScope.launch { recentStore.add(q) }
+        viewModelScope.launch { runCatching { recentStore.add(q) } }
     }
 
     fun useRecent(term: String) {
         _query.value = term
         viewModelScope.launch {
             runSearch(term)
-            recentStore.add(term) // promote to most-recent
+            // A failed write must not lose the search that just succeeded.
+            runCatching { recentStore.add(term) } // promote to most-recent
         }
     }
 
-    fun clearRecent() { viewModelScope.launch { recentStore.clear() } }
+    fun clearRecent() { viewModelScope.launch { runCatching { recentStore.clear() } } }
 
     /** Re-run the current query after a failure (drives the inline-error Retry button). */
     /**

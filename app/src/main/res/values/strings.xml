@@ -238,6 +238,10 @@
     <string name="system_http_proxy">HTTP Proxy</string>
     <string name="system_enable_proxy">Enable proxy</string>
     <string name="system_proxy_url">Proxy URL</string>
+    <string name="system_diagnostics">Diagnostics</string>
+    <string name="system_view_crash_log">View last crash</string>
+    <string name="system_crash_log">Last crash</string>
+    <string name="system_clear">Clear</string>
     <string name="system_server_update">Server Update</string>
     <string name="system_check_for_updates">Check for updates</string>
     <string name="system_current_version">Current: codeg %1$s</string>

@@ -33,11 +33,15 @@ class AppViewModel @Inject constructor(
     val selectedProfile: StateFlow<ServerProfile?> = serverRepository.selectedProfile
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    // Both of these write to DataStore (and, for delete, drop a Keystore entry), any of
+    // which can throw on a full disk or a broken keystore. Without the guard the
+    // exception reaches the default handler and takes the process down — from a tap on a
+    // list row.
     fun selectServer(id: String) {
-        viewModelScope.launch { serverRepository.select(id) }
+        viewModelScope.launch { runCatching { serverRepository.select(id) } }
     }
 
     fun deleteServer(id: String) {
-        viewModelScope.launch { serverRepository.delete(id) }
+        viewModelScope.launch { runCatching { serverRepository.delete(id) } }
     }
 }
