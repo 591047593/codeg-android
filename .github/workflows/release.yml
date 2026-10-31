@@ -158,13 +158,34 @@ jobs:
           fi
           # `sed` strips the block's YAML indentation so the markdown has no leading
           # spaces (a heredoc inside `run: |` carries the step's indent into the file).
-          sed 's/^          //' > "$RUNNER_TEMP/release-notes.md" <<EOF
+          # The release body is the version's section out of CHANGELOG.md, so the notes
+          # say what actually changed instead of repeating a fixed template. A tag with
+          # no matching section falls back to the template — a release must never be
+          # blocked on a missing changelog entry.
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          sed 's/^          //' > "$notes_file" <<EOF
           Codeg for Android $GITHUB_REF_NAME
 
           Independent fork (二开) of [xintaofei/codeg-android](https://github.com/xintaofei/codeg-android).
 
           $signing_note
+          EOF
 
+          section=""
+          if [[ -f CHANGELOG.md ]]; then
+            # Everything between this version's heading and the next `## ` heading.
+            section=$(awk -v tag="$GITHUB_REF_NAME" '
+              $0 ~ "^## " tag "[[:space:]]*$" { inside = 1; next }
+              inside && /^## / { exit }
+              inside { print }
+            ' CHANGELOG.md)
+          fi
+
+          if [[ -n "${section//[[:space:]]/}" ]]; then
+            printf '\n%s\n\n' "$section" >> "$notes_file"
+          fi
+
+          sed 's/^          //' >> "$notes_file" <<EOF
           Install: \`adb install codeg-android-$GITHUB_REF_NAME.apk\`, or copy the APK to the device and open it.
           Requires Android 12 or later (\`minSdk 31\`). Verify the download against the
           attached \`.sha256\` file.
