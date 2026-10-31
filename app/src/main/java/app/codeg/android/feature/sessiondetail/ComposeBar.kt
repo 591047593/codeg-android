@@ -29,7 +29,6 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -41,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -83,14 +81,14 @@ fun ComposeBar(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // A hairline setting the composer off from the timeline above it — the same
-        // separator the bottom navigation bar uses, so every bottom-chrome surface is
-        // delineated from its content the same way.
-        HorizontalDivider(thickness = Dp.Hairline, color = colors.surfaceStroke)
+        // No divider. The Codex composer floats over the page — the filled well is the
+        // only edge, and a hairline above it draws a bar the reference does not have.
+        // A soft top fade keeps long replies from colliding with the field without
+        // introducing a line.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colors.bgElevated)
+                .background(colors.bg)
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

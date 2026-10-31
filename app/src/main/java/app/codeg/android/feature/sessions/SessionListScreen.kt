@@ -316,11 +316,10 @@ private fun SessionList(
                     key = { _, row -> "row-${row.conversation.id}" },
                     contentType = { _, _ -> "row" },
                 ) { index, row ->
-                    // Inset grouped list, the way iOS presents a section: one rounded
-                    // card holding the rows, with a hairline between them that starts at
-                    // the text rather than running edge to edge. Rows used to float
-                    // individually, which read as a feed rather than as grouped settings.
-                    val isFirst = index == 0
+                    // Flat rows under a section header, separated by a hairline — the
+                    // Codex list. The inset card group it replaces read as an iOS
+                    // settings screen: every row boxed, the section itself a panel. Here
+                    // the page is the surface and only the hairline divides rows.
                     val isLast = index == section.rows.lastIndex
                     SessionRow(
                         conversation = row.conversation,
@@ -332,13 +331,10 @@ private fun SessionList(
                         expanded = row.conversation.id in expandedParents,
                         loadingChildren = row.conversation.id in loadingChildren,
                         onToggleChildren = { onToggleChildren(row.conversation) },
-                        shape = RoundedCornerShape(
-                            topStart = if (isFirst) 16.dp else 0.dp,
-                            topEnd = if (isFirst) 16.dp else 0.dp,
-                            bottomStart = if (isLast) 16.dp else 0.dp,
-                            bottomEnd = if (isLast) 16.dp else 0.dp,
-                        ),
-                        cardBackground = colors.bgElevated,
+                        // Transparent fill on the page itself; the selected row still
+                        // tints, which is the only background a row ever gets.
+                        shape = RoundedCornerShape(12.dp),
+                        cardBackground = Color.Transparent,
                         onTogglePin = { onTogglePin(row.conversation) },
                         onDelete = { onDelete(row.conversation) },
                         tagColors = row.conversation.tagIds.mapNotNull { tagsById[it] }.map(::tagColor),
