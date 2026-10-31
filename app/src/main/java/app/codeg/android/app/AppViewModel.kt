@@ -109,8 +109,15 @@ class AppViewModel @Inject constructor(
 
     fun deleteServer(id: String) {
         viewModelScope.launch {
-            serverRepository.delete(id)
-            onServerDeleted(id)
+            try {
+                serverRepository.delete(id)
+                onServerDeleted(id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // DataStore/Keystore IO failure: a bare throw here kills the
+                // process (v130 class) — degrade instead.
+            }
         }
     }
 
@@ -119,13 +126,19 @@ class AppViewModel @Inject constructor(
      *  points at a device the day-to-day surfaces no longer list. */
     fun setServerVisible(id: String, visible: Boolean) {
         viewModelScope.launch {
-            serverRepository.setVisible(id, visible)
-            if (!visible && serverRepository.selectedId.first() == id) {
-                val fallback = serverRepository.visibleProfiles.first()
-                    .firstOrNull { it.id != id }
-                // No visible device left: clear selection (select(null)) rather than keep
-                // pointing the shell at a device no day-to-day surface lists.
-                serverRepository.select(fallback?.id)
+            try {
+                serverRepository.setVisible(id, visible)
+                if (!visible && serverRepository.selectedId.first() == id) {
+                    val fallback = serverRepository.visibleProfiles.first()
+                        .firstOrNull { it.id != id }
+                    // No visible device left: clear selection (select(null)) rather than keep
+                    // pointing the shell at a device no day-to-day surface lists.
+                    serverRepository.select(fallback?.id)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Same v130-class guard as deleteServer
             }
         }
     }
@@ -280,14 +293,28 @@ class AppViewModel @Inject constructor(
      */
     fun createAndActivateProject(name: String, onCreated: (SessionProject) -> Unit = {}) {
         viewModelScope.launch {
-            val project = sessionProjectRepo.create(name)
-            if (chatsAll.value || activityAll.value) sessionProjectRepo.activateCreated(project.id)
-            onCreated(project)
+            try {
+                val project = sessionProjectRepo.create(name)
+                if (chatsAll.value || activityAll.value) sessionProjectRepo.activateCreated(project.id)
+                onCreated(project)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // DataStore IO failure: degrade, don't kill the process
+            }
         }
     }
 
     /** Device removed: its sessions' project memberships die with it. */
     fun onServerDeleted(serverId: String) {
-        viewModelScope.launch { sessionProjectRepo.removeRefsForServer(serverId) }
+        viewModelScope.launch {
+            try {
+                sessionProjectRepo.removeRefsForServer(serverId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Same v130-class guard
+            }
+        }
     }
 }

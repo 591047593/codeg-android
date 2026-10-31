@@ -103,6 +103,12 @@ class TaskHubViewModel @Inject constructor(
 
     private val _refreshTick = MutableStateFlow(0)
     private var generation = 0
+    /** The tick already fetched: combine re-emits on every active/foreground
+     * toggle, and without this each one would redo the tick>0 refetch forever. */
+    private var lastSeenTick = -1
+    /** Bumped by post(): in-flight loadDetail rounds from before an action must
+     * not repopulate the dropped (pre-action) detail afterwards. */
+    private var detailEpoch = 0
 
     /** Board columns, recomputed only when tasks/filters change (off the poll's spinner). */
     val board: StateFlow<Map<TaskColumn, List<TaskBoardEntry>>> =
@@ -176,7 +182,10 @@ class TaskHubViewModel @Inject constructor(
                 .collectLatest { (tick, active, fg) ->
                     // Pull-to-refresh / device-set change: refetch now (any new tick
                     // cancels this collector, superseding a round in flight)...
-                    if (tick > 0) fetchAll()
+                    if (tick > 0 && tick != lastSeenTick) {
+                        lastSeenTick = tick
+                        fetchAll()
+                    }
                     when {
                         // ...then ALWAYS resume the foreground poll (a one-shot
                         // `tick>0 -> return` would kill the 25s loop forever, v139 H1).
@@ -305,6 +314,8 @@ class TaskHubViewModel @Inject constructor(
         // coroutine would let a second tap slip past the gate before launch runs
         // and double-submit merge/cancel (v139 H2).
         _ui.update { it.copy(busyKey = key(serverId, taskId), actionError = null) }
+        detailEpoch += 1
+        val epoch = detailEpoch
         viewModelScope.launch {
             try {
                 val profile = deviceById(serverId) ?: error("设备不存在")
@@ -347,6 +358,7 @@ class TaskHubViewModel @Inject constructor(
 
     /** Expand a task: events + changed files load once; diff loads on demand. */
     fun loadDetail(serverId: String, taskId: Int, withDiff: Boolean = false) {
+        val epoch = detailEpoch
         viewModelScope.launch {
             try {
                 val client = deviceById(serverId)?.let { repository.client(it) }
@@ -369,6 +381,10 @@ class TaskHubViewModel @Inject constructor(
                     // A null here means THAT load failed, not "no data" (the
                     // decoders return emptyList for empty) — cache the failure so
                     // the card can show it with a retry instead of a blank body.
+                    // An action ran while this round was in flight: the dropped
+                    // detail must stay dropped (the next expand refetches) —
+                    // repopulating would show a pre-action snapshot forever.
+                    if (epoch != detailEpoch) return@launch
                     if (events == null || files == null) {
                         _ui.update { mutateDetail(it, serverId, taskId) { it.copy(loadError = "详情加载失败，请重试") } }
                         return@launch

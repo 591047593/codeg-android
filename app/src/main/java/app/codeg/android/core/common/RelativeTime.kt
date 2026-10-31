@@ -10,7 +10,10 @@ import java.util.Locale
  * `RelativeTime`. No third-party dependency — plain `java.time` arithmetic.
  */
 object RelativeTime {
-    private val monthDay: DateTimeFormatter =
+    // Built per call (cheap): the app's in-app language switch changes
+    // Locale.setDefault without a process restart, and a val formatter would
+    // keep rendering dates in the previous language until process death.
+    private fun monthDay(): DateTimeFormatter =
         DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
 
     /**
@@ -26,6 +29,6 @@ object RelativeTime {
         if (hours < 24) return "${hours}h"
         val days = hours / 24
         if (days < 7) return "${days}d"
-        return monthDay.format(instant.atZone(ZoneId.systemDefault()))
+        return monthDay().format(instant.atZone(ZoneId.systemDefault()))
     }
 }

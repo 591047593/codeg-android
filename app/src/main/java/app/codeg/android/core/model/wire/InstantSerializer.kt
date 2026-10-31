@@ -15,7 +15,8 @@ import java.time.ZoneOffset
  * The server (chrono on the Rust side) may emit fractional seconds with
  * arbitrary precision (or none), with `Z` or a numeric offset. We accept all
  * shapes and, as a last resort, drop sub-second precision (immaterial for
- * display/sort). `java.time` is fully available at our minSdk 31.
+ * display/sort). `java.time` is fully available at our minSdk 28 (java.time
+ * is API 26+; the legacy flavor's 28 clears it).
  */
 object Rfc3339 {
     fun parse(raw: String): Instant? {

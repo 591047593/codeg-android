@@ -251,15 +251,17 @@ class ActivityViewModel @Inject constructor(
         manualOnce = manual
         viewModelScope.launch {
             try {
+                // Read BEFORE cancelling: a failed DataStore read after
+                // cancelAndJoin would leave the poll dead until the next mode
+                // change — the old loop at least kept the feed fresh.
+                val profile = repository.selectedProfile.first()
                 pollJob?.cancelAndJoin()
-                repository.selectedProfile.first()?.let { profile ->
-                    onMode(profile, repository.activityAll.value, reset = false)
-                }
+                profile?.let { onMode(it, repository.activityAll.value, reset = false) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // Pull-to-refresh must not crash on a failed DataStore read;
-                // the next poll round re-reads.
+                // the old poll loop is still alive and keeps refreshing.
             }
         }
     }
@@ -472,7 +474,11 @@ class ActivityViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, refreshing = false, error = if (it.hasLoaded) it.error else e.displayMessage()) }
+            // Superseded rounds must not write into the newer round's state
+            // (every other write site here is generation-guarded).
+            if (generation == activityGeneration) {
+                _ui.update { it.copy(loading = false, refreshing = false, error = if (it.hasLoaded) it.error else e.displayMessage()) }
+            }
         }
     }
 

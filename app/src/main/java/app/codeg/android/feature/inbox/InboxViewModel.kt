@@ -219,10 +219,18 @@ class InboxViewModel @Inject constructor(
         restoreOnHardFail: DispatchRef? = null,
     ) {
         if (_ui.value.dispatching) {
+            // A redispatch whose old ref was ALREADY removed must not lose it on
+            // a rejected entry — restore the sole trace of the original request.
+            restoreOnHardFail?.let { old ->
+                viewModelScope.launch { runCatching { dispatchStore.put(old.copy(state = DispatchState.UNKNOWN)) } }
+            }
             _ui.value = _ui.value.copy(dispatchError = "正在派发，请稍候")
             return
         }
         if (title.isBlank()) {
+            restoreOnHardFail?.let { old ->
+                viewModelScope.launch { runCatching { dispatchStore.put(old.copy(state = DispatchState.UNKNOWN)) } }
+            }
             _ui.value = _ui.value.copy(dispatchError = "标题不能为空")
             return
         }
@@ -268,6 +276,14 @@ class InboxViewModel @Inject constructor(
                     is DispatchOutcome.HardFailed -> fail(outcome.message)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
+                // VM cleared mid-send: the request may be on the wire. Put the
+                // redispatched trace back (NonCancellable) before dying — no
+                // card would otherwise exist for a possibly-created task.
+                restoreOnHardFail?.let { old ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        runCatching { dispatchStore.put(old.copy(state = DispatchState.UNKNOWN)) }
+                    }
+                }
                 throw e
             } catch (e: Exception) {
                 // Last-resort guard: a DataStore IO failure inside send() must

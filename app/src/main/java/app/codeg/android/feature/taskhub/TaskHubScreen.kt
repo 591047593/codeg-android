@@ -587,7 +587,11 @@ private fun DetailSection(title: String, content: @Composable () -> Unit) {
 private fun relativeLine(iso: String?): String? = iso?.let { "· " + relativeLabel(it) }
 
 private fun relativeLabel(iso: String): String {
-    val instant = runCatching { Instant.parse(iso) }.getOrNull() ?: return iso
+    // Offset form (…+08:00) throws in Instant.parse — fall back to the
+    // tolerant parser the wire layer already ships.
+    val instant = runCatching { Instant.parse(iso) }
+        .recoverCatching { app.codeg.android.core.model.wire.Rfc3339.parse(iso) }
+        .getOrNull() ?: return iso
     return DateUtils.getRelativeTimeSpanString(
         instant.toEpochMilli(),
         System.currentTimeMillis(),

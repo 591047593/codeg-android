@@ -7,6 +7,8 @@ import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.displayMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -108,6 +110,11 @@ class DispatchService @Inject constructor(
     /** PENDING entries younger than this are considered in flight, not dead. */
     private val PENDING_SWEEP_AGE_MS = 120_000L
 
+    /** Serializes duplicate-check + PENDING reservation in send() (Hilt can't
+     *  provide a Mutex binding, so this is a plain property — one per service,
+     *  which is exactly the serialization scope we need). */
+    private val gateMutex = kotlinx.coroutines.sync.Mutex()
+
     /** Code-point-safe truncation (never splits an emoji surrogate pair). */
     fun cap(text: String, max: Int): String =
         if (text.length <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
@@ -140,7 +147,17 @@ class DispatchService @Inject constructor(
             restoreOnHardFail(req.restoreOnHardFail)
             return DispatchOutcome.HardFailed("设备不可用或 Token 缺失")
         }
-        dispatchStore.put(request)
+        // Atomic check-and-reserve: the VM-level gates can both pass for the
+        // same title from two surfaces (TOCTOU across VMs) — re-check under a
+        // mutex so only one send may move a title from "no unresolved ref" to
+        // "PENDING" at a time.
+        gateMutex.withLock {
+            if (hasUnresolvedDuplicate(req.serverId, req.folderId, request.title)) {
+                restoreOnHardFail(req.restoreOnHardFail)
+                return DispatchOutcome.HardFailed("已存在同目标的未确认派发记录，请先处理后再派发，避免重复创建")
+            }
+            dispatchStore.put(request)
+        }
         val config = DispatchPipeline.taskConfig(
             description = req.description.trim(),
             agentTypeWire = req.agentTypeWire,
