@@ -432,20 +432,37 @@ fun SessionDetailScreen(
                 }
                 // The current model / effort / mode, read out where the desktop client
                 // shows it. Opens the same editor the top-bar avatar does.
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    SessionSettingsChip(
-                        summary = ui.settingsSummary,
-                        onClick = { showOptions = true },
-                        modifier = Modifier.weight(1f, fill = false),
+                if (ui.isNew) {
+                    // A draft has to say what it will run against. The desktop client puts
+                    // the agent pill and the workspace selector on this screen, above the
+                    // input; hiding them in the options sheet made a new conversation look
+                    // like a plain chat with no folder and no agent.
+                    NewSessionPills(
+                        agent = ui.agent,
+                        folderName = ui.folderName,
+                        folderPath = ui.folderPath,
+                        // Locked once the first send is on its way: the conversation is
+                        // being created against these values.
+                        enabled = ui.isDraftEditable,
+                        onPickAgent = { showOptions = true },
+                        onPickFolder = { showOptions = true },
                     )
-                    // Context-window fullness sits at the trailing edge of the same row:
-                    // it is status, not a control, and on a phone every extra line above
-                    // the composer costs reading area.
-                    ContextUsageRing(stats = ui.sessionStats)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SessionSettingsChip(
+                            summary = ui.settingsSummary,
+                            onClick = { showOptions = true },
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // Context-window fullness sits at the trailing edge of the same row:
+                        // it is status, not a control, and on a phone every extra line above
+                        // the composer costs reading area.
+                        ContextUsageRing(stats = ui.sessionStats)
+                    }
                 }
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
                 ComposeBar(

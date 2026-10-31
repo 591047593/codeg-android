@@ -160,7 +160,12 @@ fun AgentOptionsSheet(
 
                     if (ui.isDraftEditable) AgentPickerSection(ui.availableAgents, ui.agent) { viewModel.selectAgent(it) }
 
-                    if (ui.folderPath != null) {
+                    // Shown whenever the folder is *selectable*, not only when one is
+                    // already chosen. The old condition was `folderPath != null`, which
+                    // is by definition false on a new conversation — so the entire
+                    // workspace section, the only way to pick a folder, was missing
+                    // exactly where it was needed most.
+                    if (ui.isDraftEditable || ui.folderPath != null) {
                         WorkspaceSection(
                             ui = ui,
                             onSelectFolder = { viewModel.selectFolder(it) },
@@ -289,8 +294,12 @@ private fun WorkspaceSection(
         Text(stringResource(R.string.agentopts_workspace), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.textTertiary)
         OptionGroup {
             if (ui.isDraftEditable) FolderMenuRow(ui, onSelectFolder) else FolderReadOnlyRow(ui)
-            GroupDivider()
-            BranchRow(ui.currentBranch, isBusy = ui.isInFlight, onClick = onOpenBranch)
+            // A branch belongs to a repository; with no folder chosen there is nothing to
+            // name, and the row would open a picker for an empty list.
+            if (ui.folderPath != null) {
+                GroupDivider()
+                BranchRow(ui.currentBranch, isBusy = ui.isInFlight, onClick = onOpenBranch)
+            }
         }
     }
 }
