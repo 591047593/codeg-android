@@ -4,3 +4,6 @@
 - D2 (v138)：v139 不新增底部 tab（避免动 HomeTab 用户自定义排序），入口挂 ACTIVITY 页。
 - D3 (v138)：定时派发时区按手机本地时区换算为 UTC 绝对时刻并明示；服务端本来按绝对时刻触发。
 - D4 (v138)：防重复提交不做服务端假设（无幂等键），本地记账+回查+UNKNOWN 人工确认。
+- D5 (v140)：DispatchState 是派发请求的记账状态（PENDING/CONFIRMED/UNKNOWN），不是任务状态机——任务真实状态只在服务端，UNKNOWN 卡片只是"结果未知的请求"的待办提示。
+- D6 (v140)：isAmbiguous 把 IOException/ApiError.Transport/5xx 全归"结果未知"禁止自动重发（服务端无幂等键，fail-safe）；仅 4xx 等确定失败才删账。
+- D7 (v140)：回查（probe）匹配规则 = 精确标题(限120) + folderId 严格相等 + 发送时刻-5min 起的时间窗；多条候选或 folderId 缺失一律不确认，保持 UNKNOWN 交人工。

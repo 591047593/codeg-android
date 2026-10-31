@@ -93,6 +93,7 @@ fun ActivityScreen(
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var tasksMode by rememberSaveable { mutableStateOf(false) }
+    var inboxMode by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
@@ -135,8 +136,8 @@ fun ActivityScreen(
         items.mapNotNull { it.row }
             .map { "${it.serverId}:${it.conversation.id}|${it.conversation.trimmedTitle.orEmpty()}|${it.serverName}" }
     }
-    DisposableEffect(focusRowKeys, tasksMode) {
-        if (!tasksMode) viewModel.focusHub.register(
+    DisposableEffect(focusRowKeys, tasksMode, inboxMode) {
+        if (!tasksMode && !inboxMode) viewModel.focusHub.register(
             ACTIVITY_FOCUS_OWNER,
             items.mapNotNull { it.row }.map { row ->
                 FocusItem(
@@ -157,7 +158,7 @@ fun ActivityScreen(
     // (a ball gesture fired with this list visible) scrolls.
     var lastScrolledStamp by remember { mutableStateOf(highlight?.stamp ?: 0L) }
     LaunchedEffect(highlight, items) {
-        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER }?.takeIf { !tasksMode } ?: return@LaunchedEffect
+        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER }?.takeIf { !tasksMode && !inboxMode } ?: return@LaunchedEffect
         if (hl.stamp == lastScrolledStamp) return@LaunchedEffect
         val idx = items.indexOfFirst { it.row != null && it.row.refKey == hl.item.ref.key }
         if (idx >= 0) {
@@ -168,7 +169,9 @@ fun ActivityScreen(
 
     val taskHubViewModel: app.codeg.android.feature.taskhub.TaskHubViewModel =
         androidx.hilt.navigation.compose.hiltViewModel(key = "taskhub")
-    LaunchedEffect(tasksMode) { taskHubViewModel.setActive(tasksMode) }
+    val inboxViewModel: app.codeg.android.feature.inbox.InboxViewModel =
+        androidx.hilt.navigation.compose.hiltViewModel(key = "inbox")
+    LaunchedEffect(tasksMode, inboxMode) { taskHubViewModel.setActive(tasksMode && !inboxMode) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -187,17 +190,26 @@ fun ActivityScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 FilterChip(
-                    selected = !tasksMode,
-                    onClick = { tasksMode = false },
+                    selected = !tasksMode && !inboxMode,
+                    onClick = { tasksMode = false; inboxMode = false },
                     label = { Text(stringResource(R.string.task_toggle_feed)) },
                 )
                 FilterChip(
-                    selected = tasksMode,
-                    onClick = { tasksMode = true },
+                    selected = tasksMode && !inboxMode,
+                    onClick = { tasksMode = true; inboxMode = false },
                     label = { Text(stringResource(R.string.task_toggle_tasks)) },
                 )
+                FilterChip(
+                    selected = inboxMode,
+                    onClick = { inboxMode = true; tasksMode = false },
+                    label = { Text(stringResource(R.string.inbox_title)) },
+                )
             }
-            if (tasksMode) {
+            if (inboxMode) {
+                app.codeg.android.feature.inbox.InboxScreen(
+                    inboxViewModel
+                )
+            } else if (tasksMode) {
                 app.codeg.android.feature.taskhub.TaskHubScreen(taskHubViewModel)
             } else {
         Box(Modifier.fillMaxSize()) {

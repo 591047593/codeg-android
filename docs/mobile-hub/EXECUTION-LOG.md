@@ -11,3 +11,15 @@
 
 ## 状态文件
 - VERSION-STATUS.md / KNOWN-ISSUES.md / DECISION-LOG.md 同目录维护。
+
+## 批v139：跨设备任务状态中心（2026-11-01 发版）
+- 交付：work_task 全套端点封装（CodegClient，手写容错解码防脏字段）；TaskBoard 四列投影（todo/queued→待执行、preparing/running→执行中、awaiting_input/review→需要处理、merging/done→已完成、failed/canceled→失败/取消、未知→未知列，绝不归完成）；TaskHubViewModel 轮询（前台 25s、_active 门控、3s 设备超时、ghost 任务过滤）；TaskHubScreen（筛选/归档开关/详情 events+files+diff/按状态操作/危险操作二次确认）；入口挂 Activity 页三态切换之「任务」。
+- 双重审查（对抗+墨菲）发现并修复 11 项：轮询一次性分支致死、busyKey 竞态双击、超时误判 OK 清空任务、幽灵任务、Scaffold padding、后台照轮询、隐藏列表抢焦点、diff 裸 JSON、时区偏移字典序排序、详情失败缓存空等。
+- 测试：TaskBoardTest 7 例 + 全 flavor 编译 + testLegacyDebugUnitTest 绿。
+- 发版：37f58c0 → fork/main，tag v1.0.1-fengx.28（versionCode 30），CI Release 绿（run 41235240374）。
+
+## 批v140：想法收件箱 + 统一任务派发（2026-11-01）
+- 交付：IdeaStore/IdeaEntry 本地想法（DataStore，非 Room）；DispatchStore/DispatchRef 派发记账账本（PENDING/CONFIRMED/UNKNOWN，上限 50 只逐出 CONFIRMED）；DispatchPipeline（taskConfig 蛇形 JSON、findCreatedTask 回查匹配：精确标题+folderId+时间窗-5min 时钟冗余，多条同名单任务候选→保持 UNKNOWN；toUtcRfc3339）；InboxViewModel（预检 health→listFolders+acpListAgents、派发记账→work_task_create→confirm/UNKNOWN/硬失败、probe 回查（失败≠未找到）、discard、redispatch 用账本快照原样重发+保留定时意图+硬失败写回原账）；InboxScreen（想法 CRUD+复制、派发 ModalBottomSheet 设备/项目/Agent chips+日期时间选择器+UNKNOWN 卡片）；Activity 页三态切换之「想法」；中英 strings。
+- 双重审查共发现 24 项（对抗 12+墨菲 7 新增），修复 Critical/High/Medium 全部：isAmbiguous 补 ApiError.Transport（否则断连被判确定失败→删账→双建）；probe 网络失败不再误报"未找到"；PENDING 崩溃残留 init 清扫→UNKNOWN；dispatching 同步置位防双击；redispatch 竞态防删账+restoreOnHardFail；DispatchRef 快照补 description/agentTypeWire/dispatchedAtEpochMs/scheduleLocalMillis（进程被杀后回查窗口不丢）；loadTarget 代际号防旧响应覆盖；CancellationException NonCancellable 清理后重抛；folderId==null 行不匹配；多候选 singleOrNull；标题限长 120 双侧一致；probe 并发守卫；错误跨 sheet 串扰清理。
+- 未修（Low，记 KNOWN-ISSUES）：过去时间选择仅服务端语义、probe 无进行中指示、文件夹 chips 长列表滚动、解码失败静默清空为既有模式。
+- 测试：DispatchPipelineTest 5 例 + 双 flavor 编译 + testLegacyDebugUnitTest 绿。
