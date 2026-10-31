@@ -626,6 +626,7 @@
     <string name="compose_insert">Insert</string>
     <string name="compose_attach_image">Attach image</string>
     <string name="compose_message_placeholder">Message</string>
+    <string name="compose_queue_send">Queue — sends when this turn finishes</string>
     <string name="compose_stop">Stop</string>
     <string name="compose_send">Send</string>
 

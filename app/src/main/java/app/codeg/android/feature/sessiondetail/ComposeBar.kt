@@ -73,6 +73,8 @@ fun ComposeBar(
     // turn they have nothing to add to.
     val hasText = text.isNotBlank() || canSendOverride
     val canSend = hasText
+    // The filled button is Stop only when there is nothing to send: with text present it
+    // queues, and Stop is the separate quiet button beside it.
     val showStop = isInFlight && !hasText
     val sendContainer by animateColorAsState(
         targetValue = if (isInFlight) colors.danger else colors.accent,
@@ -136,6 +138,21 @@ fun ComposeBar(
                 )
             }
 
+            // While a turn runs and there is text, the two actions are separate: a Stop
+            // that vanishes as soon as you type leaves no way to stop the turn without
+            // clearing the draft first, and the send that replaced it is a *queue*, not a
+            // stop. Both buttons therefore stay visible, with the queued send the filled
+            // one and Stop the quiet one.
+            if (isInFlight && hasText) {
+                IconButton(onClick = onStop) {
+                    Icon(
+                        Icons.Rounded.Stop,
+                        contentDescription = stringResource(R.string.compose_stop),
+                        tint = colors.danger,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             FilledIconButton(
                 onClick = { if (showStop) onStop() else onSend() },
                 enabled = canSend || showStop,
@@ -160,7 +177,11 @@ fun ComposeBar(
                 ) { stop ->
                     Icon(
                         imageVector = if (stop) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
-                        contentDescription = if (stop) stringResource(R.string.compose_stop) else stringResource(R.string.compose_send),
+                        contentDescription = when {
+                            stop -> stringResource(R.string.compose_stop)
+                            isInFlight -> stringResource(R.string.compose_queue_send)
+                            else -> stringResource(R.string.compose_send)
+                        },
                         modifier = Modifier.size(20.dp),
                     )
                 }

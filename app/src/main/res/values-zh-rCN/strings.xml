@@ -626,6 +626,7 @@
     <string name="compose_insert">插入</string>
     <string name="compose_attach_image">添加图片</string>
     <string name="compose_message_placeholder">输入消息</string>
+    <string name="compose_queue_send">排队——本轮结束后发送</string>
     <string name="compose_stop">停止</string>
     <string name="compose_send">发送</string>
 
