@@ -1141,6 +1141,9 @@
     <string name="dispatch_unknown">提交结果未知：请求可能已到达也可能未到达</string>
     <string name="dispatch_unknown_check">回查服务端</string>
     <string name="dispatch_unknown_discard">放弃记录</string>
+    <string name="dispatch_unknown_confirm_redispatch">该任务提交结果未知：服务器上可能已经创建成功。重新派发可能造成同一任务重复创建，确定继续吗？</string>
+    <string name="dispatch_unknown_confirm_discard">放弃后该记录将被删除。如果任务实际上已在服务器创建，将无法从这里追踪到它，确定放弃吗？</string>
+    <string name="dispatch_unknown_confirm_yes">确定</string>
     <string name="dispatch_redispatch">重新派发</string>
     <string name="dispatch_no_folder">该设备暂无项目</string>
     <!-- v141 handoff -->
@@ -1180,4 +1183,5 @@
     <string name="configsync_new_server">新设备，将新增</string>
     <string name="configsync_apply">确认导入</string>
     <string name="configsync_clipboard_note">安全提示：加密文本不含明文 Token；剪贴板可能被系统或第三方键盘保留，可事后手动清空。</string>
+    <string name="configsync_export_skipped">%1$d 台服务器因缺少 Token 未导出，本次密文不含其配置。</string>
 </resources>

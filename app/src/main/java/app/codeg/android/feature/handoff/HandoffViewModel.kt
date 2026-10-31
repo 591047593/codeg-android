@@ -169,24 +169,32 @@ class HandoffViewModel @Inject constructor(
         } else null
         _ui.value = _ui.value.copy(dispatching = true, error = null)
         viewModelScope.launch {
-            val outcome = dispatchService.send(
-                DispatchService.SendRequest(
-                    serverId = targetServerId,
-                    folderId = folderId,
-                    folderName = folderName,
-                    title = "交接：${pkg.sourceSessionTitle.ifBlank { "会话#${pkg.sourceSessionId}" }}",
-                    description = pkg.toTaskDescription(gitNote),
-                    agentTypeWire = agentType?.wire,
-                ),
-            )
-            when (outcome) {
-                is DispatchOutcome.Confirmed -> _ui.value = _ui.value.copy(dispatching = false, createdRef = outcome)
-                is DispatchOutcome.Unknown -> _ui.value = _ui.value.copy(
-                    dispatching = false,
-                    unknownRef = outcome.ref,
-                    error = "提交结果未知：请到 想法 页的派发记录回查（检查/放弃），面板已禁止直接重发",
+            try {
+                val outcome = dispatchService.send(
+                    DispatchService.SendRequest(
+                        serverId = targetServerId,
+                        folderId = folderId,
+                        folderName = folderName,
+                        title = "交接：${pkg.sourceSessionTitle.ifBlank { "会话#${pkg.sourceSessionId}" }}",
+                        description = pkg.toTaskDescription(gitNote),
+                        agentTypeWire = agentType?.wire,
+                    ),
                 )
-                is DispatchOutcome.HardFailed -> _ui.value = _ui.value.copy(dispatching = false, error = outcome.message)
+                when (outcome) {
+                    is DispatchOutcome.Confirmed -> _ui.value = _ui.value.copy(dispatching = false, createdRef = outcome)
+                    is DispatchOutcome.Unknown -> _ui.value = _ui.value.copy(
+                        dispatching = false,
+                        unknownRef = outcome.ref,
+                        error = "提交结果未知：请到 想法 页的派发记录回查（检查/放弃），面板已禁止直接重发",
+                    )
+                    is DispatchOutcome.HardFailed -> _ui.value = _ui.value.copy(dispatching = false, error = outcome.message)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Last-resort guard: a DataStore IO failure inside send() must
+                // never crash the process — degrade to an error message.
+                _ui.value = _ui.value.copy(dispatching = false, error = e.message ?: "派发失败")
             }
         }
     }

@@ -168,33 +168,41 @@ class InboxViewModel @Inject constructor(
         // never both pass the guard above.
         _ui.value = _ui.value.copy(dispatching = true, dispatchError = null, lastCreated = null)
         viewModelScope.launch {
-            val outcome = dispatchService.send(
-                DispatchService.SendRequest(
-                    ideaId = idea?.id,
-                    serverId = serverId,
-                    folderId = folderId,
-                    folderName = folderName,
-                    title = title,
-                    description = description,
-                    agentTypeWire = agentType?.wire,
-                    scheduleLocalMillis = scheduleLocalMillis,
-                    restoreOnHardFail = restoreOnHardFail,
-                ),
-            )
-            when (outcome) {
-                is DispatchOutcome.Confirmed -> {
-                    _ui.value = _ui.value.copy(
-                        dispatching = false,
-                        lastCreated = "${outcome.ref.serverId}:${outcome.ref.remoteTodoId}",
-                        dispatchError = outcome.scheduleNote,
-                    )
-                    onDone(outcome.ref)
-                }
-                is DispatchOutcome.Unknown -> _ui.value = _ui.value.copy(
-                    dispatching = false,
-                    dispatchError = "提交结果未知",
+            try {
+                val outcome = dispatchService.send(
+                    DispatchService.SendRequest(
+                        ideaId = idea?.id,
+                        serverId = serverId,
+                        folderId = folderId,
+                        folderName = folderName,
+                        title = title,
+                        description = description,
+                        agentTypeWire = agentType?.wire,
+                        scheduleLocalMillis = scheduleLocalMillis,
+                        restoreOnHardFail = restoreOnHardFail,
+                    ),
                 )
-                is DispatchOutcome.HardFailed -> fail(outcome.message)
+                when (outcome) {
+                    is DispatchOutcome.Confirmed -> {
+                        _ui.value = _ui.value.copy(
+                            dispatching = false,
+                            lastCreated = "${outcome.ref.serverId}:${outcome.ref.remoteTodoId}",
+                            dispatchError = outcome.scheduleNote,
+                        )
+                        onDone(outcome.ref)
+                    }
+                    is DispatchOutcome.Unknown -> _ui.value = _ui.value.copy(
+                        dispatching = false,
+                        dispatchError = "提交结果未知",
+                    )
+                    is DispatchOutcome.HardFailed -> fail(outcome.message)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Last-resort guard: a DataStore IO failure inside send() must
+                // never crash the process — degrade to a dispatch error.
+                fail(e.message ?: "派发失败")
             }
         }
     }

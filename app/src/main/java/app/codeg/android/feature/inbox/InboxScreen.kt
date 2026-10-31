@@ -59,7 +59,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.datastore.DispatchRef
-import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -86,6 +85,10 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
     var creating by remember { mutableStateOf(false) }
     var dispatching by remember { mutableStateOf<IdeaEntry?>(null) }
     var pendingDelete by remember { mutableStateOf<IdeaEntry?>(null) }
+    // UNKNOWN cards: redispatch/discard are destructive or duplicating actions,
+    // so they route through a confirmation dialog first.
+    var confirmRef by remember { mutableStateOf<DispatchRef?>(null) }
+    var confirmRedispatch by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -121,8 +124,8 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                         UnknownRefCard(
                             ref = ref,
                             onProbe = { viewModel.probe(ref.requestId) },
-                            onDiscard = { viewModel.discard(ref.requestId) },
-                            onRedispatch = { viewModel.redispatch(ref, null) },
+                            onDiscard = { confirmRef = ref; confirmRedispatch = false },
+                            onRedispatch = { confirmRef = ref; confirmRedispatch = true },
                         )
                     }
                 }
@@ -194,6 +197,31 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
             target = target,
             ui = ui,
             onClose = { dispatching = null },
+        )
+    }
+
+    confirmRef?.let { ref ->
+        AlertDialog(
+            onDismissRequest = { confirmRef = null },
+            title = { Text(stringResource(R.string.dispatch_unknown)) },
+            text = {
+                Text(
+                    stringResource(
+                        if (confirmRedispatch) R.string.dispatch_unknown_confirm_redispatch
+                        else R.string.dispatch_unknown_confirm_discard,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (confirmRedispatch) viewModel.redispatch(ref, null)
+                    else viewModel.discard(ref.requestId)
+                    confirmRef = null
+                }) { Text(stringResource(R.string.dispatch_unknown_confirm_yes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRef = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
         )
     }
 }

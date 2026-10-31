@@ -45,6 +45,8 @@ fun ConfigSyncContent(viewModel: ConfigSyncViewModel) {
     val context = LocalContext.current
     var showExportDialog by rememberSaveable { mutableStateOf(false) }
     var showImportDialog by rememberSaveable { mutableStateOf(false) }
+    // Servers skipped at export time (no token); shown in the copied dialog.
+    var exportSkipped by rememberSaveable { mutableStateOf(0) }
     // Fresh state on entry: a stale exportText would drop the dialog into the
     // "copied" branch, and a stale preview keeps plaintext tokens in memory.
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -105,14 +107,16 @@ fun ConfigSyncContent(viewModel: ConfigSyncViewModel) {
                 viewModel.export(pw.toCharArray()) { text, skipped ->
                     val copied = copyToClipboard(context, text)
                     if (!copied) viewModel.copyFailed()
-                    if (skipped > 0) Unit
+                    exportSkipped = skipped
                 }
             },
             onDismiss = {
                 showExportDialog = false
+                exportSkipped = 0
                 viewModel.resetExport()
             },
             copied = ui.exportText != null,
+            skipped = exportSkipped,
         )
     }
     if (showImportDialog) {
@@ -130,7 +134,7 @@ fun ConfigSyncContent(viewModel: ConfigSyncViewModel) {
 }
 
 @Composable
-private fun ExportDialog(busy: Boolean, error: String?, onConfirm: (String) -> Unit, copied: Boolean, onDismiss: () -> Unit) {
+private fun ExportDialog(busy: Boolean, error: String?, onConfirm: (String) -> Unit, copied: Boolean, skipped: Int, onDismiss: () -> Unit) {
     // Plain `remember`: passwords must NOT ride the saved-instance Bundle.
     var pw by remember { mutableStateOf("") }
     var pw2 by remember { mutableStateOf("") }
@@ -142,6 +146,13 @@ private fun ExportDialog(busy: Boolean, error: String?, onConfirm: (String) -> U
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (copied) {
                     Text(stringResource(R.string.configsync_export_done), color = CodegTheme.colors.textPrimary)
+                    if (skipped > 0) {
+                        Text(
+                            stringResource(R.string.configsync_export_skipped, skipped),
+                            color = CodegTheme.colors.danger,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 } else {
                     Text(
                         stringResource(R.string.configsync_password_hint),
