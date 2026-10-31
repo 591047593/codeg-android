@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,9 +24,11 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -106,7 +109,11 @@ fun SessionListScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        // The status bar is inset by the Scaffold itself. The activity draws edge to edge,
+        // and with `WindowInsets(0,0,0,0)` plus no top bar the large title was painted
+        // under the system clock and battery icons. Only the top is claimed here; the
+        // bottom is the app's navigation bar, which already handles its own insets.
+        contentWindowInsets = WindowInsets.statusBars,
         // No fixed top bar. The Codex list opens on a large title that scrolls away with
         // the content; a pinned bar over it wastes the top strip on a phone and makes the
         // heading compete with the rows for attention. The server switcher and the manage
@@ -363,6 +370,16 @@ private data class SectionStyle(val icon: ImageVector, val tint: Color, val labe
 private fun sectionStyle(kind: SectionKind): SectionStyle {
     val colors = CodegTheme.colors
     return when (kind) {
+        SectionKind.Running -> SectionStyle(
+            icon = Icons.Rounded.Bolt,
+            tint = colors.accent,
+            label = stringResource(R.string.activity_running),
+        )
+        SectionKind.Recent -> SectionStyle(
+            icon = Icons.Rounded.Schedule,
+            tint = colors.textSecondary,
+            label = stringResource(R.string.activity_recent),
+        )
         SectionKind.Pinned -> SectionStyle(
             icon = Icons.Rounded.PushPin,
             tint = colors.accent,

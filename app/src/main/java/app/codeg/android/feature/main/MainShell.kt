@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Search
@@ -55,7 +53,6 @@ import app.codeg.android.R
 import app.codeg.android.app.AppViewModel
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.theme.CodegTheme
-import app.codeg.android.feature.activity.ActivityScreen
 import app.codeg.android.feature.projects.ProjectDetailScreen
 import app.codeg.android.feature.search.SearchScreen
 import app.codeg.android.feature.projects.ProjectListScreen
@@ -78,7 +75,10 @@ enum class HomeTab(
 ) {
     CHATS("chats", R.string.tab_chats, Icons.Outlined.Forum, Icons.Rounded.Forum),
     FOLDERS("folders", R.string.tab_folders, Icons.Outlined.FolderOpen, Icons.Rounded.FolderOpen),
-    ACTIVITY("activity", R.string.tab_activity, Icons.Outlined.Bolt, Icons.Rounded.Bolt),
+    // "Activity" is gone as a destination: it rendered the same rows over the same
+    // conversations as Chats, differing only in grouping. Both groups (Running, last 24
+    // hours) now sit at the top of the Chats list, so the signal survives without a tab
+    // that duplicated the screen next to it.
     SEARCH("search", R.string.tab_search, Icons.Outlined.Search, Icons.Rounded.Search),
     SETTINGS("settings", R.string.tab_settings, Icons.Outlined.Settings, Icons.Rounded.Settings),
 }
@@ -149,7 +149,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             is app.codeg.android.core.common.DeepLinkRoute.OpenTab -> when (route.tab) {
                 "chats" -> toTab(HomeTab.CHATS)
                 "projects", "folders" -> toTab(HomeTab.FOLDERS)
-                "activity" -> toTab(HomeTab.ACTIVITY)
+                // Kept as an alias: an old link must still land somewhere sensible
+                // rather than failing, and the data it pointed at lives in Chats now.
+                "activity" -> toTab(HomeTab.CHATS)
                 "search" -> toTab(HomeTab.SEARCH)
                 "settings" -> toTab(HomeTab.SETTINGS)
                 else -> {}
@@ -228,9 +230,6 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             }
             composable(HomeTab.FOLDERS.route) {
                 ProjectListScreen(onOpenFolder = { id -> nav.navigate("project/$id") })
-            }
-            composable(HomeTab.ACTIVITY.route) {
-                ActivityScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })
             }
             composable(HomeTab.SEARCH.route) {
                 SearchScreen(onOpenConversation = { id -> nav.navigate("conversation/$id") { launchSingleTop = true } })

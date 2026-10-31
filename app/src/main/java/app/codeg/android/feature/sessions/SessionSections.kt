@@ -24,6 +24,20 @@ data class SessionSection(
 
 /** What a [SessionSection] represents — drives its header icon, label, and tint. */
 sealed interface SectionKind {
+    /**
+     * Conversations with a live agent attached, across all folders.
+     *
+     * This is the Activity tab folded into the list. Activity rendered the same
+     * `SessionRow` over the same conversations, differing only in grouping (live first,
+     * then the last 24 hours) — two tabs, one dataset. Showing them here keeps the
+     * signal ("what is running right now") and removes a destination that existed only
+     * to re-sort the list the neighbouring tab already had.
+     */
+    data object Running : SectionKind
+
+    /** Touched in the last 24 hours and not running — Activity's second group. */
+    data object Recent : SectionKind
+
     /** Pinned conversations across all folders. */
     data object Pinned : SectionKind
 
@@ -99,7 +113,40 @@ fun buildSessionSections(
         return listOf(row) + kids.map { SessionRowItem(it, folderName, depth = 1) }
     }
 
+    // Activity's two groups, folded in above everything else. "Running" is the only
+    // thing that list had which a folder-grouped Chats list could not show at a glance,
+    // and it belongs first: a live agent is the one thing the user may need to look at
+    // right now.
+    val running = conversations.filter { it.status.isLive }.sortedByDescending { it.updatedAt }
+    if (running.isNotEmpty()) {
+        out += SessionSection(
+            id = "running",
+            kind = SectionKind.Running,
+            rows = running.flatMap { rowsFor(it, folderNames[it.folderId]) },
+        )
+    }
+    val cutoff = java.time.Instant.now().minus(java.time.Duration.ofHours(24))
+    val recent = conversations
+        .filter { !it.status.isLive && it.updatedAt.isAfter(cutoff) }
+        .sortedByDescending { it.updatedAt }
+    if (recent.isNotEmpty()) {
+        out += SessionSection(
+            id = "recent",
+            kind = SectionKind.Recent,
+            rows = recent.flatMap { rowsFor(it, folderNames[it.folderId]) },
+        )
+    }
+
     val pinned = SessionGrouping.pinned(conversations)
+
+    // Rows already listed in the cross-folder views above are removed from the folder
+    // groups, exactly as pinned rows are: Pinned, Running and Recent are *views* of the
+    // same conversations, and repeating a row in two places made a folder look like it
+    // held more work than it did. `conversations` stays the source of truth for the
+    // views; only the folder loop below reads `remaining`.
+    val shownAbove = (running + recent + pinned).mapTo(HashSet()) { it.id }
+    val remaining = conversations.filterNot { it.id in shownAbove }
+
     if (pinned.isNotEmpty()) {
         out += SessionSection(
             id = "pinned",
@@ -108,7 +155,7 @@ fun buildSessionSections(
         )
     }
 
-    for (group in SessionGrouping.folderGroups(folders, conversations)) {
+    for (group in SessionGrouping.folderGroups(folders, remaining)) {
         out += SessionSection(
             id = "folder-${group.folder.id}",
             kind = SectionKind.Folder(group.folder.name, group.folder.color),
@@ -116,7 +163,7 @@ fun buildSessionSections(
         )
     }
 
-    val other = SessionGrouping.ungrouped(folders, conversations)
+    val other = SessionGrouping.ungrouped(folders, remaining)
     if (other.isNotEmpty()) {
         out += SessionSection(
             id = "other",

@@ -29,9 +29,6 @@ object NetworkModule {
      */
     private val READ_TIMEOUT: Duration = Duration.ofMinutes(5)
 
-    /** Largest WebSocket frame the client will buffer, matching the HTTP response cap. */
-    private val MAX_FRAME_BYTES: Long = 32L * 1024 * 1024
-
     /**
      * The shared Ktor client (OkHttp engine) used for every server. Timeouts are
      * configured on the OkHttp engine rather than via Ktor's `HttpTimeout`
@@ -55,11 +52,10 @@ object NetworkModule {
         }
         install(WebSockets) {
             pingIntervalMillis = 20_000
-            // Ktor defaults `maxFrameSize` to `Long.MAX_VALUE`: one oversized frame from
-            // the server (a whole transcript in a single snapshot event) would be
-            // materialised as a String on a 192 MB heap. This is the socket-side
-            // counterpart of the HTTP client's response ceiling.
-            maxFrameSize = MAX_FRAME_BYTES
+            // Deliberately no `maxFrameSize`: the OkHttp engine rejects it at connect time
+            // with "Max frame size switch is not supported in OkHttp engine", which broke
+            // every prompt. The frame-size guard lives in EventStream instead, where the
+            // text is already materialised and the check is engine-independent.
         }
         install(Logging) {
             level = LogLevel.NONE

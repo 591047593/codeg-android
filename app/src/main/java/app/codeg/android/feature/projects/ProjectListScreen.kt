@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -84,7 +85,9 @@ fun ProjectListScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        // The title scrolls and there is no top bar, so the status bar has to be inset
+        // here or the heading is drawn under the system icons.
+        contentWindowInsets = WindowInsets.statusBars,
         // The title scrolls with the list, like the Chats tab: a pinned bar over a short
         // list spends the top strip on a label the user already knows.
         topBar = {},

@@ -79,7 +79,24 @@ class EventStream(
                 try {
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
-                            parseFrame(frame.readText(), CodegJson.response)?.let { producer.send(it) }
+                            val text = frame.readText()
+                            // The socket-side counterpart of the HTTP client's response
+                            // ceiling. It cannot be configured on the client: the OkHttp
+                            // engine rejects `maxFrameSize` outright ("Max frame size
+                            // switch is not supported"), which killed every prompt. Here
+                            // the text already exists, so dropping an oversized frame
+                            // costs nothing and keeps a single runaway event (a whole
+                            // transcript in one snapshot) from parking a 60 MB String on a
+                            // 192 MB heap.
+                            if (text.length > MAX_FRAME_CHARS) {
+                                producer.send(
+                                    StreamFrame.Closed(
+                                        "oversized frame (${text.length} chars) dropped",
+                                    ),
+                                )
+                                return@webSocket
+                            }
+                            parseFrame(text, CodegJson.response)?.let { producer.send(it) }
                         }
                     }
                 } finally {
@@ -95,6 +112,14 @@ class EventStream(
     }
 
     companion object {
+        /**
+         * Largest frame the client will parse, in UTF-16 chars.
+         *
+         * 32 MB is the same ceiling the HTTP client applies to response bodies; a JSON
+         * text of that size is already far past anything the UI can render.
+         */
+        private const val MAX_FRAME_CHARS = 32 * 1024 * 1024
+
         /**
          * Route one raw text frame into a [StreamFrame]. The socket multiplexes
          * the legacy firehose (`{channel,payload}`) with the attach protocol
