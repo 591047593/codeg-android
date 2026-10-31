@@ -237,11 +237,26 @@ fun SessionDetailScreen(
     // Keyed on the loaded turn count so each landed page restarts the effect: without
     // that, a user parked at the top would load exactly one chunk and stall, because
     // `distinctUntilChanged` never re-emits `true` and nothing else restarts the flow.
+    // Whether the previous visitor to the top has already asked for a page.
+    //
+    // Held OUTSIDE the effect: the effect restarts whenever a page lands (that is what
+    // makes it re-arm at all), and state inside it would reset each time — the new
+    // subscription would immediately re-report "near the top" and page the entire history
+    // in, one chunk after another, while the user watched the scroll position get yanked
+    // around. Reset when the user leaves the zone, so a second visit pages again.
+    val pagedSinceTop = remember(viewModel.conversationKeyForScreen) { mutableStateOf(false) }
     LaunchedEffect(listState, ui.hasOlderTurns, ui.turns.size) {
         if (!ui.hasOlderTurns) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex <= PREFETCH_TURNS_AT_TOP }
             .distinctUntilChanged()
-            .collect { nearTop -> if (nearTop) viewModel.loadOlderTurns() }
+            .collect { nearTop ->
+                if (!nearTop) {
+                    pagedSinceTop.value = false
+                } else if (!pagedSinceTop.value) {
+                    pagedSinceTop.value = true
+                    viewModel.loadOlderTurns()
+                }
+            }
     }
     // The id → index map, rebuilt with the node list. The scroll action itself is NOT
     // captured in the same `remember`: a navigator jump pages history in first, which

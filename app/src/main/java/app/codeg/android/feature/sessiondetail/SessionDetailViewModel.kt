@@ -1951,6 +1951,12 @@ class SessionDetailViewModel @Inject constructor(
     /** The session's agent — drives the expert mention prefix (`$` for codex, `/` otherwise). */
     val agentForInsert: AgentType get() = agent
 
+    /**
+     * The conversation this screen is bound to, for `remember` keys that must reset when
+     * the user opens a different session but survive paging within one.
+     */
+    val conversationKeyForScreen: Int? get() = conversationId
+
     /** The folder this session runs in, used to root the "+" file picker and its paths. */
     val folderPathForInsert: String? get() = _ui.value.folderPath
 
