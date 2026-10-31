@@ -214,17 +214,22 @@ fun SessionRow(
                                     .background(c),
                             )
                         }
-                        if (tagColors.isNotEmpty() && (folderName != null || !conversation.model.isNullOrBlank())) {
+                        // Deliberately NOT the model. `conversation.model` is the model the
+                        // session was *first* run with — the server seeds that column once
+                        // and never updates it on a switch (its own comment calls it "a chip
+                        // nobody reads mid-turn"). Drawing it here read as "this session is
+                        // using X" and was wrong for any session whose model changed. The
+                        // desktop sidebar shows no model on a row either; the live value
+                        // belongs to the session screen, which reads it from the ACP config.
+                        if (tagColors.isNotEmpty() && (folderName != null || conversation.messageCount > 0)) {
                             MetaDot()
                         }
-                        conversation.model?.takeIf { it.isNotBlank() }?.let { model ->
+                        if (conversation.messageCount > 0) {
                             Text(
-                                text = model,
+                                text = conversation.messageCount.toString(),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colors.textTertiary,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 110.dp),
                             )
                             MetaDot()
                         }
