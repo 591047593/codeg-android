@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -352,8 +354,14 @@ private fun CodegBottomBar(
         // LazyColumn behind it would make expensive on a phone.
         HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = colors.hairline)
         NavigationBar(
-            containerColor = colors.bgElevated.copy(alpha = 0.94f),
+            // The page colour, not a lifted surface: in the Codex client the bar and the
+            // list are one plane, divided only by the hairline. `bgElevated` at 94% made
+            // a faintly brighter strip that read as a separate shelf.
+            containerColor = colors.bg.copy(alpha = 0.96f),
             tonalElevation = 0.dp,
+            // Compact: the default 80dp is a Material tablet height. 64dp keeps the
+            // touch target legal while giving the list two more rows of breathing room.
+            modifier = Modifier.height(64.dp),
         ) {
             HomeTab.entries.forEach { tab ->
                 val selected = currentRoute == tab.route
@@ -366,7 +374,12 @@ private fun CodegBottomBar(
                             contentDescription = stringResource(tab.label),
                         )
                     },
-                    label = { Text(stringResource(tab.label)) },
+                    label = {
+                        Text(
+                            stringResource(tab.label),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
                     alwaysShowLabel = true,
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = colors.accent,
