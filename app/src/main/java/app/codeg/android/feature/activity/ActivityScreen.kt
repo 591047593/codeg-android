@@ -19,8 +19,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -79,12 +77,8 @@ fun ActivityScreen(
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.tab_activity)) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, titleContentColor = colors.textPrimary),
-            )
-        },
+        // The heading scrolls with the feed, matching the Chats and Folders tabs.
+        topBar = {},
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when {
@@ -116,6 +110,14 @@ fun ActivityScreen(
                         collapsed = if (id in collapsed) collapsed - id else collapsed + id
                     }
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
+                        item(key = "large-title") {
+                            Text(
+                                stringResource(R.string.tab_activity),
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = colors.textPrimary,
+                                modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 6.dp),
+                            )
+                        }
                         sections.forEach { section ->
                             val isCollapsed = section.id in collapsed
                             item(key = "h-${section.id}", contentType = "header") {

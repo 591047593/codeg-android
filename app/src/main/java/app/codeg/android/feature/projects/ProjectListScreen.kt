@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
@@ -33,8 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -58,7 +57,6 @@ import app.codeg.android.core.common.rememberNowInstant
 import app.codeg.android.core.designsystem.component.ErrorBanner
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FolderBadge
-import app.codeg.android.core.designsystem.component.GlassCard
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.LoadingView
@@ -87,15 +85,9 @@ fun ProjectListScreen(
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.tab_folders)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = colors.textPrimary,
-                ),
-            )
-        },
+        // The title scrolls with the list, like the Chats tab: a pinned bar over a short
+        // list spends the top strip on a label the user already knows.
+        topBar = {},
         floatingActionButton = {
             Box {
                 FloatingActionButton(
@@ -135,29 +127,30 @@ fun ProjectListScreen(
                 else -> PullToRefreshBox(isRefreshing = ui.refreshing, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
                         Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 76.dp),
                     ) {
-                        // One continuous grouped surface holding every folder as a
-                        // borderless row split by inset hairlines — the iOS grouped-list
-                        // look, matching the Settings tab. Folder counts are small, so a
-                        // single card inside the lazy list is fine.
-                        item {
-                            GlassCard(padding = 0.dp) {
-                                // Sorted once per folder-set rather than on every
-                                // recomposition of the list card.
-                                val list = remember(ui.folders) { sortedFolders(ui.folders) }
-                                list.forEachIndexed { index, folder ->
-                                    if (index > 0) {
-                                        HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 66.dp))
-                                    }
-                                    FolderRow(
-                                        folder = folder,
-                                        running = ui.runningCount(folder.id),
-                                        onClick = { onOpenFolder(folder.id) },
-                                        onRemove = { pendingRemove = folder },
-                                    )
-                                }
+                        item(key = "large-title") {
+                            Text(
+                                stringResource(R.string.tab_folders),
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = colors.textPrimary,
+                                modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 8.dp),
+                            )
+                        }
+                        // Flat rows on the page, split by a hairline — the same list
+                        // language as the Chats tab. The grouped card this replaces made
+                        // two adjacent screens look like different apps.
+                        val list = remember(ui.folders) { sortedFolders(ui.folders) }
+                        itemsIndexed(list, key = { _, f -> f.id }) { index, folder ->
+                            if (index > 0) {
+                                HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 66.dp))
                             }
+                            FolderRow(
+                                folder = folder,
+                                running = ui.runningCount(folder.id),
+                                onClick = { onOpenFolder(folder.id) },
+                                onRemove = { pendingRemove = folder },
+                            )
                         }
                     }
                 }
@@ -227,7 +220,7 @@ fun ProjectListScreen(
 /**
  * One folder as a borderless grouped row: a colored [FolderBadge] tile, the name
  * with its full path + branch underneath, a trailing running-count pill or
- * relative last-opened time, then a drill-in chevron. The enclosing [GlassCard]
+ * relative last-opened time, then a drill-in chevron. The enclosing list
  * draws the surface; rows are split by inset hairlines.
  */
 @OptIn(ExperimentalFoundationApi::class)
