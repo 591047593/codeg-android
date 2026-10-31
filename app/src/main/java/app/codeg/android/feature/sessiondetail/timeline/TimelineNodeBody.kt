@@ -124,34 +124,23 @@ fun NodeBody(node: TimelineNode, modifier: Modifier = Modifier) {
     }
 }
 
-/** The user's prompt — a left-aligned faint-accent card filling the content column. */
+/** The user's prompt — a left-aligned tinted block, the same measure as the reply. */
 @Composable
 private fun UserNodeBody(turn: MessageTurn, modifier: Modifier) {
     val colors = CodegTheme.colors
-    // Right-aligned, width-fitting bubble — the Claude chat shape.
-    //
-    // The prompt used to be a full-width tinted card with a border, which made it look
-    // like a system notification sitting in the flow rather than something the user said.
-    // A bubble that hugs its text and sits on the right is the single strongest "this is a
-    // conversation" cue in the app, and it is what makes the assistant's full-width prose
-    // read as its answer rather than as another card in a list.
-    Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
+    // Codex does not right-align the prompt: it is a left-aligned tinted block spanning
+    // the reading column, the same width as the reply below it. That is a different
+    // conversation metaphor from the iMessage bubble — the transcript reads as one
+    // document where your turns are highlighted, rather than as two speakers facing each
+    // other — and it is what the reference client does.
+    Row(modifier.fillMaxWidth()) {
         Column(
             Modifier
-                // 88% of the row, capped at a readable measure. A chat bubble cannot also
-                // hug a short message here: the Markdown renderer inside spans the width
-                // it is given, so a width that shrank to the text would need the whole
-                // measure chain rebuilt around intrinsics. At 88% the left gutter is
-                // visible at every text size, which is what carries the "right-aligned
-                // bubble" reading; genuinely short prompts are rare in this app.
-                .fillMaxWidth(0.88f)
-                .widthIn(max = 560.dp)
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
+                .fillMaxWidth()
+                .widthIn(max = 680.dp)
+                .clip(RoundedCornerShape(18.dp))
                 .background(colors.codeSurface)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             for (block in turn.blocks) {

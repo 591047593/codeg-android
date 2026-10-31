@@ -108,12 +108,12 @@ fun ComposeBar(
             Box(
                 Modifier
                     .weight(1f)
-                    .heightIn(min = 38.dp)
-                    // iOS fills a message field with a grey well instead of outlining it:
-                    // the rounded fill is the affordance, and a stroke on top of it reads
-                    // as a form input rather than as a text field you type into.
-                    .background(colors.codeSurface, RoundedCornerShape(19.dp))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .heightIn(min = 42.dp)
+                    // A grey well, not an outlined field: the fill is the affordance. The
+                    // radius is large enough to read as a capsule at one line and still
+                    // look right at six, which is what the Codex composer does.
+                    .background(colors.codeSurface, RoundedCornerShape(22.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (text.isEmpty()) {

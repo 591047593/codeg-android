@@ -65,8 +65,13 @@ enum class AccentPalette(
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 
     companion object {
-        /** The Claude palette is the app's look; the rest stay selectable. */
-        val DEFAULT = CLAUDE
+        /**
+         * Neutral, because the app now follows the Codex mobile client: a monochrome
+         * surface where colour appears only where it means something (danger, status,
+         * agent identity), not on every button and tab. The branded palettes stay
+         * selectable for anyone who wants them.
+         */
+        val DEFAULT = NEUTRAL
         val all: List<AccentPalette> = entries
         fun from(id: String?): AccentPalette = entries.firstOrNull { it.id == id } ?: DEFAULT
     }
@@ -136,23 +141,20 @@ private val ANSI_LIGHT = listOf(
  *
  * ### Why these values
  *
- * The palette follows the Claude app rather than Apple's system colours. What carries
- * that is a warm, low-chroma ramp rather than any single hue:
+ * The palette follows the Codex mobile client: a monochrome, cool-neutral surface where
+ * structure is carried by spacing and a single hairline rather than by tinted cards.
  *
- * 1. **Warm neutrals, not cold greys.** The background is `#F5F4EF` — an off-white with
- *    a little sand in it — and dark mode is `#262624`, a warm charcoal. iOS's
- *    `#F2F2F7` is faintly blue and `#000000` is clinical; against either, warm text and
- *    a terracotta accent look pasted on. Nearly everything else in this file is judged
- *    against that background, so this is the value that decides whether the app reads as
- *    a Claude surface at all.
- * 2. **Charcoal type, not black.** `#1F1E1D` instead of `#000000`. Long agent replies
- *    are the main content of this app, and warm-dark text on warm paper is markedly
- *    easier to read in bulk than maximum contrast.
- * 3. **Separation by luminance.** [surfaceStroke] stays very weak; depth comes from the
- *    surface colour itself, as in the Claude app, where cards are a slightly lighter
- *    paper rather than a bordered box.
+ * 1. **Neutral, not warm.** Light mode is pure white and dark mode is near-black
+ *    (`#0D0D0D`) with surfaces barely lifted off it. The previous palette was warm sand
+ *    (`#F5F4EF` / `#262624`) — that warmth was the strongest single "this is Claude"
+ *    signal, and it fought the monochrome accent the app now defaults to.
+ * 2. **Near-black type, not warm charcoal.** `#0D0D0D` on white is the reading contrast
+ *    the reference uses; the reply text is the content here and it has to carry the
+ *    page without a tinted background behind it.
+ * 3. **Separation by luminance, not borders.** [surfaceStroke] and [hairline] stay very
+ *    weak; depth comes from [bgElevated] and [codeSurface] sitting one step off the page.
  *
- * Accent hues are the user's choice; [AccentPalette.CLAUDE] is the brand default.
+ * Accent hues are the user's choice; [AccentPalette.NEUTRAL] is the default.
  */
 fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
     val accentColor = accent.resolve(isDark)
@@ -163,17 +165,19 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             // (#262624 territory), not the neutral black iOS uses: on a phone it reads as
             // an ink-washed page, and it keeps the terracotta accent in the same family
             // instead of making it glow against a cold background.
-            bg = Color(0xFF262624),
-            bgElevated = Color(0xFF30302E),
-            surfaceStroke = Color(0xFFFFF8F0).copy(alpha = 0.10f),
-            hairline = Color(0xFFFFF8F0).copy(alpha = 0.08f),
-            // A slightly lifted well for code, fields and the composer.
-            codeSurface = Color(0xFF1F1F1D),
-            rail = Color(0xFFFFF8F0).copy(alpha = 0.18f),
-            textPrimary = Color(0xFFF5F4EF),
-            textSecondary = Color(0xFFF5F4EF).copy(alpha = 0.68f),
-            textTertiary = Color(0xFFF5F4EF).copy(alpha = 0.45f),
-            danger = Color(0xFFE86A5E),
+            // A neutral near-black, not a warm charcoal: Codex dark mode is close to
+            // #0D0D0D with surfaces barely lifted off it.
+            bg = Color(0xFF0D0D0D),
+            bgElevated = Color(0xFF161616),
+            surfaceStroke = Color(0xFFFFFFFF).copy(alpha = 0.10f),
+            hairline = Color(0xFFFFFFFF).copy(alpha = 0.08f),
+            // Inset well, darker than the page: fields and code sit below the surface.
+            codeSurface = Color(0xFF1F1F1F),
+            rail = Color(0xFFFFFFFF).copy(alpha = 0.16f),
+            textPrimary = Color(0xFFF2F2F2),
+            textSecondary = Color(0xFFF2F2F2).copy(alpha = 0.62f),
+            textTertiary = Color(0xFFF2F2F2).copy(alpha = 0.38f),
+            danger = Color(0xFFFF5A52),
             accent = accentColor,
             onAccent = accent.label ?: onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
@@ -185,20 +189,26 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             // cool system grey. This single value is most of what makes the app read as
             // Claude rather than as a generic iOS list — every surface above it is judged
             // against it, so a cold grey here makes the whole screen feel like settings.
-            bg = Color(0xFFF5F4EF),
-            bgElevated = Color(0xFFFDFCFA),
-            surfaceStroke = Color(0xFF1F1E1D).copy(alpha = 0.08f),
-            hairline = Color(0xFF1F1E1D).copy(alpha = 0.10f),
+            // Codex mobile: pure white paper, cool-neutral greys. No warm cast — a
+            // sand-tinted background was the single strongest "this is Claude" signal,
+            // and it is the first thing that had to go when the reference changed.
+            bg = Color(0xFFFFFFFF),
+            bgElevated = Color(0xFFFFFFFF),
+            surfaceStroke = Color(0xFF000000).copy(alpha = 0.08f),
+            hairline = Color(0xFF000000).copy(alpha = 0.08f),
             // Inset well: one step darker than the paper, as before — the earlier bug was
             // setting this to the same value as `bg`, which made filled controls vanish.
-            codeSurface = Color(0xFFEBE9E3),
+            // One step off white: #F4F4F5 rather than a sand well, so the composer and
+            // code blocks read as an inset of the same paper.
+            codeSurface = Color(0xFFF4F4F5),
             rail = Color(0xFF1F1E1D).copy(alpha = 0.18f),
             // Charcoal, not pure black: Claude's type is warm-dark, which is why long
             // passages read softer than on a `#000000` interface.
-            textPrimary = Color(0xFF1F1E1D),
-            textSecondary = Color(0xFF1F1E1D).copy(alpha = 0.68f),
-            textTertiary = Color(0xFF1F1E1D).copy(alpha = 0.45f),
-            danger = Color(0xFFC2410C),
+            // Near-black neutral rather than warm charcoal.
+            textPrimary = Color(0xFF0D0D0D),
+            textSecondary = Color(0xFF0D0D0D).copy(alpha = 0.62f),
+            textTertiary = Color(0xFF0D0D0D).copy(alpha = 0.38f),
+            danger = Color(0xFFD92D20),
             accent = accentColor,
             onAccent = accent.label ?: onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),

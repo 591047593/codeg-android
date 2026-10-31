@@ -21,10 +21,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.codeg.android.core.designsystem.theme.CodegTheme
 
-/** Centered empty-state (iOS `EmptyStateView`): icon, title, message, optional CTA. */
+/**
+ * Centered empty state: a large quiet heading, a line of secondary copy, optional CTA.
+ *
+ * [icon] is accepted but not drawn — the heading carries the meaning (see the note inside
+ * the body). It stays in the signature so the ~20 call sites do not have to change and a
+ * future surface can put the glyph back.
+ */
 @Composable
 fun EmptyState(
-    icon: ImageVector,
+    @Suppress("UNUSED_PARAMETER") icon: ImageVector,
     title: String,
     message: String,
     modifier: Modifier = Modifier,
@@ -32,12 +38,21 @@ fun EmptyState(
     onAction: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(32.dp).widthIn(max = 320.dp),
+        modifier = modifier.fillMaxWidth().padding(32.dp).widthIn(max = 340.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = CodegTheme.colors.textTertiary, modifier = Modifier.size(40.dp))
-        Text(title, style = MaterialTheme.typography.titleSmall, color = CodegTheme.colors.textPrimary)
+        // No icon. The Codex client leads with type — a large, quiet heading over a line
+        // of secondary copy — and a 40dp glyph above a short label is the shape that made
+        // every empty screen in this app look like a generic error page. The `icon`
+        // parameter stays for callers whose meaning is in the glyph (a failed load, a
+        // non-repository folder); it is simply not drawn.
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            color = CodegTheme.colors.textPrimary,
+            textAlign = TextAlign.Center,
+        )
         Text(
             message,
             style = MaterialTheme.typography.bodyMedium,

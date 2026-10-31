@@ -148,27 +148,28 @@ val CodegTypography = Typography(
     // phone paragraph read comfortably rather than dense.
     bodyLarge = TextStyle(
         fontFamily = CodegSans,
-        // Medium, not Normal. Android's CJK fallback renders Regular far lighter than
-        // PingFang does on iOS — the strokes come out thin and washed at body size — so
-        // the whole scale is nudged one step heavier to match the weight iOS body text
-        // actually has. Latin gains a little weight too, which keeps the pair consistent.
-        fontWeight = FontWeight.Medium,
+        // Regular, matching the Codex client's reading weight: the reply text is the
+        // content, and a heavier body made long answers look like UI labels.
+        //
+        // Android's CJK fallback renders Regular thinner than PingFang does on iOS, so
+        // the leading below carries the openness that weight used to: 1.55× here against
+        // 1.47× before. Raising leading costs nothing in density and is what actually
+        // makes dense CJK paragraphs readable, where a heavier weight only made them
+        // look bolder.
+        fontWeight = FontWeight.Normal,
         fontSize = 17.sp,
-        // 1.47× — CJK glyphs are square and need more leading than Latin at the same
-        // point size; iOS sets Chinese a touch looser than English for this reason.
-        lineHeight = 25.sp,
+        lineHeight = 26.sp,
         // Neutral tracking. Negative tracking tightens Latin pleasantly but closes up
         // dense CJK glyphs into a solid block.
         letterSpacing = 0.sp,
     ),
-    // 15 / 1.47 — iOS subheadline. Secondary copy, descriptions. The most-used body
-    // style in the app, so it carries the same CJK-motivated weight and leading as
-    // `bodyLarge`.
+    // 15 / 1.53 — secondary copy and descriptions, the most-used body style. Regular
+    // weight with the looser leading, same as `bodyLarge`.
     bodyMedium = TextStyle(
         fontFamily = CodegSans,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
-        lineHeight = 22.sp,
+        lineHeight = 23.sp,
         letterSpacing = 0.sp,
     ),
     // 13 / 1.46 — iOS footnote. Metadata, timestamps, captions. Stays Regular: these
