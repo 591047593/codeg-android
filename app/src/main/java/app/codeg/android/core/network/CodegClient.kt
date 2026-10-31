@@ -14,7 +14,11 @@ import app.codeg.android.core.model.PlanApprovalAnswer
 import app.codeg.android.core.model.PlanApprovalDecision
 import app.codeg.android.core.model.CreateConversationBody
 import app.codeg.android.core.model.EmptyBody
-import app.codeg.android.core.model.FetchKimiModelsBody
+import app.codeg.android.core.model.ListProviderModelsBody
+import app.codeg.android.core.model.ListProviderModelsParams
+import app.codeg.android.core.model.ModelsKeySource
+import app.codeg.android.core.model.ModelsInlineKey
+import app.codeg.android.core.model.ProviderModelList
 import app.codeg.android.core.model.FindConnectionBody
 import app.codeg.android.core.model.PiCommandValidation
 import app.codeg.android.core.model.PiConfigProjection
@@ -110,7 +114,6 @@ import app.codeg.android.core.model.SkillSaveBody
 import app.codeg.android.core.model.SkillDeleteBody
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.model.ExpertInstallStatus
-import app.codeg.android.core.model.ExpertAgentBody
 import app.codeg.android.core.model.ExpertLinkBody
 import app.codeg.android.core.model.ExpertIdBody
 import app.codeg.android.core.model.ChatChannelInfo
@@ -936,8 +939,33 @@ class CodegClient(
         decode(send("acp_update_kimi_code_config", encode(body)), Int.serializer())
 
     /** Probe a Kimi provider's `/models` endpoint (also validates the key). */
-    suspend fun acpFetchKimiModels(baseUrl: String, apiKey: String): List<String> =
-        decode(send("acp_fetch_kimi_models", encode(FetchKimiModelsBody(baseUrl, apiKey))), ListSerializer(String.serializer()))
+    /**
+     * The model ids a Kimi endpoint reports.
+     *
+     * Calls `list_provider_models`, which is the endpoint the desktop client uses. The
+     * previous name — `acp_fetch_kimi_models` — does not exist on the server (or anywhere
+     * upstream), so the Kimi panel's "Fetch models" button could only ever return 501.
+     * Kimi speaks the OpenAI wire format, and the key is typed into the page rather than
+     * stored, hence `protocol = openai` and an inline key source.
+     */
+    suspend fun acpFetchKimiModels(baseUrl: String, apiKey: String): List<String> {
+        val list = decode(
+            send(
+                "list_provider_models",
+                encode(
+                    ListProviderModelsBody(
+                        ListProviderModelsParams(
+                            protocol = "openai",
+                            baseUrl = baseUrl.trim().trimEnd('/'),
+                            keySource = ModelsKeySource(inline = ModelsInlineKey(apiKey)),
+                        ),
+                    ),
+                ),
+            ),
+            ProviderModelList.serializer(),
+        )
+        return list.models.map { it.id }
+    }
 
     /**
      * Read pi's native config projection (defaults + linked/custom providers). The
@@ -1039,8 +1067,17 @@ class CodegClient(
         decode(send("experts_list", encode(EmptyBody)), ListSerializer(ExpertListItem.serializer()))
 
     /** Experts linked to one agent — used by the compose "+" Expert Skills menu (M10). */
-    suspend fun expertsListForAgent(agentType: AgentType): List<ExpertListItem> =
-        decode(send("experts_list_for_agent", encode(ExpertAgentBody(agentType))), ListSerializer(ExpertListItem.serializer()))
+    /**
+     * Experts that can be mentioned in this agent's composer.
+     *
+     * There is no per-agent endpoint — `experts_list_for_agent` does not exist upstream,
+     * so this call always returned 501 and the composer's Experts tab was permanently
+     * empty. The desktop client lists every expert and lets the mention resolve per
+     * agent, which is what this does; the agent type is kept in the signature so a
+     * server-side filter can be slotted in without touching callers.
+     */
+    suspend fun expertsListForAgent(@Suppress("UNUSED_PARAMETER") agentType: AgentType): List<ExpertListItem> =
+        expertsList()
 
     /** An expert's markdown content (`experts_read_content`, bare string). */
     suspend fun expertReadContent(expertId: String): String =

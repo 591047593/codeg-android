@@ -524,3 +524,40 @@ data class DeleteBranchBody(val path: String, val branchName: String, val force:
 /** `git_continue_operation` — finish an interrupted merge / pull / rebase. */
 @Serializable
 data class ContinueOperationBody(val path: String, val operation: String)
+
+/**
+ * `list_provider_models` — ask a provider what models it serves.
+ *
+ * The server wants the request nested under `params` (unlike every other endpoint here),
+ * and `keySource` is an externally-tagged enum: `{"inline": {"api_key": "..."}}`.
+ */
+@Serializable
+data class ListProviderModelsBody(val params: ListProviderModelsParams)
+
+@Serializable
+data class ListProviderModelsParams(
+    val protocol: String,
+    val baseUrl: String,
+    val keySource: ModelsKeySource,
+    val keyHeader: String? = null,
+)
+
+@Serializable
+data class ModelsKeySource(val inline: ModelsInlineKey? = null)
+
+@Serializable
+data class ModelsInlineKey(val apiKey: String)
+
+/** What `list_provider_models` returns. */
+@Serializable
+data class ProviderModelList(
+    val url: String = "",
+    val models: List<ProviderModel> = emptyList(),
+)
+
+@Serializable
+data class ProviderModel(
+    val id: String,
+    val displayName: String? = null,
+    val contextWindow: Long? = null,
+)
