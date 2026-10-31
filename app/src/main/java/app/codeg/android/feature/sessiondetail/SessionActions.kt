@@ -51,6 +51,7 @@ fun SessionActionsMenu(
     ui: SessionDetailUiState,
     viewModel: SessionDetailViewModel,
     onDeleted: () -> Unit,
+    onHandoff: () -> Unit = {},
 ) {
     val colors = CodegTheme.colors
     val summary = ui.summary ?: return
@@ -68,6 +69,7 @@ fun SessionActionsMenu(
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_rename)) }, onClick = { menu = false; showRename = true })
             DropdownMenuItem(text = { Text(if (summary.isPinned) stringResource(R.string.sessionactions_unpin) else stringResource(R.string.sessionactions_pin)) }, onClick = { menu = false; viewModel.togglePin() })
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_session_details)) }, onClick = { menu = false; showDetails = true })
+            DropdownMenuItem(text = { Text(stringResource(R.string.handoff_menu)) }, onClick = { menu = false; onHandoff() })
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_change_status)) }, onClick = { menu = false; showStatus = true })
             DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = colors.danger) }, onClick = { menu = false; showDelete = true })
         }

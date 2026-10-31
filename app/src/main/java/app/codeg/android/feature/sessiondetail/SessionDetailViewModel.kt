@@ -8,6 +8,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
+import app.codeg.android.core.data.HandoffSource
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ConversationSelectorStore
 import app.codeg.android.core.datastore.DeviceAgentPrefsStore
@@ -2501,6 +2502,30 @@ class SessionDetailViewModel @Inject constructor(
     // endregion
 
     // region Session handoff (copy / JSON export / reconnect)
+
+    /**
+     * Snapshot for the v141 cross-device handoff composer (null when the session
+     * isn't server-linked yet). The transcript slice is taken at open time — the
+     * composer edits a copy, not live state.
+     */
+    fun handoffSource(): HandoffSource? {
+        val p = profile ?: return null
+        val state = _ui.value
+        val summary = state.summary ?: return null
+        val folder = folder
+        return HandoffSource(
+            serverId = p.id,
+            serverName = state.serverName ?: p.name,
+            conversationId = summary.id,
+            sessionTitle = summary.trimmedTitle.orEmpty(),
+            folderId = state.selectedFolderId ?: summary.folderId,
+            folderName = state.folderName.orEmpty(),
+            folderPath = folder?.path ?: state.folderPath,
+            agent = state.agent,
+            gitBranch = currentBranch ?: summary.gitBranch?.takeIf { it.isNotBlank() },
+            turns = state.turns + state.pendingUserTurns,
+        )
+    }
 
     /** Surface a one-shot message in the snackbar. */
     fun showNotice(text: String) {

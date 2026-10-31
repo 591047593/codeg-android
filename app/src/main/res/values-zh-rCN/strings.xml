@@ -1143,4 +1143,21 @@
     <string name="dispatch_unknown_discard">放弃记录</string>
     <string name="dispatch_redispatch">重新派发</string>
     <string name="dispatch_no_folder">该设备暂无项目</string>
+    <!-- v141 handoff -->
+    <string name="handoff_title">跨设备会话交接</string>
+    <string name="handoff_source_line">来源：%1$s · %2$s · %3$s</string>
+    <string name="handoff_goal">工作目标</string>
+    <string name="handoff_completed">已完成</string>
+    <string name="handoff_progress">当前进度</string>
+    <string name="handoff_decisions">技术决策</string>
+    <string name="handoff_known_issues">已知问题</string>
+    <string name="handoff_next_steps">下一步</string>
+    <string name="handoff_mode_a">模式A 上下文接力</string>
+    <string name="handoff_mode_b">模式B Git接力</string>
+    <string name="handoff_git_checking">正在检查源项目 Git 状态…</string>
+    <string name="handoff_git_result">分支 %1$s，%2$d 个未提交文件</string>
+    <string name="handoff_dispatch">派发交接任务</string>
+    <string name="handoff_no_code_note">交接包只含上下文，不含代码；Git 同步需自行提交/推送/拉取。</string>
+    <string name="handoff_menu">生成交接包</string>
+    <string name="handoff_no_source">当前会话未同步到服务器，无法交接</string>
 </resources>

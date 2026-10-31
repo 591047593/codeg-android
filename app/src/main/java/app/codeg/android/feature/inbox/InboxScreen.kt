@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
+import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -338,7 +339,7 @@ private fun IdeaEditorDialog(
 private fun DispatchSheet(
     idea: IdeaEntry,
     viewModel: InboxViewModel,
-    target: InboxViewModel.Target,
+    target: DispatchTargets,
     ui: InboxViewModel.UiState,
     onClose: () -> Unit,
 ) {

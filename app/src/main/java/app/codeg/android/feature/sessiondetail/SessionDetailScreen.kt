@@ -115,6 +115,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.data.HandoffSource
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -124,6 +125,8 @@ import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ContentBlock
 import app.codeg.android.core.model.PlanEntry
+import app.codeg.android.feature.handoff.HandoffSheet
+import app.codeg.android.feature.handoff.HandoffViewModel
 import app.codeg.android.feature.sessiondetail.interactive.AskQuestionCard
 import app.codeg.android.feature.sessiondetail.interactive.PermissionRequestCard
 import app.codeg.android.feature.sessiondetail.interactive.PlanApprovalCard
@@ -162,6 +165,30 @@ fun SessionDetailScreen(
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     var draft by remember { mutableStateOf("") }
+    // v141 cross-device handoff composer, opened from the top-bar overflow menu.
+    var showHandoff by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var handoffSource: HandoffSource? by remember { mutableStateOf(null) }
+    val noticeNoSource = stringResource(R.string.handoff_no_source)
+    // Rotation restores the open flag; re-resolve the source snapshot from the VM
+    // (and bail with a notice when the session isn't server-linked).
+    LaunchedEffect(showHandoff) {
+        if (showHandoff && handoffSource == null) {
+            val src = viewModel.handoffSource()
+            if (src == null) {
+                showHandoff = false
+                viewModel.showNotice(noticeNoSource)
+            } else handoffSource = src
+        }
+    }
+    val openSource = handoffSource
+    if (showHandoff && openSource != null) {
+        val handoffViewModel: HandoffViewModel = hiltViewModel()
+        HandoffSheet(
+            source = openSource,
+            viewModel = handoffViewModel,
+            onClose = { showHandoff = false },
+        )
+    }
     // Draft memory: hydrate the composer from DataStore on entry — but only AFTER load()
     // has resolved the server profile, so the draft key is the real `<serverId>:<id>` and
     // not the pre-load "?" slot. Only fills an empty composer so a restoreDraft from a
@@ -368,7 +395,7 @@ fun SessionDetailScreen(
                     ) {
                         AgentAvatar(ui.agent, size = 28.dp)
                     }
-                    if (ui.summary != null) SessionActionsMenu(ui, viewModel, onDeleted = onBack)
+                    if (ui.summary != null) SessionActionsMenu(ui, viewModel, onDeleted = onBack, onHandoff = { showHandoff = true })
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,

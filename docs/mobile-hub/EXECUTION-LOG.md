@@ -23,3 +23,9 @@
 - 双重审查共发现 24 项（对抗 12+墨菲 7 新增），修复 Critical/High/Medium 全部：isAmbiguous 补 ApiError.Transport（否则断连被判确定失败→删账→双建）；probe 网络失败不再误报"未找到"；PENDING 崩溃残留 init 清扫→UNKNOWN；dispatching 同步置位防双击；redispatch 竞态防删账+restoreOnHardFail；DispatchRef 快照补 description/agentTypeWire/dispatchedAtEpochMs/scheduleLocalMillis（进程被杀后回查窗口不丢）；loadTarget 代际号防旧响应覆盖；CancellationException NonCancellable 清理后重抛；folderId==null 行不匹配；多候选 singleOrNull；标题限长 120 双侧一致；probe 并发守卫；错误跨 sheet 串扰清理。
 - 未修（Low，记 KNOWN-ISSUES）：过去时间选择仅服务端语义、probe 无进行中指示、文件夹 chips 长列表滚动、解码失败静默清空为既有模式。
 - 测试：DispatchPipelineTest 5 例 + 双 flavor 编译 + testLegacyDebugUnitTest 绿。
+
+## 批v141：跨设备会话交接（2026-11-01）
+- 交付：DispatchService 抽为 @Singleton 共享派发管线（InboxViewModel 委托，账本/UNKNOWN/CE清理/restoreOnHardFail 语义保真）；DispatchTargets+DispatchTargetLoader 目标选择器共享层（profiles 由各 VM 自己 collect，设备失败不再清空芯片）；HandoffPackage/HandoffPackageFactory（12字段交接包，尾部反向扫描取近3条用户/2条助手文本做轻模板填充，无 AI 总结，D1）；HandoffViewModel（模式B只读 Git 预检 git_status/get_git_branch 按源项目路径，路径未知→"未验证"不伪造；派发复用 DispatchService）；HandoffSheet（六字段编辑+A/B模式chips+目标选择+派发）；入口=会话详情页溢出菜单「生成交接包」（未关联服务器→snackbar 提示）；PENDING 崩溃清扫下沉 DispatchService.sweepPendingToUnknown，收件箱与交接页 init 都调；与既有 v121 同机重连式 handoff（引用+JSON导出）并存互补。
+- 双重审查（对抗+墨菲）发现并修复：loader 失败清空设备芯片（中回归）；模式B路径未知时伪造"0未提交"；UNKNOWN 后按钮仍可点（加 unknownRef 禁用）；旋转丢 Sheet（rememberSaveable）；巨量 transcript 主线程全量拼接（改尾部反向扫描）；cap 改码点安全截断；runCatching 吞 CE；菜单静默失败；onDone 时序；profiles 双写。
+- 测试：HandoffPackageTest 4 例 + 双 flavor 编译 + testLegacyDebugUnitTest 绿。
+- 发版：tag v1.0.1-fengx.30（versionCode 32）。

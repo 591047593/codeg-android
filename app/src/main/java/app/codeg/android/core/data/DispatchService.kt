@@ -1,0 +1,181 @@
+package app.codeg.android.core.data
+
+import app.codeg.android.core.datastore.DispatchRef
+import app.codeg.android.core.datastore.DispatchState
+import app.codeg.android.core.datastore.DispatchStore
+import app.codeg.android.core.network.ApiError
+import app.codeg.android.core.network.displayMessage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** What happened to one dispatch request (batch v140/v141 shared pipeline). */
+sealed interface DispatchOutcome {
+    /** Server returned a task id; [scheduleNote] carries a schedule failure if any. */
+    data class Confirmed(val ref: DispatchRef, val scheduleNote: String? = null) : DispatchOutcome
+
+    /** Request fate unobservable — ledger keeps the ref UNKNOWN, no auto re-send. */
+    data class Unknown(val ref: DispatchRef) : DispatchOutcome
+
+    /** Definitive failure (4xx / unreachable before send) — the ledger entry is removed. */
+    data class HardFailed(val message: String) : DispatchOutcome
+}
+
+/**
+ * The one dispatch pipeline every dispatch surface goes through (idea inbox
+ * v140, session handoff v141). Owns the request-id ledger: PENDING while in
+ * flight, CONFIRMED with the server task id, UNKNOWN when the fate is
+ * unobservable. The server has NO idempotency key, so anything ambiguous must
+ * surface as [DispatchOutcome.Unknown] and block blind re-sends (PRD §7.5).
+ */
+@Singleton
+class DispatchService @Inject constructor(
+    private val dispatchStore: DispatchStore,
+    private val repository: ServerRepository,
+) {
+    data class SendRequest(
+        val ideaId: String? = null,
+        val serverId: String,
+        val folderId: Int,
+        val folderName: String,
+        val title: String,
+        val description: String,
+        val agentTypeWire: String? = null,
+        val scheduleLocalMillis: Long? = null,
+        /** On a hard failure, put this ref back as UNKNOWN — a re-dispatch must
+         * never destroy the only trace of the original ambiguous request. */
+        val restoreOnHardFail: DispatchRef? = null,
+    )
+
+    /**
+     * Crash-recovery sweep: a PENDING ledger entry means the request was sent
+     * but its outcome is unobservable — flip it to UNKNOWN so it surfaces as a
+     * resolvable card instead of rotting silently. Every dispatch surface calls
+     * this on VM init so the sweep doesn't depend on visiting the inbox.
+     */
+    suspend fun sweepPendingToUnknown() {
+        dispatchStore.refs.first()
+            .filter { it.state == DispatchState.PENDING }
+            .forEach { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
+    }
+
+    /** Code-point-safe truncation (never splits an emoji surrogate pair). */
+    fun cap(text: String, max: Int): String =
+        if (text.length <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
+
+    suspend fun send(req: SendRequest): DispatchOutcome {
+        val now = System.currentTimeMillis()
+        val profile = repository.profiles.first().firstOrNull { it.id == req.serverId }
+        val client = profile?.let { repository.client(it) }
+        val request = DispatchRef(
+            requestId = UUID.randomUUID().toString(),
+            ideaId = req.ideaId,
+            serverId = req.serverId,
+            serverName = profile?.name.orEmpty(),
+            folderId = req.folderId,
+            folderName = req.folderName,
+            // Cap the title the same way on create and probe: if the server
+            // truncates long titles, exact-match probing must use the same string.
+            title = cap(req.title.trim(), 120),
+            state = DispatchState.PENDING,
+            createdAt = now,
+            description = req.description.trim(),
+            agentTypeWire = req.agentTypeWire,
+            // Anchor the probe window at send time — the process can die before
+            // the response and the anchor must survive.
+            dispatchedAtEpochMs = now,
+            scheduleLocalMillis = req.scheduleLocalMillis,
+        )
+        if (client == null) {
+            restoreOnHardFail(req.restoreOnHardFail)
+            return DispatchOutcome.HardFailed("设备不可用或 Token 缺失")
+        }
+        dispatchStore.put(request)
+        val config = DispatchPipeline.taskConfig(
+            description = req.description.trim(),
+            agentTypeWire = req.agentTypeWire,
+        )
+        val created = runCatching {
+            client.workTaskCreate(req.folderId, request.title, config)
+        }
+        return created.fold(
+            onSuccess = { task ->
+                if (task != null) {
+                    confirm(request, task.id, profile, req.scheduleLocalMillis)
+                } else {
+                    // Request reached the server but the row did not decode — ambiguous.
+                    markUnknown(request)
+                }
+            },
+            onFailure = { e ->
+                when {
+                    e is CancellationException -> {
+                        // The coroutine is already cancelled: any other suspend
+                        // call here would immediately re-throw. Clean up inside
+                        // NonCancellable, then honour structured cancellation —
+                        // a PENDING entry left behind is swept to UNKNOWN on next
+                        // launch, which is the correct outcome anyway.
+                        withContext(NonCancellable) { dispatchStore.remove(request.requestId) }
+                        throw e
+                    }
+                    // Timeout-style failures are ambiguous: the task may exist.
+                    isAmbiguous(e) -> markUnknown(request)
+                    else -> {
+                        dispatchStore.remove(request.requestId)
+                        req.restoreOnHardFail?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
+                        DispatchOutcome.HardFailed(
+                            (e as? ApiError)?.displayMessage() ?: e.message ?: "派发失败",
+                        )
+                    }
+                }
+            },
+        )
+    }
+
+    private suspend fun restoreOnHardFail(ref: DispatchRef?) {
+        // The old entry was removed by the caller before re-sending; put it back.
+        ref?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
+    }
+
+    /**
+     * True when the request's fate is unobservable: a dropped connection
+     * (IOException, incl. socket timeout) or a wrapped transport error may mean
+     * the server created the task without us seeing the response. The server has
+     * no idempotency key, so any of these must block re-sending.
+     */
+    private fun isAmbiguous(e: Throwable): Boolean =
+        e is java.io.IOException ||
+            e is ApiError.Transport ||
+            (e as? ApiError)?.let { it is ApiError.Server && it.status >= 500 } == true
+
+    private suspend fun confirm(
+        request: DispatchRef,
+        todoId: Int,
+        profile: app.codeg.android.core.datastore.ServerProfile,
+        scheduleLocalMillis: Long?,
+    ): DispatchOutcome {
+        val ref = request.copy(remoteTodoId = todoId, state = DispatchState.CONFIRMED)
+        dispatchStore.put(ref)
+        var scheduleNote: String? = null
+        if (scheduleLocalMillis != null) {
+            val client = repository.client(profile)
+            val scheduled = client?.let {
+                runCatching {
+                    it.workTaskSchedule(todoId, DispatchPipeline.toUtcRfc3339(scheduleLocalMillis))
+                }.isSuccess
+            } == true
+            if (!scheduled) scheduleNote = "任务已创建，但定时设置失败，可在任务中心手动处理"
+        }
+        return DispatchOutcome.Confirmed(ref, scheduleNote)
+    }
+
+    private suspend fun markUnknown(request: DispatchRef): DispatchOutcome {
+        dispatchStore.put(request.copy(state = DispatchState.UNKNOWN))
+        return DispatchOutcome.Unknown(request)
+    }
+}
