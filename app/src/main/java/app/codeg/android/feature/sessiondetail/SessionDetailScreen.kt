@@ -163,8 +163,14 @@ fun SessionDetailScreen(
             .debounce(DRAFT_SAVE_DEBOUNCE_MS)
             .collect { viewModel.saveDraft(it) }
     }
+    // `onDispose` closes over the values it was created with, and this effect is keyed on
+    // `Unit` so it is created once — the captured `draft` would be the empty string from
+    // first composition, and leaving the screen mid-debounce would persist that over the
+    // text the user had just typed. `rememberUpdatedState` hands the dispose block the
+    // current value instead.
+    val latestDraft = rememberUpdatedState(draft)
     DisposableEffect(Unit) {
-        onDispose { viewModel.saveDraft(draft) }
+        onDispose { viewModel.saveDraft(latestDraft.value) }
     }
 
     if (showOptions) AgentOptionsSheet(
