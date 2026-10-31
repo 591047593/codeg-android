@@ -23,6 +23,16 @@ object BoundedImageDecoder {
     /** Decode [base64] with its longest side at most [maxDimension]. Null when undecodable. */
     fun decode(base64: String, maxDimension: Int): Bitmap? {
         val bytes = runCatching { Base64.decode(base64, Base64.DEFAULT) }.getOrNull() ?: return null
+        return decode(bytes, maxDimension)
+    }
+
+    /**
+     * The same bounds, for callers that already hold the encoded bytes.
+     *
+     * Avoids a base64 round trip on the attachment path, where the bytes come straight
+     * from the content resolver and the result is re-encoded again.
+     */
+    fun decode(bytes: ByteArray, maxDimension: Int): Bitmap? {
         if (bytes.isEmpty()) return null
 
         // Pass 1: bounds only — this allocates nothing for the pixels.

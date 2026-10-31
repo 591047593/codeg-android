@@ -2,9 +2,9 @@ package app.codeg.android.feature.sessiondetail
 
 import android.content.ContentResolver
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import app.codeg.android.core.designsystem.BoundedImageDecoder
 import app.codeg.android.core.model.ImageData
 import app.codeg.android.core.model.PromptInputBlock
 import kotlinx.coroutines.Dispatchers
@@ -57,22 +57,33 @@ object AttachmentPrep {
     const val MAX_COUNT = 10
 
     suspend fun fromUri(uri: Uri, resolver: ContentResolver): Attachment? = withContext(Dispatchers.Default) {
+        // Ask the provider for the size first. `readBytes()` on a 200 MB video picked
+        // through a file manager would allocate the whole thing before the guard below
+        // ever ran — the limit has to be enforced against the declared length, not
+        // against an array that already exists.
+        val declared = runCatching {
+            resolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+        }.getOrNull()
+        if (declared != null && declared > MAX_INPUT_BYTES) return@withContext null
+
         val bytes = runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
             ?: return@withContext null
         if (bytes.isEmpty() || bytes.size > MAX_INPUT_BYTES) return@withContext null
 
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+        // Decode straight to the render size. `BitmapFactory.decodeByteArray` allocates
+        // `width × height × 4` for the full image, so a 60 MB camera JPEG (allowed by
+        // MAX_INPUT_BYTES) would try to allocate a ~256 MB bitmap and die on the 192 MB
+        // heap before any downscale ran. The bounds pass costs nothing and the subsample
+        // lands at or below MAX_DIMENSION, which is exactly what gets re-encoded anyway.
+        val bitmap = BoundedImageDecoder.decode(bytes, MAX_DIMENSION)
+            ?: return@withContext null
         val longest = max(bitmap.width, bitmap.height)
-        // Re-encode when the image alone would blow the prompt budget, or when its
-        // dimensions exceed what the server renders.
-        val needsReencode = bytes.size > MAX_TOTAL_BYTES || longest > MAX_DIMENSION
+        // Re-encode when the image alone would blow the prompt budget, or when the
+        // decoder had to subsample (meaning the source was larger than we render).
+        val needsReencode = bytes.size > MAX_TOTAL_BYTES || longest >= MAX_DIMENSION
         val (outBytes, mime) = if (needsReencode) {
-            val scale = if (longest > MAX_DIMENSION) MAX_DIMENSION.toFloat() / longest else 1f
-            val w = (bitmap.width * scale).toInt().coerceAtLeast(1)
-            val h = (bitmap.height * scale).toInt().coerceAtLeast(1)
-            val scaled = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, w, h, true) else bitmap
             val baos = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, baos)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, baos)
             baos.toByteArray() to "image/jpeg"
         } else {
             bytes to sniffMime(bytes)

@@ -26,36 +26,6 @@ fun Modifier.hairlineBorder(
 ): Modifier = this.border(width, color, shape)
 
 /**
- * A grouped-content card: rounded, an opaque elevated fill, and a hairline stroke.
- *
- * Named for the original iOS "glass" surface, which was translucent so the backdrop's
- * colour glows could show through. iOS actually draws these cards opaque — translucency
- * is reserved for chrome (tab bars, toolbars) that content scrolls beneath — so with the
- * flat backdrop the fill is now solid and only the hairline separates it.
- */
-@Composable
-fun GlassCard(
-    modifier: Modifier = Modifier,
-    cornerRadius: Dp = CodegTheme.dimens.radiusLg,
-    padding: Dp = 16.dp,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val colors = CodegTheme.colors
-    val shape = RoundedCornerShape(cornerRadius)
-    Column(
-        modifier
-            .clip(shape)
-            // Opaque, like an iOS grouped-content card. The translucency existed so the
-            // background's colour glows could bleed through; with a flat backdrop it only
-            // muddied the fill, and a card that shows the canvas behind it is a web idiom.
-            .background(colors.bgElevated)
-            .hairlineBorder(shape, colors.surfaceStroke)
-            .padding(padding),
-        content = content,
-    )
-}
-
-/**
  * A single glass row (iOS `GlassRow`): 14dp radius, used for list rows. Supports
  * a selected wash (accent tint + accent stroke).
  */

@@ -108,6 +108,7 @@
     <string name="common_add">添加</string>
     <string name="common_ok">确定</string>
     <string name="common_done">完成</string>
+    <string name="common_more_actions">更多操作</string>
     <string name="common_back">返回</string>
     <string name="common_loading">加载中…</string>
     <string name="common_error_generic">出错了。</string>

@@ -68,7 +68,11 @@ fun ServerListScreen(
                 title = { Text(stringResource(R.string.servers_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null, tint = colors.textSecondary)
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                            tint = colors.textSecondary,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -164,7 +168,11 @@ private fun ServerRow(
                 )
             }
             IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Rounded.MoreVert, contentDescription = null, tint = colors.textTertiary)
+                Icon(
+                    Icons.Rounded.MoreVert,
+                    contentDescription = stringResource(R.string.common_more_actions),
+                    tint = colors.textTertiary,
+                )
             }
             CodegMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 CodegMenuItem(

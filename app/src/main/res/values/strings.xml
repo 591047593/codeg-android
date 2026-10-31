@@ -108,6 +108,7 @@
     <string name="common_add">Add</string>
     <string name="common_ok">OK</string>
     <string name="common_done">Done</string>
+    <string name="common_more_actions">More actions</string>
     <string name="common_back">Back</string>
     <string name="common_loading">Loading…</string>
     <string name="common_error_generic">Something went wrong.</string>
