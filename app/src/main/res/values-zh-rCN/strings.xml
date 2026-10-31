@@ -41,6 +41,7 @@
     <string name="home_scaffold_note">脚手架版本 —— 网络层、模型与设计系统已打通，功能界面将陆续上线。</string>
 
     <!-- Bottom navigation tabs -->
+    <string name="session_new_task_hint">随便问点什么——开始新任务</string>
     <string name="tab_chats">会话</string>
     <string name="tab_folders">文件夹</string>
     <string name="tab_activity">动态</string>

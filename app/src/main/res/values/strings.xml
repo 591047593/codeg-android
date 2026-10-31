@@ -41,6 +41,7 @@
     <string name="home_scaffold_note">Scaffold build — networking, models, and design system are wired. Feature screens land next.</string>
 
     <!-- Bottom navigation tabs -->
+    <string name="session_new_task_hint">Ask anything — start a task</string>
     <string name="tab_chats">Chats</string>
     <string name="tab_folders">Folders</string>
     <string name="tab_activity">Activity</string>

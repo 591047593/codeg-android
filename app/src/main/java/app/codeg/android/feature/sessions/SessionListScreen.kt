@@ -30,16 +30,16 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,7 +68,6 @@ import app.codeg.android.core.designsystem.tagColor
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.colorFromHex
 import app.codeg.android.core.model.ConversationSummary
-import app.codeg.android.feature.main.LocalBarsVisible
 
 /**
  * The Chats tab: the grouped session list for the selected server (Pinned /
@@ -108,46 +107,19 @@ fun SessionListScreen(
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = {
-                    ServerSwitcher(
-                        name = selectedName,
-                        servers = servers,
-                        selectedId = selectedId,
-                        onSelect = onSelectServer,
-                        onManageServers = onManageServers,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = onManageServers) {
-                        Icon(
-                            Icons.Rounded.Dns,
-                            contentDescription = stringResource(R.string.home_manage_servers),
-                            tint = colors.textSecondary,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    titleContentColor = colors.textPrimary,
-                ),
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onNewTask,
-                // Follows the bottom bar: collapses to just "+" while scrolling up,
-                // expands back to the full pill when scrolling down (driven by MainShell).
-                expanded = LocalBarsVisible.current,
-                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.session_new_task)) },
-                containerColor = colors.accent,
-                contentColor = colors.onAccent,
-            )
-        },
+        // No fixed top bar. The Codex list opens on a large title that scrolls away with
+        // the content; a pinned bar over it wastes the top strip on a phone and makes the
+        // heading compete with the rows for attention. The server switcher and the manage
+        // action both live in the scrolling header instead.
+        topBar = {},
+        // The dock lives inside the content Box, not in `bottomBar`: this screen already
+        // sits above the app's navigation bar, and a second Scaffold bottom bar would
+        // stack two rows of chrome at the bottom of the page.
+
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
+            // Docked at the bottom of the content area, above the app's navigation bar.
+            NewTaskDock(onClick = onNewTask, modifier = Modifier.align(Alignment.BottomCenter))
             when {
                 ui.isLoading && !ui.hasLoaded -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -208,6 +180,11 @@ fun SessionListScreen(
                     ) {
                         SessionList(
                             sections = sections,
+                            selectedName = selectedName,
+                            servers = servers,
+                            selectedId = selectedId,
+                            onSelectServer = onSelectServer,
+                            onManageServers = onManageServers,
                             expandedParents = ui.expandedParents,
                             loadingChildren = ui.loadingChildren,
                             onToggleChildren = viewModel::toggleChildren,
@@ -261,6 +238,11 @@ fun SessionListScreen(
 @Composable
 private fun SessionList(
     sections: List<SessionSection>,
+    selectedName: String,
+    servers: List<ServerProfile>,
+    selectedId: String?,
+    onSelectServer: (String) -> Unit,
+    onManageServers: () -> Unit,
     tagsById: Map<Int, String>,
     expandedParents: Set<Int>,
     loadingChildren: Set<Int>,
@@ -281,9 +263,36 @@ private fun SessionList(
             start = 8.dp,
             end = 8.dp,
             top = 8.dp,
-            bottom = 88.dp, // clear the extended FAB
+            // Clears the docked new-task field (~60dp) plus a little air.
+            bottom = 76.dp,
         ),
     ) {
+        // The large title, as the first scrolling item. It carries the screen's identity
+        // (which server you are looking at) and the manage-servers action, and it leaves
+        // the moment you start reading.
+        item(key = "large-title", contentType = "title") {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ServerSwitcher(
+                    name = selectedName,
+                    servers = servers,
+                    selectedId = selectedId,
+                    onSelect = onSelectServer,
+                    onManageServers = onManageServers,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onManageServers) {
+                    Icon(
+                        Icons.Rounded.Dns,
+                        contentDescription = stringResource(R.string.home_manage_servers),
+                        tint = colors.textTertiary,
+                    )
+                }
+            }
+        }
+
         if (refreshError != null) {
             item(key = "refresh-error", contentType = "banner") {
                 RefreshErrorBanner(
@@ -433,10 +442,11 @@ private fun ServerSwitcher(
     selectedId: String?,
     onSelect: (String) -> Unit,
     onManageServers: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
     val colors = CodegTheme.colors
-    Box {
+    Box(modifier) {
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(10.dp))
@@ -490,6 +500,56 @@ private fun ServerSwitcher(
                     onManageServers()
                 },
             )
+        }
+    }
+}
+
+/**
+ * The docked "start a task" entry at the bottom of the Chats list.
+ *
+ * Visually a composer — a rounded well with muted text and a filled send-shaped button —
+ * but tapping anywhere opens a new session instead of typing here. That is deliberate:
+ * the real composer needs a folder, an agent and a connection, none of which exist until
+ * the session screen does.
+ */
+@Composable
+private fun NewTaskDock(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = CodegTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(colors.bg)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(22.dp))
+                .background(colors.codeSurface)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.session_new_task_hint),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        FilledIconButton(
+            onClick = onClick,
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = colors.accent,
+                contentColor = colors.onAccent,
+            ),
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(20.dp))
         }
     }
 }
