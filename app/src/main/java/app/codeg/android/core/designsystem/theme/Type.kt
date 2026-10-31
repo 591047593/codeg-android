@@ -1,79 +1,51 @@
 package app.codeg.android.core.designsystem.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import app.codeg.android.R
 
 /**
- * The platform UI font — Roboto for Latin, Noto Sans CJK for Chinese.
+ * The app's type is the device's own.
  *
- * ### Why the bundled Inter is no longer the body face
+ * No bundled family is used anywhere: [CodegSans] is the platform sans and [CodegMono]
+ * the platform monospace. That is a deliberate reversal of an earlier choice.
  *
- * Inter was chosen to match the desktop client, and for an English-only UI it is the
- * better grotesque. It has **no CJK glyphs**, though. In a Chinese build every ideograph
- * fell back to the system font *per character*, so a single line mixed two typefaces with
- * different stroke weights, widths and vertical metrics — which is exactly the "ragged,
- * cheap-looking" text a mixed-script fallback produces, and it is most visible at the
- * small sizes this UI uses most.
+ * The app used to bundle Inter for body text and JetBrains Mono for code. Inter has no
+ * CJK glyphs, so a Chinese build fell back per character and mixed two typefaces inside
+ * one line; it was replaced by the platform family, which pairs Roboto with Noto Sans
+ * CJK. The bundled mono stayed behind — so the body was the device font while every
+ * code block, timestamp and model id was not. That reads as the app having "changed
+ * fonts", which is exactly how it was reported.
  *
- * The platform family is a matched pair: Roboto and Noto Sans CJK are drawn to sit
- * together, with compatible x-heights and stroke contrast. Dropping Inter costs a little
- * Latin personality and buys consistent text in the language most of this app is read in.
+ * One family for the whole surface also means the text follows the user's font settings
+ * (size, and any OEM substitution) instead of fighting them.
  *
- * Inter is still bundled and still available as [InterFamily] for a caller that wants the
- * desktop's exact look in a Latin-only string.
- *
- * ### Why each weight is a separate [Font] entry
- *
- * Compose only applies a weight to a *variable* font through `FontVariation.Settings`;
- * the four-argument factory passes an empty `Settings()`, which reaches
- * `Typeface.Builder.setFontVariationSettings` and silently renders every declared weight
- * at 400. Hence the explicit settings and the [ExperimentalTextApi] opt-in.
+ * The two TTFs are still in `res/font` so either can be reinstated in one line if the
+ * desktop's exact voice is ever wanted again.
  */
-@OptIn(ExperimentalTextApi::class)
-private fun inter(weight: Int): Font = Font(
-    resId = R.font.inter_variable,
-    weight = FontWeight(weight),
-    style = FontStyle.Normal,
-    variationSettings = FontVariation.Settings(FontWeight(weight), FontStyle.Normal),
-)
-
-/** Bundled Inter, for Latin-only surfaces that want the desktop's voice. */
-val InterFamily: FontFamily = FontFamily(inter(400), inter(500), inter(600), inter(700))
-
 /**
  * The app's text family: the platform's own, so Latin and CJK come from a matched pair.
  *
- * Kept as a named local rather than `FontFamily.Default` so the intent is explicit at
- * every call site and a future substitution happens in one place.
+ * A named local rather than a bare `FontFamily.Default` so the intent is explicit at every
+ * call site and a future substitution happens in one place.
  */
 val CodegSans: FontFamily = FontFamily.Default
 
 /**
- * Bundled JetBrains Mono for code, inline commands, and monospaced values.
+ * Monospaced text: code, inline commands, timestamps, model ids.
  *
- * The platform `Monospace` alias resolves to Droid Sans Mono on most devices,
- * which has weak punctuation and no programming ligatures. codeg's own code
- * surfaces use a dedicated mono stack for exactly that reason, so this is the
- * one family every code surface in the app should reference — never
- * `CodegMono` directly.
+ * The platform's own monospace face, for the same reason [CodegSans] is the platform
+ * sans: a bundled family only matches what the OS draws if every *other* surface uses
+ * it too, and it does not. Keeping JetBrains Mono here meant a screen whose body was the
+ * device font and whose code blocks, timestamps and chips were a visibly different
+ * typeface — the app looked like it had "changed fonts" rather than like it had a code
+ * style. The device's monospace is what a system-consistent app uses.
+ *
+ * The bundled TTF is still in `res/font` and can be reinstated here in one line.
  */
-@OptIn(ExperimentalTextApi::class)
-private fun mono(weight: Int): Font = Font(
-    resId = R.font.jetbrains_mono_variable,
-    weight = FontWeight(weight),
-    style = FontStyle.Normal,
-    variationSettings = FontVariation.Settings(FontWeight(weight), FontStyle.Normal),
-)
-
-val CodegMono: FontFamily = FontFamily(mono(400), mono(500), mono(700))
+val CodegMono: FontFamily = FontFamily.Monospace
 
 /** Shared style for inline code / commands / monospaced values (iOS `Font.mono(13)`). */
 val CodeTextStyle = TextStyle(
