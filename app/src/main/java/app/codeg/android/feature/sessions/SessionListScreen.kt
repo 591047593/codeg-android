@@ -97,6 +97,8 @@ fun SessionListScreen(
     onOpenFolder: (Int) -> Unit,
     /** Switch to the Folders tab. */
     onOpenFolders: () -> Unit,
+    /** Starts a new conversation in a given folder (folder tag → menu). */
+    onOpenSessionInFolder: (Int) -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -212,6 +214,7 @@ fun SessionListScreen(
                             onDelete = { conv -> pendingDelete = conv },
                             onOpenFolder = onOpenFolder,
                             onShowFolderMenu = { conv -> folderMenuFor = conv },
+                            onOpenSessionInFolder = onOpenSessionInFolder,
                             onOpenFolders = onOpenFolders,
                             // A refresh that failed over a still-populated list: surface
                             // it inline above the rows rather than swallowing it.

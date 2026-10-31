@@ -36,8 +36,8 @@ android {
         applicationId = "app.codeg.android"
         minSdk = 31
         targetSdk = 36
-        versionCode = 87
-        versionName = "1.0.86"
+        versionCode = 88
+        versionName = "1.0.87"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
