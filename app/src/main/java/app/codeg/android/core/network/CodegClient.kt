@@ -1,6 +1,10 @@
 package app.codeg.android.core.network
 
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.WorkTaskChangedFile
+import app.codeg.android.core.model.WorkTaskEvent
+import app.codeg.android.core.model.WorkTaskInfo
+import app.codeg.android.core.model.WorkTaskWire
 import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ForkResult
 import app.codeg.android.core.model.ConversationDetail
@@ -691,6 +695,114 @@ class CodegClient(
         val body = JsonObject(mapOf("settings" to settings)).toString()
         send("set_delegation_settings", body)
     }
+
+    // region Work tasks (Codeg 原生看板, batch v139). Responses are hand-decoded
+    // (see [WorkTaskInfo.fromWire]) so a stray field on one server version can
+    // never break the whole board.
+
+    /** All non-deleted tasks for the server (no server-side paging exists). */
+    suspend fun workTaskList(): List<WorkTaskInfo> =
+        decodeWorkTaskList(send("work_task_list", encode(EmptyBody)))
+
+    suspend fun workTaskListForFolder(folderId: Int): List<WorkTaskInfo> =
+        decodeWorkTaskList(send("work_task_list", buildJsonObject { put("folderId", folderId) }.toString()))
+
+    suspend fun workTaskGet(id: Int): WorkTaskInfo? {
+        val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())
+        return (root as? JsonObject)?.let { WorkTaskInfo.fromWire(it) }
+    }
+
+    /** Creates a task and returns the full server row (including its id). */
+    suspend fun workTaskCreate(folderId: Int, title: String, config: JsonObject): WorkTaskInfo? {
+        val root = sendJsonElement(
+            "work_task_create",
+            buildJsonObject {
+                put("draft", buildJsonObject {
+                    put("folderId", folderId)
+                    put("title", title)
+                    put("config", config)
+                })
+            }.toString(),
+        )
+        return (root as? JsonObject)?.let { WorkTaskInfo.fromWire(it) }
+    }
+
+    /** Schedules a `todo` task; [scheduledAtIsoUtc] null clears the plan. */
+    suspend fun workTaskSchedule(id: Int, scheduledAtIsoUtc: String?) {
+        send("work_task_schedule", WorkTaskWire.scheduleBody(id, scheduledAtIsoUtc).toString())
+    }
+
+    suspend fun workTaskStart(id: Int) {
+        send("work_task_start", WorkTaskWire.idBody(id).toString())
+    }
+
+    suspend fun workTaskCancel(id: Int, deleteWorktree: Boolean = false) {
+        send("work_task_cancel", WorkTaskWire.cancelBody(id, deleteWorktree).toString())
+    }
+
+    suspend fun workTaskRetry(id: Int) {
+        send("work_task_retry", WorkTaskWire.idBody(id).toString())
+    }
+
+    suspend fun workTaskRequeue(id: Int, note: String? = null) {
+        send("work_task_requeue", WorkTaskWire.requeueBody(id, note).toString())
+    }
+
+    /** Returns true when the merge was queued behind the folder's merge slot. */
+    suspend fun workTaskMerge(id: Int, message: String? = null): Boolean {
+        val root = sendJsonElement("work_task_merge", WorkTaskWire.mergeBody(id, message = message).toString())
+        return (root as? JsonPrimitive)?.content == "true"
+    }
+
+    /** Accept-without-merge completion (for tasks that changed nothing). */
+    suspend fun workTaskComplete(id: Int, deleteWorktree: Boolean = false) {
+        send("work_task_complete", buildJsonObject {
+            put("id", id)
+            put("deleteWorktree", deleteWorktree)
+        }.toString())
+    }
+
+    suspend fun workTaskDefer(id: Int) {
+        send("work_task_defer", WorkTaskWire.idBody(id).toString())
+    }
+
+    suspend fun workTaskDiff(id: Int, file: String? = null): String {
+        val raw = send("work_task_diff", buildJsonObject {
+            put("id", id)
+            file?.let { put("file", it) }
+        }.toString())
+        // If the server wraps the diff as a JSON string, unwrap it; plain text passes through.
+        return (CodegJson.response.parseToJsonElement(raw) as? JsonPrimitive)
+            ?.takeIf { it.isString }?.content ?: raw
+    }
+
+    suspend fun workTaskChangedFiles(id: Int): List<WorkTaskChangedFile> {
+        val root = sendJsonElement("work_task_changed_files", WorkTaskWire.idBody(id).toString())
+        val arr = root as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskChangedFile::fromWire) }
+    }
+
+    suspend fun workTaskEvents(id: Int, limit: Int = 100): List<WorkTaskEvent> {
+        val root = sendJsonElement("work_task_events", buildJsonObject {
+            put("taskId", id)
+            put("limit", limit)
+        }.toString())
+        val arr = root as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskEvent::fromWire) }
+    }
+
+    private suspend fun sendJsonElement(name: String, body: String): JsonElement =
+        runCatching { CodegJson.response.parseToJsonElement(send(name, body)) }
+            .getOrElse { throw ApiError.Decoding("$name returned invalid JSON") }
+
+    /** Top-level list decoder — drops rows that do not decode instead of failing. */
+    fun decodeWorkTaskList(text: String): List<WorkTaskInfo> {
+        val arr = runCatching { CodegJson.response.parseToJsonElement(text) }
+            .getOrNull() as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskInfo::fromWire) }
+    }
+
+    // endregion
 
     /** Custom OpenAI-compatible model endpoints. */
     suspend fun listModelProviders(): List<ModelProviderInfo> =

@@ -2,6 +2,7 @@ package app.codeg.android.feature.activity
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -90,6 +92,7 @@ fun ActivityScreen(
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var tasksMode by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
@@ -132,8 +135,8 @@ fun ActivityScreen(
         items.mapNotNull { it.row }
             .map { "${it.serverId}:${it.conversation.id}|${it.conversation.trimmedTitle.orEmpty()}|${it.serverName}" }
     }
-    DisposableEffect(focusRowKeys) {
-        viewModel.focusHub.register(
+    DisposableEffect(focusRowKeys, tasksMode) {
+        if (!tasksMode) viewModel.focusHub.register(
             ACTIVITY_FOCUS_OWNER,
             items.mapNotNull { it.row }.map { row ->
                 FocusItem(
@@ -154,7 +157,7 @@ fun ActivityScreen(
     // (a ball gesture fired with this list visible) scrolls.
     var lastScrolledStamp by remember { mutableStateOf(highlight?.stamp ?: 0L) }
     LaunchedEffect(highlight, items) {
-        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER } ?: return@LaunchedEffect
+        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER }?.takeIf { !tasksMode } ?: return@LaunchedEffect
         if (hl.stamp == lastScrolledStamp) return@LaunchedEffect
         val idx = items.indexOfFirst { it.row != null && it.row.refKey == hl.item.ref.key }
         if (idx >= 0) {
@@ -162,6 +165,10 @@ fun ActivityScreen(
             lastScrolledStamp = hl.stamp
         }
     }
+
+    val taskHubViewModel: app.codeg.android.feature.taskhub.TaskHubViewModel =
+        androidx.hilt.navigation.compose.hiltViewModel(key = "taskhub")
+    LaunchedEffect(tasksMode) { taskHubViewModel.setActive(tasksMode) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -174,7 +181,26 @@ fun ActivityScreen(
             )
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FilterChip(
+                    selected = !tasksMode,
+                    onClick = { tasksMode = false },
+                    label = { Text(stringResource(R.string.task_toggle_feed)) },
+                )
+                FilterChip(
+                    selected = tasksMode,
+                    onClick = { tasksMode = true },
+                    label = { Text(stringResource(R.string.task_toggle_tasks)) },
+                )
+            }
+            if (tasksMode) {
+                app.codeg.android.feature.taskhub.TaskHubScreen(taskHubViewModel)
+            } else {
+        Box(Modifier.fillMaxSize()) {
             when {
                 ui.loading && !ui.hasLoaded ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
@@ -361,6 +387,8 @@ fun ActivityScreen(
                     }
                 }
             }
+        }
+        }
         }
     }
 
