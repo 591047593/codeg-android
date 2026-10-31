@@ -211,6 +211,7 @@ fun SessionListScreen(
                             onDelete = { conv -> pendingDelete = conv },
                             onOpenFolder = onOpenFolder,
                             onOpenSessionInFolder = onOpenSessionInFolder,
+                            onOpenSearch = onOpenSearch,
                             // A refresh that failed over a still-populated list: surface
                             // it inline above the rows rather than swallowing it.
                             refreshError = ui.error,
@@ -274,6 +275,7 @@ private fun SessionList(
     onOpenFolder: (Int) -> Unit,
     /** Starts a new conversation in the given folder. */
     onOpenSessionInFolder: (Int) -> Unit,
+    onOpenSearch: () -> Unit,
     refreshError: String?,
     onRetry: () -> Unit,
     onDismissError: () -> Unit,
