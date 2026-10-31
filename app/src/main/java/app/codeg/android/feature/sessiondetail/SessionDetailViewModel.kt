@@ -544,7 +544,8 @@ class SessionDetailViewModel @Inject constructor(
 
     // region Send / cancel
 
-    fun send(text: String) = send(text, withAttachments = true)
+    /** Send [text] with the composer's attachments. Returns false when it did not start a turn. */
+    fun send(text: String): Boolean = send(text, withAttachments = true)
     /**
      * Send the composer's draft — or, with [withAttachments] `false`, a prompt the app
      * itself generated (today: the revision notes from a plan-approval "request
@@ -552,10 +553,10 @@ class SessionDetailViewModel @Inject constructor(
      * consumes the composer's pending attachments, so images the user was staging
      * survive.
      */
-    private fun send(text: String, withAttachments: Boolean) {
+    private fun send(text: String, withAttachments: Boolean): Boolean {
         val trimmed = text.trim()
         val attachments = if (withAttachments) _ui.value.attachments else emptyList()
-        if (trimmed.isEmpty() && attachments.isEmpty()) return
+        if (trimmed.isEmpty() && attachments.isEmpty()) return false
         // A turn is already running: queue this instead of dropping it.
         //
         // The composer used to turn into a Stop button while in flight, so text typed
@@ -563,8 +564,16 @@ class SessionDetailViewModel @Inject constructor(
         // for minutes. The desktop client queues in the same situation and flushes when
         // the turn ends; this does the same, minus the reorder/edit affordances.
         if (_ui.value.isInFlight) {
+            // The queue holds text only. Previously an attachment staged while a turn ran
+            // was silently dropped — `attachments` stayed in the composer, so the next
+            // send carried it, but the queued prompt the user thought they had sent went
+            // out without it. Refuse the combination instead of losing either half.
+            if (attachments.isNotEmpty()) {
+                _ui.update { it.copy(notice = appContext.getString(R.string.session_queue_no_attachments)) }
+                return false
+            }
             _ui.update { it.copy(queuedPrompts = it.queuedPrompts + trimmed) }
-            return
+            return false
         }
 
         // Supersede any post-turn reconcile still running for the previous turn so it can't
@@ -619,6 +628,7 @@ class SessionDetailViewModel @Inject constructor(
         // in a scope that outlives this screen; the guards below stop it from touching
         // state once the screen is gone.
         sendJob = applicationScope.launch { runSend(trimmed, userTurn, attachments, wasNew) }
+        return true
     }
 
     private suspend fun runSend(
@@ -1289,6 +1299,15 @@ class SessionDetailViewModel @Inject constructor(
         val parked = pendingPlanFollowUp
         val planFollowUp = parked?.notesFor(builder.id)
         clearInteractivePrompts()
+        // Release the in-flight flag HERE, before anything below tries to send.
+        //
+        // Nothing else on this path cleared it: `emitLiveNow` above only refreshes `live`,
+        // and the flag used to be reset later by the reconcile. `flushNextQueued` runs in
+        // between and calls `send`, which queues instead of sending while the flag is set
+        // — and takes the prompt out of the queue first. A queued message was therefore
+        // dropped from the queue and put straight back, for ever, and the composer never
+        // came back to Send either.
+        _ui.update { it.copy(isInFlight = false) }
         if (parked != null && planFollowUp == null) {
             _ui.update { it.copy(notice = appContext.getString(R.string.plan_approval_notes_dropped)) }
         }
@@ -1305,11 +1324,21 @@ class SessionDetailViewModel @Inject constructor(
         else flushNextQueued()
     }
 
-    /** Send the oldest queued prompt, if any, and drop it from the queue. */
+    /**
+     * Send the oldest queued prompt, if any.
+     *
+     * The entry is dropped only *after* `send` accepted it. Removing it first meant any
+     * early return inside `send` — the in-flight guard, most importantly — deleted the
+     * user's prompt outright.
+     */
     private fun flushNextQueued() {
         val next = _ui.value.queuedPrompts.firstOrNull() ?: return
-        _ui.update { it.copy(queuedPrompts = it.queuedPrompts.drop(1)) }
-        send(next, withAttachments = false)
+        // Drop the entry only when the send actually started a turn. `send` reports a
+        // refusal (empty text, still in flight, attachments in the queue) as `false`, and
+        // in that case the prompt must stay queued rather than vanish.
+        if (send(next, withAttachments = false)) {
+            _ui.update { it.copy(queuedPrompts = it.queuedPrompts.drop(1)) }
+        }
     }
 
     /**

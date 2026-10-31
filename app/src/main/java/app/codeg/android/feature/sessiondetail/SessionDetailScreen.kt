@@ -452,8 +452,12 @@ fun SessionDetailScreen(
                     text = draft,
                     onTextChange = { draft = it },
                     onSend = {
-                        viewModel.send(draft)
-                        draft = ""
+                        // Clear the composer only when the prompt was actually accepted.
+                        // `send` returns false when it queued the text instead, or refused
+                        // it (a running turn cannot take queued images) — clearing then
+                        // would wipe text the user still needs, and the queue already
+                        // holds a copy.
+                        if (viewModel.send(draft)) draft = ""
                         // The stored draft is cleared by the persistence effect below, not
                         // here: it writes on a debounce, so the empty composer overwrites
                         // the entry a moment later. Clearing eagerly would also throw the
