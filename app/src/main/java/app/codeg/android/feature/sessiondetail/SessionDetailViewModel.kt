@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
 import app.codeg.android.core.common.ApplicationScope
+import app.codeg.android.core.common.NetworkMonitor
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.SelectorPrefs
 import app.codeg.android.core.datastore.DraftStore
@@ -80,6 +81,9 @@ private const val REASON_CONNECTION_GONE = "connection_gone"
 /** Max consecutive silent re-attaches before falling back to a transcript reconcile. */
 private const val MAX_STREAM_RECONNECTS = 6
 
+/** Settle time before reconnecting after a network/foreground transition. */
+private const val NETWORK_RECOVERY_DELAY_MS = 900L
+
 /** The selector key used for the session mode (config options key by their own id). */
 private const val MODE_KEY = "mode"
 
@@ -111,6 +115,7 @@ class SessionDetailViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val applicationScope: ApplicationScope,
     private val dispatchers: DispatcherProvider,
+    private val networkMonitor: NetworkMonitor,
 ) : ViewModel() {
 
     /** A new task may be pre-seeded with a folder (e.g. a worktree a branch switch opened). */
@@ -202,6 +207,7 @@ class SessionDetailViewModel @Inject constructor(
     init {
         load()
         watchServerSwitch()
+        startConnectivityRecovery()
     }
 
     /**
@@ -1394,6 +1400,73 @@ class SessionDetailViewModel @Inject constructor(
         // the server replay whatever we missed instead of ending the live turn.
         reconnectStream()
     }
+
+    /**
+     * Recover the stream when connectivity changes or the app comes back to the front.
+     *
+     * The reconnect budget above is bounded on purpose — a dead server should not be
+     * hammered — but it also means a drop that outlasts ~30 seconds is final. Two events
+     * make that wrong: the network coming back (a tunnel, a Wi-Fi → mobile handover) and
+     * the app returning to the foreground (Android freezes sockets in the background, so
+     * the socket is usually already dead by the time the user is looking again). Both
+     * reset the budget and re-attach from `lastSeq`, so the server replays what was
+     * missed rather than the turn being lost.
+     */
+    private fun startConnectivityRecovery() {
+        connectivityJob?.cancel()
+        connectivityJob = viewModelScope.launch {
+            networkMonitor.isOnline.collect { online ->
+                if (!online) return@collect
+                // Let the OS finish bringing the interface up; a reconnect attempted the
+                // instant `onAvailable` fires usually fails on DNS.
+                delay(NETWORK_RECOVERY_DELAY_MS)
+                recoverStream()
+            }
+        }
+    }
+
+    /** Called by the screen when it resumes — see [startConnectivityRecovery]. */
+    fun onScreenResumed() {
+        viewModelScope.launch {
+            delay(NETWORK_RECOVERY_DELAY_MS)
+            recoverStream()
+        }
+    }
+
+    /**
+     * Re-attach if a turn is running but nothing is consuming the stream.
+     *
+     * Deliberately conservative: it does nothing while a live consumer exists (a healthy
+     * turn must not be interrupted), and nothing when no turn is in flight (there is no
+     * stream to recover — opening one for an idle session would just sit there and could
+     * surface a stale pending prompt).
+     */
+    private fun recoverStream() {
+        if (cleared) return
+        if (!_ui.value.isInFlight) return
+        if (consumerJob?.isActive == true && stream != null) return
+        val conn = connectionId ?: run {
+            // The connection id was lost (a failed first send): a fresh one is the only
+            // way back, and `resolveConnection` will look one up before creating.
+            viewModelScope.launch {
+                val c = client ?: return@launch
+                runCatching { resolveConnection(c) }.onSuccess { fresh ->
+                    connectionId = fresh
+                    streamReconnects = 0
+                    openStream(fresh, seedOnAttach = true)
+                }
+            }
+            return
+        }
+        // Reset the budget: this is a new cause, not another attempt at the old failure.
+        streamReconnects = 0
+        reconnectJob?.cancel()
+        reconnectJob = viewModelScope.launch {
+            connectStream(conn, awaitAttach = false, seedOnAttach = true)
+        }
+    }
+
+    private var connectivityJob: Job? = null
 
     /** Silently re-attach a fresh stream to the same connection after a transient
      *  drop, resuming from [lastSeq]. Backs off exponentially (0.5s→8s) and, after

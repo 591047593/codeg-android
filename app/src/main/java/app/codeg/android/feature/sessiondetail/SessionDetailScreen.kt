@@ -173,6 +173,14 @@ fun SessionDetailScreen(
         onDispose { viewModel.saveDraft(latestDraft.value) }
     }
 
+    // Coming back to the foreground: Android freezes sockets in the background, so a
+    // turn that was streaming usually has a dead stream by now. Asking the view model to
+    // re-attach on resume is what turns "stuck on reconnecting" into a resumed reply.
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        viewModel.onScreenResumed()
+        onPauseOrDispose { }
+    }
+
     if (showOptions) AgentOptionsSheet(
         viewModel = viewModel,
         onOpenSession = onOpenSession,

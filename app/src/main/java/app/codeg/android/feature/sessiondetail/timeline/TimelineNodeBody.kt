@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,8 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -42,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
@@ -49,6 +54,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
@@ -124,38 +130,94 @@ fun NodeBody(node: TimelineNode, modifier: Modifier = Modifier) {
     }
 }
 
-/** The user's prompt — a left-aligned tinted block, the same measure as the reply. */
+/**
+ * The user's prompt — a right-aligned bubble that hugs its text.
+ *
+ * Matches the desktop client's `MessageContent` for `is-user`: `ml-auto w-fit max-w-full
+ * rounded-3xl bg-secondary px-4 py-3`. The bubble sits on the right, is no wider than its
+ * content, and never exceeds the reading column; long prompts still fill the width, which
+ * is why `max-w-full` is there alongside `w-fit`.
+ *
+ * This was briefly left-aligned and full width, on the reading of the Codex client. That
+ * read the transcript as one document with the user's turns highlighted — but codeg's own
+ * composer puts the prompt in a bubble, and the bubble is what makes the assistant's
+ * full-width prose read as a reply rather than as another block in a list.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun UserNodeBody(turn: MessageTurn, modifier: Modifier) {
     val colors = CodegTheme.colors
-    // Codex does not right-align the prompt: it is a left-aligned tinted block spanning
-    // the reading column, the same width as the reply below it. That is a different
-    // conversation metaphor from the iMessage bubble — the transcript reads as one
-    // document where your turns are highlighted, rather than as two speakers facing each
-    // other — and it is what the reference client does.
-    Row(modifier.fillMaxWidth()) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Column(
             Modifier
-                .fillMaxWidth()
+                // `wrapContentWidth` is the Compose equivalent of `w-fit`: the bubble is
+                // as wide as its content, up to the reading measure. Without it the
+                // markdown renderer would fill whatever it was given and every prompt
+                // would be a full-width block again.
+                .wrapContentWidth(Alignment.End)
                 .widthIn(max = 680.dp)
-                .clip(RoundedCornerShape(18.dp))
+                // `rounded-3xl` at the desktop's 0.625rem base radius.
+                .clip(RoundedCornerShape(24.dp))
                 .background(colors.codeSurface)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            for (block in turn.blocks) {
-                when (block) {
-                    is ContentBlock.Text -> if (block.text.isNotBlank()) MarkdownContent(block.text)
-                    is ContentBlock.Image -> InlineImage(block.image, null)
-                    is ContentBlock.ImageGeneration ->
-                        if (block.image != null) InlineImage(block.image, block.revisedPrompt)
-                        else if (!block.revisedPrompt.isNullOrBlank()) MarkdownContent(block.revisedPrompt)
-                    else -> {}
+            // A pasted stack trace or a long spec can run for screens. The desktop client
+            // caps a user message at max-h-60 and offers "Show more" once it is actually
+            // clipped (`CollapsibleUserMessage`); a prompt that fills ten pages buries the
+            // reply it was answering.
+            var expanded by remember(turn.id) { mutableStateOf(false) }
+            val collapsible = remember(turn) { turn.blocks.any { it is ContentBlock.Text && it.text.length > USER_MESSAGE_COLLAPSE_CHARS } }
+            Box(
+                Modifier
+                    .heightIn(max = if (!expanded && collapsible) USER_MESSAGE_MAX_HEIGHT else Dp.Unspecified)
+                    .then(if (!expanded && collapsible) Modifier.clipToBounds() else Modifier),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (block in turn.blocks) {
+                        when (block) {
+                            is ContentBlock.Text -> if (block.text.isNotBlank()) MarkdownContent(block.text)
+                            is ContentBlock.Image -> InlineImage(block.image, null)
+                            is ContentBlock.ImageGeneration ->
+                                if (block.image != null) InlineImage(block.image, block.revisedPrompt)
+                                else if (!block.revisedPrompt.isNullOrBlank()) MarkdownContent(block.revisedPrompt)
+                            else -> {}
+                        }
+                    }
+                }
+            }
+            if (collapsible) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(
+                        stringResource(if (expanded) R.string.timeline_show_less else R.string.timeline_show_more),
+                        fontSize = 11.sp,
+                        color = CodegTheme.colors.textTertiary,
+                    )
+                    Icon(
+                        if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.size(14.dp),
+                    )
                 }
             }
         }
     }
 }
+
+/** Height a collapsed long prompt is capped to — the desktop's `max-h-60` (15rem). */
+private val USER_MESSAGE_MAX_HEIGHT = 240.dp
+
+/** Above this many characters a prompt is worth collapsing; below it the toggle is noise. */
+private const val USER_MESSAGE_COLLAPSE_CHARS = 1200
 
 /** A system note — a dim, card-less log line. */
 @Composable
