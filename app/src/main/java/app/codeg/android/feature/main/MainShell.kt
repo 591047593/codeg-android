@@ -225,6 +225,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                             nav.navigate("conversation/$id") { launchSingleTop = true }
                         },
                         onNewTask = { nav.navigate(ROUTE_NEW_TASK) },
+                        onOpenFolder = { id -> nav.navigate("project/$id") },
                     )
                 }
             }

@@ -90,6 +90,8 @@ fun SessionListScreen(
     onManageServers: () -> Unit,
     onOpenConversation: (Int) -> Unit,
     onNewTask: () -> Unit,
+    /** Open a folder's project page — from the folder tag on a cross-folder row. */
+    onOpenFolder: (Int) -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -201,6 +203,7 @@ fun SessionListScreen(
                             onOpenConversation = onOpenConversation,
                             onTogglePin = { conv -> viewModel.setPinned(conv, !conv.isPinned) },
                             onDelete = { conv -> pendingDelete = conv },
+                            onOpenFolder = onOpenFolder,
                             // A refresh that failed over a still-populated list: surface
                             // it inline above the rows rather than swallowing it.
                             refreshError = ui.error,
@@ -261,6 +264,7 @@ private fun SessionList(
     onOpenConversation: (Int) -> Unit,
     onTogglePin: (ConversationSummary) -> Unit,
     onDelete: (ConversationSummary) -> Unit,
+    onOpenFolder: (Int) -> Unit,
     refreshError: String?,
     onRetry: () -> Unit,
     onDismissError: () -> Unit,
@@ -355,6 +359,11 @@ private fun SessionList(
                         cardBackground = Color.Transparent,
                         onTogglePin = { onTogglePin(row.conversation) },
                         onDelete = { onDelete(row.conversation) },
+                        // Only meaningful where the row shows a folder tag; the row
+                        // decides whether to draw a tappable tag from this being non-null.
+                        onOpenFolder = if (row.folderName != null) {
+                            { onOpenFolder(row.conversation.folderId) }
+                        } else null,
                         tagColors = row.conversation.tagIds.mapNotNull { tagsById[it] }.map(::tagColor),
                     )
                 }

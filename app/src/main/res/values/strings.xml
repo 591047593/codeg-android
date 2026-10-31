@@ -51,6 +51,7 @@
     <!-- Sessions (Chats) -->
     <string name="session_untitled">Untitled session</string>
     <string name="session_title_fallback">Session</string>
+    <string name="session_open_folder">Open folder</string>
     <string name="session_new_task">New Task</string>
     <string name="session_pin">Pin</string>
     <string name="session_unpin">Unpin</string>

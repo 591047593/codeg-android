@@ -51,6 +51,7 @@
     <!-- Sessions (Chats) -->
     <string name="session_untitled">未命名会话</string>
     <string name="session_title_fallback">会话</string>
+    <string name="session_open_folder">打开文件夹</string>
     <string name="session_new_task">新建任务</string>
     <string name="session_pin">置顶</string>
     <string name="session_unpin">取消置顶</string>

@@ -95,6 +95,15 @@ fun SessionRow(
     cardBackground: Color = Color.Unspecified,
     onTogglePin: (() -> Unit)? = null,
     /**
+     * Open this row's folder as a project.
+     *
+     * The folder tag on a cross-folder row (Pinned / Running / Recent) is drawn because
+     * those sections hold conversations from many folders. It looked tappable and was
+     * not, so tapping it opened the conversation instead — the one thing the tag is not
+     * about. With this set the tag is its own target.
+     */
+    onOpenFolder: (() -> Unit)? = null,
+    /**
      * This row's tag colours, already resolved from its `tagIds` by the list.
      *
      * Dots rather than named chips: a phone row has room for two or three 6dp dots
@@ -187,20 +196,42 @@ fun SessionRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         if (folderName != null) {
-                            Icon(
-                                Icons.Rounded.Folder,
-                                contentDescription = null,
-                                tint = colors.textTertiary,
-                                modifier = Modifier.size(10.dp),
-                            )
-                            Text(
-                                text = folderName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textTertiary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 96.dp),
-                            )
+                            // The tag is a link to the project, not a caption. It only
+                            // appears on cross-folder sections, where "which folder is this
+                            // from?" is a question the row has to answer — and answering it
+                            // with dead text invited taps that opened the wrong screen.
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .then(
+                                        if (onOpenFolder != null) {
+                                            Modifier
+                                                .clickable(
+                                                    onClickLabel = stringResource(R.string.session_open_folder),
+                                                ) { onOpenFolder() }
+                                                .padding(horizontal = 2.dp, vertical = 1.dp)
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Folder,
+                                    contentDescription = null,
+                                    tint = colors.textTertiary,
+                                    modifier = Modifier.size(10.dp),
+                                )
+                                Text(
+                                    text = folderName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 96.dp),
+                                )
+                            }
                             MetaDot()
                         }
                         // Tag dots lead the metadata line: they are the user's own
