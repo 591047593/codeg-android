@@ -60,6 +60,9 @@
     <string name="sessions_empty_title">还没有会话</string>
     <string name="sessions_empty_message">新建一个任务，它就会显示在这里。</string>
     <string name="session_load_failed">无法加载该会话</string>
+    <string name="session_draft_title">想让智能体做什么？</string>
+    <string name="session_draft_message">在下方描述任务。可先在上方选择文件夹和智能体。</string>
+    <string name="session_draft_message_folder">在下方描述任务——将在 %1$s 中运行。</string>
     <string name="session_empty_title">还没有消息</string>
     <string name="session_empty_message">该会话的消息会显示在这里。</string>
     <string name="session_jump_to_latest">回到最新</string>

@@ -60,6 +60,9 @@
     <string name="sessions_empty_title">No sessions yet</string>
     <string name="sessions_empty_message">Start a new task and it\'ll show up here.</string>
     <string name="session_load_failed">Couldn\'t load this session</string>
+    <string name="session_draft_title">What should the agent do?</string>
+    <string name="session_draft_message">Describe the task below. Pick the folder and agent above first.</string>
+    <string name="session_draft_message_folder">Describe the task below — it runs in %1$s.</string>
     <string name="session_empty_title">No messages yet</string>
     <string name="session_empty_message">Messages in this session will appear here.</string>
     <string name="session_jump_to_latest">Jump to latest</string>

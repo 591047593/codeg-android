@@ -294,7 +294,10 @@ fun SessionDetailScreen(
     }
 
     val title = when {
-        ui.isNew -> stringResource(R.string.session_new_task)
+        // A draft has no name yet, and "New Task" is a button label, not a title. The
+        // desktop client leaves the draft's bar untitled for the same reason — the
+        // heading belongs to the prompt the user is about to write.
+        ui.isNew -> ""
         else -> ui.summary?.trimmedTitle ?: stringResource(R.string.session_title_fallback)
     }
 
@@ -407,13 +410,19 @@ fun SessionDetailScreen(
                 // area — read on screen as the layout flickering. A permanently reserved
                 // row means the only thing that changes is the text, which is what the
                 // fade is for.
-                val statusVisible = ui.sendStatus != null && ui.isInFlight
-                Crossfade(
-                    targetState = if (statusVisible) ui.sendStatus else null,
-                    animationSpec = tween(140),
-                    modifier = Modifier.fillMaxWidth().height(STATUS_LINE_HEIGHT),
-                ) { status ->
-                    if (status != null) SendStatusLine(status) else Box(Modifier.fillMaxSize())
+                // The reserved row exists to stop the composer jumping when the status
+                // flips mid-turn. On a draft there is no turn and never will be one
+                // before the first send, so the row is pure wasted height above the
+                // keyboard — skip it there.
+                if (!ui.isNew) {
+                    val statusVisible = ui.sendStatus != null && ui.isInFlight
+                    Crossfade(
+                        targetState = if (statusVisible) ui.sendStatus else null,
+                        animationSpec = tween(140),
+                        modifier = Modifier.fillMaxWidth().height(STATUS_LINE_HEIGHT),
+                    ) { status ->
+                        if (status != null) SendStatusLine(status) else Box(Modifier.fillMaxSize())
+                    }
                 }
                 // A failed turn used to offer nothing: the error sat in the transcript and
                 // the only way to try again was to scroll back, copy the prompt and paste
@@ -517,15 +526,23 @@ fun SessionDetailScreen(
                         val needsFolder = ui.isNew && ui.availableFolders.isEmpty() && ui.selectedFolderId == null
                         EmptyState(
                             icon = Icons.Rounded.Forum,
-                            title = if (ui.isNew) {
+                            // A draft is not an empty transcript, it is a prompt to start
+                            // one: "No messages yet" described a conversation that does not
+                            // exist. The desktop client greets the draft with what it will
+                            // run against instead.
+                            title = if (ui.isNew && !needsFolder) {
+                                stringResource(R.string.session_draft_title)
+                            } else if (ui.isNew) {
                                 stringResource(R.string.session_new_task)
                             } else {
                                 stringResource(R.string.session_empty_title)
                             },
-                            message = if (needsFolder) {
-                                stringResource(R.string.session_error_no_folder)
-                            } else {
-                                stringResource(R.string.session_empty_message)
+                            message = when {
+                                needsFolder -> stringResource(R.string.session_error_no_folder)
+                                ui.isNew && ui.folderName != null ->
+                                    stringResource(R.string.session_draft_message_folder, ui.folderName!!)
+                                ui.isNew -> stringResource(R.string.session_draft_message)
+                                else -> stringResource(R.string.session_empty_message)
                             },
                             // The message alone left the user to work out where "open a
                             // folder" lives. A task cannot start without one, so the
