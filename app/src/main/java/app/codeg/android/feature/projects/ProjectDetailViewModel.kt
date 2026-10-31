@@ -394,10 +394,18 @@ class ProjectDetailViewModel @Inject constructor(
      */
     suspend fun detectConflictOperation(path: String): String? {
         val c = client ?: return null
-        val conflicts = runCatching { c.gitListConflicts(path) }.getOrDefault(emptyList())
-        if (conflicts.isEmpty()) return null
+        // `MERGE_HEAD` is the marker git leaves for a merge or pull in progress. It stays
+        // present after every conflict is resolved, while `git_list_conflicts` has gone
+        // empty — and that is exactly the state where the user still needs Continue. So
+        // the marker is checked first and independently.
         val merging = runCatching { c.gitHasMergeHead(path) }.getOrDefault(false)
-        return if (merging) "merge" else "rebase"
+        val conflicts = runCatching { c.gitListConflicts(path) }.getOrDefault(emptyList())
+        return when {
+            merging -> "merge"
+            // No merge marker, but unmerged paths remain: a rebase or a cherry-pick.
+            conflicts.isNotEmpty() -> "rebase"
+            else -> null
+        }
     }
 
     private fun pushBanner(result: GitPushResult): GitBanner = when {

@@ -138,8 +138,13 @@ fun FolderChangesView(
         // Unmerged paths read as ordinary changes in `git_status`, so without this the
         // only hint that the repo is mid-merge is a commit that keeps failing. The strip
         // is the way into the resolver.
+        //
+        // It shows whenever an operation is unfinished — not only while conflicts remain.
+        // After the last file is resolved the operation still needs finishing (merge:
+        // commit with the prepared message; rebase: `--continue`), and that was the state
+        // where the previous condition hid the only way forward.
         val conflicted = entries.count { it.change == GitChange.CONFLICTED }
-        if (conflicted > 0 && conflictOperation != null) {
+        if (conflictOperation != null) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -153,7 +158,8 @@ fun FolderChangesView(
             ) {
                 Icon(Icons.Rounded.Difference, null, tint = CodegTheme.colors.danger, modifier = Modifier.size(15.dp))
                 Text(
-                    stringResource(R.string.conflict_banner, conflicted),
+                    if (conflicted > 0) stringResource(R.string.conflict_banner, conflicted)
+                    else stringResource(R.string.conflict_banner_ready, conflictOperation),
                     fontSize = 12.sp,
                     color = CodegTheme.colors.danger,
                     modifier = Modifier.weight(1f),

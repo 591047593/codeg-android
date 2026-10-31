@@ -520,3 +520,7 @@ data class AbortOperationBody(val path: String, val operation: String)
 /** `git_delete_branch` — local branch removal; [force] maps to `-D` instead of `-d`. */
 @Serializable
 data class DeleteBranchBody(val path: String, val branchName: String, val force: Boolean = false)
+
+/** `git_continue_operation` — finish an interrupted merge / pull / rebase. */
+@Serializable
+data class ContinueOperationBody(val path: String, val operation: String)

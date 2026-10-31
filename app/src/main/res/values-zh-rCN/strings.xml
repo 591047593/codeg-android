@@ -801,6 +801,8 @@
         <item quantity="other">拉取产生了 %d 个文件的冲突 — 请在桌面端或通过智能体解决</item>
     </plurals>
     <!-- Commit sheet -->
+    <string name="conflict_continue">完成 %1$s</string>
+    <string name="conflict_banner_ready">%1$s 进行中</string>
     <string name="conflict_title">解决 %1$s 冲突</string>
     <string name="conflict_load_failed">无法读取冲突</string>
     <string name="conflict_none_title">没有待解决的冲突</string>

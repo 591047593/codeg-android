@@ -32,6 +32,7 @@ import app.codeg.android.core.model.PromptBody
 import app.codeg.android.core.model.PromptInputBlock
 import app.codeg.android.core.model.QuestionAnswer
 import app.codeg.android.core.model.RespondPermissionBody
+import app.codeg.android.core.model.ContinueOperationBody
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.ConversationTag
 import app.codeg.android.core.model.UpdateConversationPinnedBody
@@ -576,6 +577,17 @@ class CodegClient(
      */
     suspend fun gitAbortOperation(path: String, operation: String) {
         send("git_abort_operation", encode(AbortOperationBody(path, operation)))
+    }
+
+    /**
+     * Finish an interrupted merge / pull / rebase once every conflict is resolved.
+     *
+     * `merge` commits with the prepared message (`commit --no-edit`); `rebase` resumes
+     * with `rebase --continue`. Without this the user can resolve every file and still be
+     * stuck in the half-finished operation with no way forward.
+     */
+    suspend fun gitContinueOperation(path: String, operation: String) {
+        send("git_continue_operation", encode(ContinueOperationBody(path, operation)))
     }
 
     /** Commit history (newest first). */

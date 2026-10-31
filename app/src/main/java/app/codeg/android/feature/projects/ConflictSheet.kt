@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -127,15 +128,40 @@ fun ConflictSheet(
                         onRetry = { files = null; scope.launch { loadFiles() } },
                     )
 
-                    files.orEmpty().isEmpty() -> Box(
-                        Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
+                    // Every conflict resolved, but the operation still has to be
+                    // *finished*: a merge needs its commit and a rebase needs to resume.
+                    // This is the state the resolver used to have no action for.
+                    files.orEmpty().isEmpty() -> {
+                        var continuing by remember { mutableStateOf(false) }
                         EmptyState(
                             Icons.Rounded.CheckCircle,
                             stringResource(R.string.conflict_none_title),
                             stringResource(R.string.conflict_none_message),
+                            // The operation still needs finishing: a merge its commit, a
+                            // rebase its `--continue`. Without this the user resolves
+                            // every file and is left stuck in the half-finished state.
+                            actionLabel = if (continuing) null
+                            else stringResource(R.string.conflict_continue, operationLabel(operation)),
+                            onAction = if (continuing) null else ({
+                                continuing = true
+                                actionError = null
+                                scope.launch {
+                                    runCatching { client.gitContinueOperation(rootPath, operation) }
+                                        .onSuccess { onResolved(); onDismiss() }
+                                        .onFailure { actionError = it.displayMessage(appContext) }
+                                        .also { continuing = false }
+                                }
+                            }),
                         )
+                        if (continuing) {
+                            Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = colors.accent,
+                                )
+                            }
+                        }
                     }
 
                     else -> Column(

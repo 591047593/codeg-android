@@ -813,6 +813,8 @@
         <item quantity="other">Pull produced conflicts in %d files — resolve them on desktop or via an agent</item>
     </plurals>
     <!-- Commit sheet -->
+    <string name="conflict_continue">Finish %1$s</string>
+    <string name="conflict_banner_ready">%1$s in progress</string>
     <string name="conflict_title">Resolve %1$s conflicts</string>
     <string name="conflict_load_failed">Could not read the conflicts</string>
     <string name="conflict_none_title">Nothing left to resolve</string>
