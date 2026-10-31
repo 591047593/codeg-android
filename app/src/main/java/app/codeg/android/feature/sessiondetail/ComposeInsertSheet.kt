@@ -28,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -43,6 +44,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.AvailableCommandInfo
 import app.codeg.android.core.model.DirectoryItem
+import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.model.ExpertListItem
 import app.codeg.android.core.model.QuickMessage
 import kotlinx.coroutines.launch
@@ -75,6 +77,7 @@ fun ComposeInsertSheet(
     onDismiss: () -> Unit,
 ) {
     val colors = CodegTheme.colors
+    val appContext = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var source by remember { mutableStateOf(InsertSource.QUICK) }
     var loading by remember { mutableStateOf(true) }
@@ -86,6 +89,7 @@ fun ComposeInsertSheet(
     // the server returns is already everything a picker needs.
     var fileDir by remember { mutableStateOf<String?>(null) }
     var fileEntries by remember { mutableStateOf<List<DirectoryItem>>(emptyList()) }
+    var fileError by remember { mutableStateOf<String?>(null) }
     var fileQuery by remember { mutableStateOf("") }
     var knownIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     // Directory navigation happens inside click callbacks, which are not suspend; the
@@ -100,7 +104,12 @@ fun ComposeInsertSheet(
             InsertSource.FILES -> {
                 val root = viewModel.folderPathForInsert
                 fileDir = root
-                fileEntries = root?.let { r -> runCatching { viewModel.listDirectory(r) }.getOrDefault(emptyList()) } ?: emptyList()
+                fileError = null
+                fileEntries = root?.let { r ->
+                    viewModel.listDirectory(r)
+                        .onFailure { fileError = it.displayMessage(appContext) }
+                        .getOrDefault(emptyList())
+                } ?: emptyList()
             }
             InsertSource.EXPERTS -> { experts = viewModel.loadExpertsForInsert(); knownIds = viewModel.knownExpertIds() }
             InsertSource.COMMANDS -> commands = viewModel.loadSlashCommands()
@@ -138,6 +147,7 @@ fun ComposeInsertSheet(
                         dir = fileDir,
                         root = viewModel.folderPathForInsert,
                         entries = fileEntries,
+                        error = fileError,
                         query = fileQuery,
                         onQuery = { fileQuery = it },
                         // The filter deliberately survives a directory change: the user
@@ -145,7 +155,12 @@ fun ComposeInsertSheet(
                         // clearing it on every step meant retyping it.
                         onOpenDir = { path ->
                             fileDir = path
-                            scope.launch { fileEntries = viewModel.listDirectory(path) }
+                            fileError = null
+                            scope.launch {
+                                viewModel.listDirectory(path)
+                                    .onFailure { fileError = it.displayMessage(appContext) }
+                                    .onSuccess { fileEntries = it }
+                            }
                         },
                         onUp = {
                             val root = viewModel.folderPathForInsert
@@ -159,7 +174,12 @@ fun ComposeInsertSheet(
                                 val target = if (parent.length >= root.length && parent.startsWith(root)) parent else root
                                 if (target != current) {
                                     fileDir = target
-                                    scope.launch { fileEntries = viewModel.listDirectory(target) }
+                                    fileError = null
+                                    scope.launch {
+                                        viewModel.listDirectory(target)
+                                            .onFailure { fileError = it.displayMessage(appContext) }
+                                            .onSuccess { fileEntries = it }
+                                    }
                                 }
                             }
                         },
@@ -220,6 +240,7 @@ private fun InsertFilesBrowser(
     dir: String?,
     root: String?,
     entries: List<DirectoryItem>,
+    error: String?,
     query: String,
     onQuery: (String) -> Unit,
     onOpenDir: (String) -> Unit,
@@ -277,7 +298,13 @@ private fun InsertFilesBrowser(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-        if (shown.isEmpty()) {
+        if (error != null) {
+            // A failed read is not an empty folder; saying so is the difference between
+            // "nothing here" and "the server could not look".
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(error, fontSize = 12.sp, color = colors.danger)
+            }
+        } else if (shown.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.insert_empty_files), fontSize = 13.sp, color = colors.textTertiary)
             }

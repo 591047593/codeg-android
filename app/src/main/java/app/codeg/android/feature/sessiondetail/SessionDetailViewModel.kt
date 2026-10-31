@@ -1953,10 +1953,17 @@ class SessionDetailViewModel @Inject constructor(
     /** The folder this session runs in, used to root the "+" file picker and its paths. */
     val folderPathForInsert: String? get() = _ui.value.folderPath
 
-    /** One directory level for the "+" file picker. */
-    suspend fun listDirectory(path: String): List<DirectoryItem> =
-        client?.let { runCatching { it.listDirectoryWithFiles(path) }.getOrDefault(emptyList()) }
-            ?: emptyList()
+    /**
+     * One directory level for the "+" file picker.
+     *
+     * Returns the failure rather than an empty list: "this folder has nothing in it" and
+     * "the server could not read this folder" are different answers, and collapsing them
+     * into one told the user the directory was empty when it was not.
+     */
+    suspend fun listDirectory(path: String): Result<List<DirectoryItem>> {
+        val c = client ?: return Result.failure(IllegalStateException(appContext.getString(R.string.files_error)))
+        return runCatching { c.listDirectoryWithFiles(path) }
+    }
 
     suspend fun loadQuickMessages(): List<QuickMessage> =
         client?.let { runCatching { it.quickMessagesList() }.getOrDefault(emptyList()) } ?: emptyList()
