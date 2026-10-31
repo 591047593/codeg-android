@@ -95,14 +95,17 @@ fun SessionRow(
     cardBackground: Color = Color.Unspecified,
     onTogglePin: (() -> Unit)? = null,
     /**
-     * Open this row's folder as a project.
+     * What tapping this row's folder tag does.
      *
-     * The folder tag on a cross-folder row (Pinned / Running / Recent) is drawn because
-     * those sections hold conversations from many folders. It looked tappable and was
-     * not, so tapping it opened the conversation instead — the one thing the tag is not
-     * about. With this set the tag is its own target.
+     * The tag only appears on cross-folder sections (Pinned / Running / Recent), where
+     * the row has to say which folder it came from. Tapping it used to be impossible
+     * (the row's own click won) and then jumped straight to the project page — which is
+     * the Folders tab's job, so the tag became a second entrance to a screen the user
+     * had a dedicated tab for, with none of this conversation's context.
+     *
+     * It now opens a small menu of folder actions instead.
      */
-    onOpenFolder: (() -> Unit)? = null,
+    onFolderTagClick: (() -> Unit)? = null,
     /**
      * This row's tag colours, already resolved from its `tagIds` by the list.
      *
@@ -204,11 +207,11 @@ fun SessionRow(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
                                     .then(
-                                        if (onOpenFolder != null) {
+                                        if (onFolderTagClick != null) {
                                             Modifier
                                                 .clickable(
-                                                    onClickLabel = stringResource(R.string.session_open_folder),
-                                                ) { onOpenFolder() }
+                                                    onClickLabel = stringResource(R.string.session_folder_actions),
+                                                ) { onFolderTagClick() }
                                                 .padding(horizontal = 2.dp, vertical = 1.dp)
                                         } else {
                                             Modifier
