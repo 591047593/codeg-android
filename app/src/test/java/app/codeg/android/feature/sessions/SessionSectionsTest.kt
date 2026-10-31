@@ -97,29 +97,25 @@ class SessionSectionsTest {
     }
 
     @Test
-    fun `empty folders collapse into one trailing row`() {
+    fun `folders with no sessions produce nothing at all`() {
         val sections = buildSessionSections(
             listOf(folder(1, "Solo"), folder(2, "Idle"), folder(3, "AlsoIdle")),
             emptyList(),
         )
 
-        // No per-folder headers: they were a stack of empty labels at the bottom of the
-        // list. One row stands in for all of them and links to the Folders tab.
-        assertEquals(listOf("idle-folders"), sections.map { it.id })
-        val idle = sections.single().kind as SectionKind.IdleFolders
-        assertEquals(3, idle.count)
+        // Not an empty header each (a stack of dead labels), and not a "N idle folders"
+        // footer either — that was still chrome for something the Chats list is not
+        // about. The Folders tab lists them.
+        assertTrue(sections.isEmpty())
     }
 
     @Test
-    fun `the idle row sorts after every real section`() {
+    fun `only folders that hold a session get a section`() {
         val sections = buildSessionSections(
             listOf(folder(1, "Busy"), folder(2, "Idle")),
             listOf(conv(1, folderId = 1, updated = 10)),
         )
-        // A populated folder section first, then the footer standing in for folder 2.
-        assertEquals("folder-1", sections.first().id)
-        assertEquals("idle-folders", sections.last().id)
-        assertEquals(1, (sections.last().kind as SectionKind.IdleFolders).count)
+        assertEquals(listOf("folder-1"), sections.map { it.id })
     }
 
     @Test
