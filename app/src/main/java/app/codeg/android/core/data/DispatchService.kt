@@ -191,6 +191,12 @@ class DispatchService @Inject constructor(
                         withContext(NonCancellable) { runCatching { markUnknown(request) } }
                         throw e
                     }
+                    // ApiError.Decoding after a successful send() means the server
+                    // ANSWERED (2xx) but the body didn't parse — the create may
+                    // well have happened. This is the ambiguous case; treating it
+                    // as a hard failure deleted the ledger's only trace and
+                    // invited a double create (批v146 对抗审查 #1).
+                    e is ApiError.Decoding -> probeOrMarkUnknown(request, profile)
                     // Timeout-style failures are ambiguous: the task may exist.
                     // Self-heal: one immediate probe — if the request actually
                     // landed, the ledger resolves to CONFIRMED and the user
@@ -239,7 +245,7 @@ class DispatchService @Inject constructor(
         autoStart: Boolean,
     ): DispatchOutcome {
         val ref = request.copy(remoteTodoId = todoId, state = DispatchState.CONFIRMED)
-        dispatchStore.put(ref)
+        putIfPresent(ref)
         var scheduleNote: String? = null
         if (scheduleLocalMillis != null) {
             val client = repository.client(profile)
@@ -279,6 +285,19 @@ class DispatchService @Inject constructor(
     private suspend fun markUnknown(request: DispatchRef): DispatchOutcome {
         dispatchStore.put(request.copy(state = DispatchState.UNKNOWN))
         return DispatchOutcome.Unknown(request)
+    }
+
+    /**
+     * Tombstone check before every delayed ledger write-back (confirm from a
+     * probe racing a user's 放弃): a ref the user explicitly discarded must
+     * never be resurrected as CONFIRMED — that would both lie about "verified"
+     * and un-block a double create. The normal send() path is unaffected (the
+     * PENDING entry it wrote is still in the ledger).
+     */
+    private suspend fun putIfPresent(ref: DispatchRef) {
+        val exists = runCatching { dispatchStore.refs.first().any { it.requestId == ref.requestId } }
+            .getOrDefault(true) // Ledger unreadable: prefer writing (state UNKNOWN/CONFIRMED both honest) over losing the trace.
+        if (exists) dispatchStore.put(ref)
     }
 
     /**

@@ -714,20 +714,9 @@ class CodegClient(
 
     /** Creates a task and returns the full server row (including its id). */
     suspend fun workTaskCreate(folderId: Int, title: String, config: JsonObject): WorkTaskInfo? {
-        val root = sendJsonElement(
-            "work_task_create",
-            buildJsonObject {
-                put("draft", buildJsonObject {
-                    // WorkTaskDraft on the Rust side has NO rename_all: the nested
-                    // draft really is snake_case (folder_id), unlike the outer
-                    // params wrappers (camelCase). serde would reject "folderId"
-                    // with "missing field folder_id" → every dispatch would 4xx.
-                    put("folder_id", folderId)
-                    put("title", title)
-                    put("config", config)
-                })
-            }.toString(),
-        )
+        // createBody: outer CreateParams is camelCase, nested WorkTaskDraft is
+        // snake_case (folder_id) — the one nested struct without rename_all.
+        val root = sendJsonElement("work_task_create", WorkTaskWire.createBody(folderId, title, config).toString())
         return (root as? JsonObject)?.let { WorkTaskInfo.fromWire(it) }
     }
 
@@ -760,18 +749,15 @@ class CodegClient(
 
     /** Accept-without-merge completion (for tasks that changed nothing). */
     suspend fun workTaskComplete(id: Int, deleteWorktree: Boolean = false) {
-        // CompleteParams has no rename_all and no serde default on
-        // delete_worktree — snake_case or 422 (v145 fix; the camelCase key used
-        // to be silently dropped and the call rejected as a missing field).
-        send("work_task_complete", buildJsonObject {
-            put("id", id)
-            put("delete_worktree", deleteWorktree)
-        }.toString())
+        // CompleteParams IS camelCase and deleteWorktree has NO serde default —
+        // omitting it (or sending snake_case, which serde drops) 422s the call.
+        send("work_task_complete", WorkTaskWire.completeBody(id, deleteWorktree).toString())
     }
 
     /** 验收退回：send the task back to the agent with feedback (review → running). */
     suspend fun workTaskReturn(id: Int, feedback: String, intent: String? = null) {
-        // ReturnParams: no rename_all (single-word fields anyway); feedback REQUIRED.
+        // ReturnParams IS camelCase (fields here are single-word, so the casing
+        // is invisible); feedback is REQUIRED — a missing key would 422.
         send("work_task_return", buildJsonObject {
             put("id", id)
             put("feedback", feedback)
@@ -803,20 +789,14 @@ class CodegClient(
 
     /** Delete the task row; the worktree stays unless asked (safe default). */
     suspend fun workTaskDelete(id: Int, deleteWorktree: Boolean = false) {
-        // DeleteParams: no rename_all → snake_case.
-        send("work_task_delete", buildJsonObject {
-            put("id", id)
-            put("delete_worktree", deleteWorktree)
-        }.toString())
+        // DeleteParams IS camelCase (defaulted) — snake_case is silently dropped.
+        send("work_task_delete", WorkTaskWire.deleteBody(id, deleteWorktree).toString())
     }
 
     suspend fun workTaskDefer(id: Int, deferred: Boolean = true) {
         // DeferParams requires `deferred: bool` (no default) — a bare {"id"}
         // would 422 on the server.
-        send("work_task_defer", buildJsonObject {
-            put("id", id)
-            put("deferred", deferred)
-        }.toString())
+        send("work_task_defer", WorkTaskWire.deferBody(id, deferred).toString())
     }
 
     suspend fun workTaskDiff(id: Int, file: String? = null): String {
@@ -866,7 +846,13 @@ class CodegClient(
         // unhealthy instead of painting an empty board that looks like success.
         if (root is JsonNull) return emptyList()
         val arr = root as? JsonArray ?: throw ApiError.Decoding("work_task_list returned non-array body")
-        return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskInfo::fromWire) }
+        val rows = arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskInfo::fromWire) }
+        // Row-level drops are silent by design (one bad field must not kill the
+        // board), but never fully silent: a server version emitting undecodable
+        // rows must leave a trace, or the board "looks fine" while hiding tasks.
+        val dropped = arr.size - rows.size
+        if (dropped > 0) android.util.Log.w("CodegClient", "work_task_list: dropped $dropped undecodable row(s)")
+        return rows
     }
 
     // endregion

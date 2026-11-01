@@ -1161,7 +1161,7 @@
     <string name="task_confirm_return_title">Send back to the agent?</string>
     <string name="task_confirm_return_msg">The task returns to execution and the agent will redo it per your feedback.</string>
     <string name="task_confirm_deliver_title">Deliver as PR?</string>
-    <string name="task_confirm_deliver_msg">Pushes the work branch and opens a pull request; the task is marked done afterwards.</string>
+    <string name="task_confirm_deliver_msg">Pushes the work branch and opens a pull request; the task is marked done afterwards. This can take several minutes — the server waits for the PR.</string>
     <string name="task_confirm_archive_title">Archive this task?</string>
     <string name="task_confirm_archive_msg">Archived tasks are hidden from the board — toggle "Show archived" to find them again.</string>
     <string name="task_confirm_unarchive_title">Unarchive this task?</string>
@@ -1220,6 +1220,7 @@
     <string name="dispatch_section_description">② Task description</string>
     <string name="dispatch_section_target">③ Target project</string>
     <string name="dispatch_agents_failed">Couldn\'t load the agent list</string>
+    <string name="dispatch_folders_failed">Couldn\'t load the project list</string>
     <string name="dispatch_retry">Retry</string>
     <string name="dispatch_agent_auto_note">Auto = the project\'s default agent, applied to this task only.</string>
     <string name="dispatch_branch">Branch</string>

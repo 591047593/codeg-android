@@ -147,27 +147,59 @@ data class WorkTaskChangedFile(
 }
 
 /**
- * Requests. Most `work_task_*` params structs have NO `rename_all` on the
- * server (handlers/work_task.rs) — they eat snake_case and silently ignore
- * camelCase; the camelCase exceptions (DeliverPrParams, DeferParams,
- * DiffParams) are marked per-method below. WorkTaskMerge/Complete's
- * `delete_worktree` has no serde default: sending only the camelCase key used
- * to 422 the whole call (v145 fix).
+ * Requests. EVERY top-level `work_task_*` params struct on the server
+ * (handlers/work_task.rs) carries `#[serde(rename_all = "camelCase")]` — the
+ * wire for these bodies is camelCase, and an unknown key is SILENTLY dropped
+ * while a missing required key 422s (MergeParams/CompleteParams `deleteWorktree`
+ * have no serde default). The snake_case exceptions are the NESTED payloads:
+ * WorkTaskDraft (`folder_id`) and WorkTaskConfig (`prompt_blocks`…) have no
+ * rename_all. (Verified against the server source in 批v146 — an earlier
+ * session had this backwards and briefly broke merge/complete; the wire-key
+ * unit test now pins all of this.)
  */
 object WorkTaskWire {
     fun idBody(id: Int): JsonObject = buildJsonObject { put("id", id) }
 
+    /** Outer CreateParams is camelCase; the nested WorkTaskDraft is NOT —
+     *  `folder_id` really is snake_case (models/work_task.rs, no rename_all). */
+    fun createBody(folderId: Int, title: String, config: JsonObject): JsonObject =
+        buildJsonObject {
+            put("draft", buildJsonObject {
+                put("folder_id", folderId)
+                put("title", title)
+                put("config", config)
+            })
+        }
+
     fun cancelBody(id: Int, deleteWorktree: Boolean = false): JsonObject =
         buildJsonObject {
             put("id", id)
-            put("delete_worktree", deleteWorktree)
+            put("deleteWorktree", deleteWorktree)
         }
 
     fun mergeBody(id: Int, deleteWorktree: Boolean = true, message: String? = null): JsonObject =
         buildJsonObject {
             put("id", id)
-            put("delete_worktree", deleteWorktree)
+            put("deleteWorktree", deleteWorktree)
             message?.let { put("message", it) }
+        }
+
+    fun completeBody(id: Int, deleteWorktree: Boolean = false): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            put("deleteWorktree", deleteWorktree)
+        }
+
+    fun deleteBody(id: Int, deleteWorktree: Boolean = false): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            put("deleteWorktree", deleteWorktree)
+        }
+
+    fun deferBody(id: Int, deferred: Boolean): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            put("deferred", deferred)
         }
 
     fun requeueBody(id: Int, note: String? = null): JsonObject =

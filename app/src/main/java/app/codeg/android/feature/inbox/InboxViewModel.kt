@@ -443,7 +443,13 @@ class InboxViewModel @Inject constructor(
                 )
                 if (matches.size == 1) {
                     val match = matches.single()
-                    dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))
+                    // The ref may have been discarded while the probe was in
+                    // flight — write back only onto a live row, never resurrect
+                    // a tombstone (same rule as DispatchService.confirm).
+                    val stillLive = dispatchStore.refs.first().any { it.requestId == requestId }
+                    if (stillLive) {
+                        dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))
+                    }
                     _ui.value = _ui.value.copy(
                         dispatchError = null,
                         lastCreated = "${ref.serverId}:${match.id}",
@@ -459,13 +465,23 @@ class InboxViewModel @Inject constructor(
                         dispatchError = "服务端找到 ${matches.size} 个同名任务，无法确认归属；请到设备上人工核对后再处理，未确认前勿重新派发",
                     )
                 } else {
-                    // Exactly 0 matches: verified "not created" — this ref alone
-                    // earns the re-dispatch right (任务书 §5.4 未核实不能再次创建).
-                    verifiedNotCreated = true
-                    _ui.value = _ui.value.copy(
-                        dispatchError = "服务端未找到该任务，可重新派发或放弃",
-                        probeClearedIds = _ui.value.probeClearedIds + requestId,
-                    )
+                    // Exactly 0 in-window matches is NOT yet "not created": the
+                    // task may exist outside the window (slow server write,
+                    // clock drift). Only when the whole list has no same-titled
+                    // task in this folder is a re-dispatch safe (§5.4).
+                    val sameTitleAnywhere = tasks.any { it.title == ref.title && it.folderId == ref.folderId }
+                    if (sameTitleAnywhere) {
+                        _ui.value = _ui.value.copy(
+                            dispatchError = "服务端发现同名任务（创建时间不在派发窗口内），无法确认是否本条；未核实前勿重新派发",
+                        )
+                    } else {
+                        // Verified "not created" — this ref alone earns the
+                        // re-dispatch right (任务书 §5.4 未核实不能再次创建).
+                        verifiedNotCreated = true
+                        _ui.value = _ui.value.copy(
+                            dispatchError = "服务端未找到该任务，可重新派发或放弃",
+                        )
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

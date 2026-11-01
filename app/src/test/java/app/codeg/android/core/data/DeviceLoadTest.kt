@@ -173,10 +173,12 @@ class DeviceLoadTest {
         // The skeleton only decides when to stop the full-screen spinner, so it must
         // fire well before the first per-device deadline; the single-device page is
         // wider than the aggregate because the user asked for that device
-        // explicitly — and both stay far below OkHttp's 30s.
+        // explicitly — and both stay far below OkHttp's 30s. (批v146 review: the
+        // aggregate widened 3s→10s because cold DERP relays were marked FAILED;
+        // single moved with it to keep the ordering.)
         assertTrue(AGG_SKELETON_DELAY_MS in 1..AGG_DEVICE_TIMEOUT_MS)
         assertTrue(AGG_DEVICE_TIMEOUT_MS < SINGLE_DEVICE_TIMEOUT_MS)
-        assertTrue(SINGLE_DEVICE_TIMEOUT_MS < 10_000L)
+        assertTrue(SINGLE_DEVICE_TIMEOUT_MS < 30_000L)
         // The folder lookup is a nested, shorter deadline: a slow /folders must not
         // consume the device's whole budget and cost its rows.
         assertTrue(FOLDER_LOOKUP_TIMEOUT_MS in 1..AGG_DEVICE_TIMEOUT_MS)

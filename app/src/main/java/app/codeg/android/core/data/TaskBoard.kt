@@ -32,11 +32,23 @@ val SEGMENT_ORDER = listOf(
 )
 
 /**
+ * Statuses the server's `set_deferred` accepts (work_task_service.rs
+ * DEFERRABLE_STATUSES; web's DEFERRABLE_STATUSES agrees). A stale deferred_at
+ * on any OTHER status must not shelve the row — a deferred-flagged running
+ * task belongs in 进行中 with its cancel action, not in 已完成.
+ */
+val DEFERRABLE_STATUSES = setOf("review", "failed")
+
+/** Web-parity `isDeferred`: the flag only counts on a deferrable status. */
+fun isEffectivelyDeferred(task: WorkTaskInfo): Boolean =
+    task.deferred && task.status in DEFERRABLE_STATUSES
+
+/**
  * Map one task to its display segment, or null when it belongs to the unknown
  * section (unrecognized status, or a stray status="archived" row being shown).
  */
 fun taskSegmentOf(task: WorkTaskInfo): TaskSegment? = when {
-    task.deferred -> TaskSegment.DONE // 上游规则：搁置的 review/failed 也归 Done
+    isEffectivelyDeferred(task) -> TaskSegment.DONE // 上游规则：搁置的 review/failed 也归 Done
     else -> when (task.status) {
         "todo", "queued" -> TaskSegment.TODO
         "preparing", "running" -> TaskSegment.RUNNING

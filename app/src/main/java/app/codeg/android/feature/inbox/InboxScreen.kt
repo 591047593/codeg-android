@@ -80,7 +80,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * The idea inbox + dispatch wizard (batch v140, rebuilt 批v145 阶段4+5). Ideas
+ * The idea inbox + dispatch wizard (batch v140, rebuilt 批v146 阶段4+5). Ideas
  * are local drafts in a lightweight memo-style card (time + ⋯ menu + one 派发
  * action); dispatch runs the shared pipeline with the 任务书 §6.2 form order:
  * 设备与 Agent → 任务描述 → 目标（项目 + 分支） → 创建. An idea leaves the
@@ -105,6 +105,10 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
     // so they route through a confirmation dialog first.
     var confirmRef by remember { mutableStateOf<DispatchRef?>(null) }
     var confirmRedispatch by remember { mutableStateOf(false) }
+    // Success dialog lives HERE, not in DispatchSheet: a confirmed dispatch
+    // deletes the idea, which nulls [dispatching] and unmounts the whole
+    // sheet — a dialog inside it would vanish before the user reads it.
+    var dispatchResult by remember { mutableStateOf<DispatchRef?>(null) }
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -251,6 +255,27 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
             target = target,
             ui = ui,
             onClose = { dispatchingId = null },
+            onResult = { dispatchResult = it },
+        )
+    }
+
+    dispatchResult?.let { ref ->
+        AlertDialog(
+            onDismissRequest = { dispatchResult = null; dispatchingId = null },
+            title = { Text(stringResource(R.string.dispatch_ok, ref.remoteTodoId ?: 0)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("${ref.serverName} · ${ref.title}")
+                    ui.dispatchError?.let { note ->
+                        Text(note, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { dispatchResult = null; dispatchingId = null }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
         )
     }
 
@@ -492,6 +517,7 @@ private fun DispatchSheet(
     target: DispatchTargets,
     ui: InboxViewModel.UiState,
     onClose: () -> Unit,
+    onResult: (DispatchRef) -> Unit,
 ) {
     var device by rememberSaveable { mutableStateOf<String?>(null) }
     var folderId by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -505,6 +531,8 @@ private fun DispatchSheet(
     var showTimePicker by remember { mutableStateOf(false) }
     var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var branchSheet by remember { mutableStateOf(false) }
+    // Kept for the dispatchError suppression below (the success dialog renders
+    // at screen level — see [dispatchResult] there).
     var result by remember { mutableStateOf<DispatchRef?>(null) }
     // Composition-time "is the schedule in the past" goes stale as the wall
     // clock advances (no state change → no recompose → button stays enabled).
@@ -527,6 +555,30 @@ private fun DispatchSheet(
         branch = null
         val d = device
         if (d != null && folder != null) viewModel.loadBranches(d, folder)
+    }
+    // Process-death restore: rememberSaveable brings back device/folder/agent
+    // but NOT the loaded folders/agents (the loader lives in the VM, which died
+    // with the process) — without this the restored sheet shows an empty
+    // project wheel forever. Keyed on device only (fires once per device; the
+    // duplicate when onSelect already loaded is the same idempotent request).
+    LaunchedEffect(device) {
+        val d = device ?: return@LaunchedEffect
+        if (target.folders.isEmpty() && !target.foldersLoading && target.error == null) {
+            viewModel.loadTarget(d)
+        }
+    }
+    // A restored/default agent must actually exist on the device: once the
+    // real agent list lands, drop a selection it doesn't contain.
+    LaunchedEffect(target.agents) {
+        val a = agent
+        if (a != null && target.agents.isNotEmpty() && a !in target.agents) agent = null
+    }
+    // Same for a restored folderId the loaded project list doesn't contain.
+    LaunchedEffect(target.folders) {
+        val fid = folderId
+        if (fid != null && target.folders.isNotEmpty() && target.folders.none { it.id == fid }) {
+            folderId = null
+        }
     }
 
     ModalBottomSheet(
@@ -643,6 +695,19 @@ private fun DispatchSheet(
                     }
                 }
             }
+            if (target.foldersError) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.dispatch_folders_failed),
+                        color = CodegTheme.colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { device?.let { viewModel.loadTarget(it) } }) {
+                        Text(stringResource(R.string.dispatch_retry))
+                    }
+                }
+            }
             target.error?.let {
                 Text(
                     it,
@@ -686,7 +751,11 @@ private fun DispatchSheet(
                         selectedIndex = target.folders.indexOfFirst { it.id == folderId }.coerceAtLeast(0),
                         onSelect = { idx -> folderId = target.folders.getOrNull(idx)?.id },
                         emptyText = stringResource(
-                            if (target.foldersLoading) R.string.dispatch_defaults_loading else R.string.dispatch_no_folder,
+                            when {
+                                target.foldersLoading -> R.string.dispatch_defaults_loading
+                                target.foldersError -> R.string.dispatch_folders_failed
+                                else -> R.string.dispatch_no_folder
+                            },
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -813,7 +882,10 @@ private fun DispatchSheet(
                         description = description,
                         baseBranch = effectiveBranch,
                         scheduleLocalMillis = if (scheduled && scheduleMillis > 0) scheduleMillis else null,
-                        onDone = { ref -> result = ref },
+                        // The dialog rendering the outcome lives at screen level
+                        // (it must survive the sheet unmounting when the idea
+                        // is deleted on CONFIRMED).
+                        onDone = { ref -> result = ref; onResult(ref) },
                     )
                 },
                 enabled = canDispatch,
@@ -855,24 +927,6 @@ private fun DispatchSheet(
                 }
             }
         }
-    }
-
-    result?.let { ref ->
-        AlertDialog(
-            onDismissRequest = { result = null; onClose() },
-            title = { Text(stringResource(R.string.dispatch_ok, ref.remoteTodoId ?: 0)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${ref.serverName} · ${ref.title}")
-                    ui.dispatchError?.let { note ->
-                        Text(note, style = MaterialTheme.typography.bodySmall, color = CodegTheme.colors.textSecondary)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { result = null; onClose() }) { Text(stringResource(android.R.string.ok)) }
-            },
-        )
     }
 
     if (showDatePicker) {

@@ -67,10 +67,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.data.DeviceLoadStatus
+import app.codeg.android.core.data.DEFERRABLE_STATUSES
 import app.codeg.android.core.data.SEGMENT_ORDER
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.TaskStatusTone
+import app.codeg.android.core.data.isEffectivelyDeferred
 import app.codeg.android.core.data.taskStatusUi
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -96,7 +98,15 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     val segment = runCatching { TaskSegment.valueOf(segmentName) }.getOrDefault(TaskSegment.TODO)
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var folderSheet by remember { mutableStateOf(false) }
-    var detailEntry by remember { mutableStateOf<TaskBoardEntry?>(null) }
+    // The detail sheet holds a KEY, not a row snapshot: the 25s poll keeps
+    // mutating the board, and a frozen entry would keep showing stale status
+    // and stale actions (e.g. merge buttons on a task someone else already
+    // merged). Resolve live from the whole board each recomposition.
+    var detailKey by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    val detailEntry = detailKey?.let { (sid, tid) ->
+        (board.segments.values.flatten() + board.unknown)
+            .firstOrNull { it.serverId == sid && it.task.id == tid }
+    }
     var confirm by remember { mutableStateOf<ConfirmAction?>(null) }
 
     // The 25s poll runs only while the board is actually on screen: entering
@@ -180,6 +190,21 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                     )
                 }
             }
+            // Non-error outcome note (e.g. merge queued behind the folder's
+            // serial merge slot): tap to dismiss, same lifecycle as actionError.
+            ui.actionNote?.let { note ->
+                item(key = "action-note") {
+                    Text(
+                        text = note,
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp)
+                            .clickable { viewModel.clearActionError() },
+                    )
+                }
+            }
             if (ui.archivedHidden > 0) {
                 item(key = "archived-note") {
                     Text(
@@ -222,7 +247,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                     folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
                     busy = ui.busyKey != null,
                     spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
-                    onOpenDetail = { detailEntry = entry },
+                    onOpenDetail = { detailKey = entry.serverId to entry.task.id },
                     onAction = { confirm = it },
                 )
             }
@@ -253,7 +278,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                         folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
                         busy = ui.busyKey != null,
                         spinning = false,
-                        onOpenDetail = { detailEntry = entry },
+                        onOpenDetail = { detailKey = entry.serverId to entry.task.id },
                         onAction = { confirm = it },
                     )
                 }
@@ -285,7 +310,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
 
     detailEntry?.let { entry ->
         ModalBottomSheet(
-            onDismissRequest = { detailEntry = null },
+            onDismissRequest = { detailKey = null },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             TaskDetailSheet(
@@ -297,7 +322,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                 onAction = { confirm = it },
                 onOpen = { viewModel.loadDetail(entry.serverId, entry.task.id) },
                 onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
-                onDismiss = { detailEntry = null },
+                onDismiss = { detailKey = null },
             )
         }
     }
@@ -622,13 +647,13 @@ private fun TaskCard(
                 }
                 Spacer(Modifier.weight(1f))
                 primaryAction(task.status)?.let { action ->
-                    if (!busy || spinning) {
-                        MiniButton(
-                            label = stringResource(action.labelRes),
-                            danger = action.danger,
-                            enabled = !busy,
-                        ) { onAction(action.toConfirm(entry)) }
-                    }
+                    // Always composed, only disabled: removing the button on any
+                    // in-flight action made every card's row height jump.
+                    MiniButton(
+                        label = stringResource(action.labelRes),
+                        danger = action.danger,
+                        enabled = !busy,
+                    ) { onAction(action.toConfirm(entry)) }
                 }
             }
             Text(
@@ -764,14 +789,19 @@ private fun TaskDetailSheet(
                     SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
             }
             when {
-                // 搁置 applies to settled states (review/failed/canceled/done per
-                // upstream); unshelve shows whenever the flag is set.
-                task.deferred -> SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
-                task.status in setOf("review", "failed", "canceled", "cancelled", "done") ->
+                // 搁置 only where the server accepts it (set_deferred filters to
+                // DEFERRABLE = review/failed elsewhere — the button would always
+                // no-op with a 4xx); unshelve shows whenever the flag is set.
+                isEffectivelyDeferred(task) ->
+                    SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
+                task.status in DEFERRABLE_STATUSES ->
                     SheetAction(R.string.task_action_defer, busy) { onAction(ConfirmAction.DEFER(entry)) }
             }
             when {
-                task.archivedAt != null -> SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
+                // status-only archived rows (old server builds) get an exit too:
+                // unarchive clears archived_at; the row then shows by its status.
+                task.archivedAt != null || task.status == "archived" ->
+                    SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
                 task.status == "done" || task.status == "canceled" || task.status == "cancelled" ->
                     SheetAction(R.string.task_action_archive, busy) { onAction(ConfirmAction.ARCHIVE(entry)) }
             }

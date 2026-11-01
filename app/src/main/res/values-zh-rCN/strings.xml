@@ -1147,7 +1147,7 @@
     <string name="task_confirm_return_title">退回给 Agent？</string>
     <string name="task_confirm_return_msg">任务将带着反馈回到执行，Agent 会按反馈重做。</string>
     <string name="task_confirm_deliver_title">交付为 PR？</string>
-    <string name="task_confirm_deliver_msg">将推送工作分支并创建 Pull Request，任务随后标记为完成。</string>
+    <string name="task_confirm_deliver_msg">将推送工作分支并创建 Pull Request，任务随后标记为完成。服务端会等待 PR 出门，可能需要数分钟。</string>
     <string name="task_confirm_archive_title">归档该任务？</string>
     <string name="task_confirm_archive_msg">归档后任务从看板隐藏，可在「显示已归档」里找回。</string>
     <string name="task_confirm_unarchive_title">取消归档该任务？</string>
@@ -1206,6 +1206,7 @@
     <string name="dispatch_section_description">② 任务描述</string>
     <string name="dispatch_section_target">③ 目标项目</string>
     <string name="dispatch_agents_failed">Agent 列表获取失败</string>
+    <string name="dispatch_folders_failed">项目列表获取失败</string>
     <string name="dispatch_retry">重试</string>
     <string name="dispatch_agent_auto_note">自动 = 使用项目默认 Agent，仅对本任务生效。</string>
     <string name="dispatch_branch">分支</string>

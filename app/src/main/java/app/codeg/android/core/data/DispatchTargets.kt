@@ -23,6 +23,11 @@ data class DispatchTargets(
      *  the form. Dispatch with 自动 stays possible — the agent field is optional
      *  upstream, so a dead list must not dead-end the whole panel. */
     val agentsError: Boolean = false,
+    /** Project listing failed for this device — same treatment as [agentsError]:
+     *  short line + retry in the sheet; raw error stays in the log. Unlike the
+     *  agent field there is no fallback (a dispatch needs a folder), so the
+     *  panel is blocked until the retry succeeds. */
+    val foldersError: Boolean = false,
 )
 
 /**
@@ -53,7 +58,11 @@ class DispatchTargetLoader @Inject constructor(
                     ?: e?.message ?: "目标设备不可用",
             )
         }
-        val folders = runCatching { client.listFolders() }.getOrElse { emptyList() }
+        val foldersResult = runCatching { client.listFolders() }
+        val folders = foldersResult.getOrElse { e ->
+            android.util.Log.w("DispatchTargetLoader", "list_folders failed: ${e.message}")
+            emptyList()
+        }
         val agentsResult = runCatching { client.acpListAgents() }
         // §6.3: the raw ACP error (e.g. "No models are available") is diagnostic
         // detail — log it, tell the user only "agent list unavailable", and let
@@ -72,6 +81,7 @@ class DispatchTargetLoader @Inject constructor(
             agents = agents,
             foldersLoading = foldersLoading,
             agentsError = agentsResult.isFailure,
+            foldersError = foldersResult.isFailure,
         )
     }
 }

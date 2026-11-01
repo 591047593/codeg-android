@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -91,6 +92,9 @@ class TaskHubViewModel @Inject constructor(
         /** serverId:taskId of an in-flight action, for row spinners. */
         val busyKey: String? = null,
         val actionError: String? = null,
+        /** Non-fatal action outcome worth telling (merge queued behind the
+         *  folder slot) — styled as info, cleared with the next action. */
+        val actionNote: String? = null,
         /** False until the first fetch round completes: without it the board
          * flashes "no tasks" while the spinners are still running. */
         val hasLoaded: Boolean = false,
@@ -159,6 +163,9 @@ class TaskHubViewModel @Inject constructor(
                 true
             }
             .distinctUntilChanged()
+            // Sorting/filtering a few thousand rows belongs off the main thread:
+            // every 25s poll emission and every keystroke re-runs this block.
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskBoardData())
 
     /** Folder names present on the currently scoped devices, sorted — the picker. */
@@ -369,8 +376,10 @@ class TaskHubViewModel @Inject constructor(
                     val result = runCatching {
                         // A null here is a TIMEOUT, not "zero tasks" — collapsing the two
                         // would mark a slow device healthy and wipe its rows (v139 H3).
+                        val client = repository.client(profile)
+                            ?: throw IllegalStateException("Token 缺失，无法加载该设备")
                         withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
-                            repository.client(profile)?.workTaskList()
+                            client.workTaskList()
                         } ?: throw java.util.concurrent.TimeoutException("device timeout")
                     }
                     if (gen != generation) return@launch
@@ -425,7 +434,7 @@ class TaskHubViewModel @Inject constructor(
         // Reserve the slot synchronously (main thread): setting it inside the
         // coroutine would let a second tap slip past the gate before launch runs
         // and double-submit merge/cancel (v139 H2).
-        _ui.update { it.copy(busyKey = key(serverId, taskId), actionError = null) }
+        _ui.update { it.copy(busyKey = key(serverId, taskId), actionError = null, actionNote = null) }
         detailEpoch += 1
         val epoch = detailEpoch
         viewModelScope.launch {
@@ -440,6 +449,11 @@ class TaskHubViewModel @Inject constructor(
                     if (!state.details.containsKey(serverId)) state
                     else state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
                 }
+                // The user's action IS the newest round: bump the generation so a
+                // poll that started mid-action can't invalidate this refresh
+                // (the board would otherwise show the pre-action state for up to
+                // one 25s poll cycle — inviting a second click).
+                generation += 1
                 fetchDevices(setOf(serverId))
             } catch (e: CancellationException) {
                 throw e
@@ -462,7 +476,17 @@ class TaskHubViewModel @Inject constructor(
     fun requeue(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskRequeue(taskId) }
 
     fun merge(serverId: String, taskId: Int, message: String? = null) =
-        post(serverId, taskId) { it.workTaskMerge(taskId, message) }
+        post(serverId, taskId) { client ->
+            // work_task_merge returns Json<bool>: true = queued behind the
+            // folder's merge slot (same-project merges run one at a time).
+            // Without this note the card just sits in 等你处理 and users click
+            // again — the queue reply is the difference between "queued" and
+            // "ignored".
+            val queued = client.workTaskMerge(taskId, message)
+            if (queued) {
+                _ui.update { it.copy(actionNote = "已加入合并队列：同项目任务正在串行合并，稍后自动执行") }
+            }
+        }
 
     fun complete(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskComplete(taskId) }
 
@@ -500,7 +524,12 @@ class TaskHubViewModel @Inject constructor(
                 val existing = _ui.value.details[serverId]?.get(taskId)
                 if (withDiff && existing?.diffLoading != true && existing?.diff == null && existing?.diffError == null) {
                     _ui.update { setDiffLoading(it, serverId, taskId, true) }
-                    runCatching { client.workTaskDiff(taskId) }
+                    val diffText = runCatching { client.workTaskDiff(taskId) }
+                    // Same guard as the events branch: an action ran while the
+                    // diff was in flight and dropped this detail — writing the
+                    // stale diff back would resurrect the dropped snapshot.
+                    if (epoch != detailEpoch) return@launch
+                    diffText
                         .onSuccess { text -> _ui.update { setDiff(it, serverId, taskId, text, null) } }
                         .onFailure { e -> _ui.update { setDiff(it, serverId, taskId, null, e.message ?: "Diff 加载失败") } }
                 }
@@ -557,7 +586,8 @@ class TaskHubViewModel @Inject constructor(
         )
     }
 
-    fun clearActionError() { _ui.update { it.copy(actionError = null) } }
+    /** Clears both the error and the non-error outcome note (merge queued…). */
+    fun clearActionError() { _ui.update { it.copy(actionError = null, actionNote = null) } }
 }
 
 private inline fun MutableStateFlow<TaskHubViewModel.UiState>.update(transform: (TaskHubViewModel.UiState) -> TaskHubViewModel.UiState) {

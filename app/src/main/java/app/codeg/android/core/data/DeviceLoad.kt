@@ -20,12 +20,15 @@ data class DeviceLoad(
 
 /**
  * Per-device deadline for the aggregate feeds. Tailscale direct is usually
- * <200ms and DERP relay 300–800ms; 3s covers a cold device without letting a
- * powered-off one stall the list. Single-device pages get a slightly wider
- * [SINGLE_DEVICE_TIMEOUT_MS] because the user asked for that device explicitly.
+ * <200ms and DERP relay 300–800ms; devices commit independently, so a longer
+ * deadline never stalls the list — it only delays one device's FAILED banner.
+ * 10s (批v146 review): 3s marked healthy-but-cold relayed devices FAILED on
+ * the first round, dropping rows the user then had to manually refresh.
+ * Single-device pages get a slightly wider [SINGLE_DEVICE_TIMEOUT_MS] because
+ * the user asked for that device explicitly.
  */
-const val AGG_DEVICE_TIMEOUT_MS: Long = 3_000L
-const val SINGLE_DEVICE_TIMEOUT_MS: Long = 4_000L
+const val AGG_DEVICE_TIMEOUT_MS: Long = 10_000L
+const val SINGLE_DEVICE_TIMEOUT_MS: Long = 12_000L
 
 /**
  * How long an aggregate may stay completely empty before it stops showing the
