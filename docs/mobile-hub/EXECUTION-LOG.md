@@ -54,3 +54,10 @@
 - 新功能二（三列滚轮选择器）：新组件 feature/common/WheelColumn（LazyColumn+rememberSnapFlingBehavior：松手自动吸附；中项放大1.2x/accent 高亮，上下项缩小渐隐；纯滚动无按钮样式）。派发 sheet 与交接 sheet 的三行 FilterChip 全部替换为三列并排滚轮（每列独立上下滑，列头小标签）。
 - 测试：双 flavor 编译绿 + 454 单测绿（testLegacy/testModern debug；Release 首跑一个既有 ServerStoreTest 超时抖动，rerun 绿）。
 - 发版：tag v1.0.1-fengx.34（versionCode 36）。
+
+## 批v145：会话内文件上传（系统文件管理器导入 Markdown/PRD/Plan 等文档）（2026-11-02）
+- 背景：主人要求——会话对话框此前只支持添加图片，左下角「+」只有快捷消息/专家/命令；需求是补齐「上传文件」，拉起安卓文件管理器导入文档并带进会话，方便喂 Markdown/PRD/Plan。
+- 方案（图片逻辑零改动，文件走独立通道）：「+」面板顶部新增「上传文件」入口（accent 图标 + 说明副标题），点击关闭 sheet 并拉起 `ActivityResultContracts.OpenMultipleDocuments()`（`*/*`，任何 provider 可选）；有工作目录时选中即在后台用 `upload_workspace_file` multipart 上传到会话工作目录 `uploads/`（与项目文件浏览器同一条链），发送时在 prompt 追加「附件「名」已上传到 <绝对路径>，请直接读取」提示块，agent 可直接读文件；无工作目录时降级——≤200KB 的文本/Markdown 内联进 prompt 代码块。
+- 实现：`FileAttachment`（name/size/absolutePath/inlineContent + isInline）；VM 新增 `addFileAttachments/removeFileAttachment`（SAF 取 displayName/size，逐文件失败计数不中断）与 `fileSummaryNote`（乐观气泡里的人类可读行）/`filePromptAppendix`（机器可读块）；`SessionDetailUi.fileAttachments`；发送链路 send/runSend/attemptSend 全量带参，图片与文件互不干扰（生成式发送仍不消费附件）；输入框上方渲染可删文件 chips（名称+大小/内联标记）；`canSendOverride` 计入文件；首条消息标题空文本时回落文件名。上限 5 文件 × 20MB。
+- 门禁：`:app:compileModernDebugKotlin` + `:app:compileLegacyDebugKotlin` + `testLegacyDebugUnitTest` 全绿。
+- 分支生命周期：Codeg task 分支 `task/2`（worktree `android-task-2`）→ 合并回 main（merge commit 9bf397e，`main..task/2=0`）→ 删除 worktree 与分支，无孤儿目录。版本号/发版待主人授权。
