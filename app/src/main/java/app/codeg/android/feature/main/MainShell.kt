@@ -852,6 +852,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         else nav.navigate(handoffRoute(folderId, ref))
                     },
                     onOpenConversation = { id -> openConversationAndMark(selectedProfile?.id, id) },
+                    // 批v149 会话模式派发：派发确认后自动跳到新会话。与 onOpenRow
+                    // 同一舞步——先落 owning 设备（会话详情读 selectedProfile 恰好
+                    // 一次），再推详情；普通 push（非 replaceTop），Back 回到收件箱。
+                    onOpenSession = { serverId, conversationId ->
+                        handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                    },
                     onManageProjects = {
                         ProjectSettingsBus.open()
                         onTab(HomeTab.SETTINGS)

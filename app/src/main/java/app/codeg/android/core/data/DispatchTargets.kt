@@ -62,7 +62,11 @@ class DispatchTargetLoader @Inject constructor(
         val folders = foldersResult.getOrElse { e ->
             android.util.Log.w("DispatchTargetLoader", "list_folders failed: ${e.message}")
             emptyList()
-        }
+            // 批v149：worktree 子目录（parentId != null）不是合法派发目标——服务端
+            // work_task create 明确拒绝（"tasks must target a project folder, not a
+            // worktree"），会话模式也只应落在项目根。复用新建会话选择器的同一谓词，
+            // 派发单/交接单/派发默认设置三处共用本 loader，一处过滤全部生效。
+        }.let(app.codeg.android.core.model.FolderVisibility::filterTopLevel)
         val agentsResult = runCatching { client.acpListAgents() }
         // §6.3: the raw ACP error (e.g. "No models are available") is diagnostic
         // detail — log it, tell the user only "agent list unavailable", and let

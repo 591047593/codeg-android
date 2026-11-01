@@ -346,6 +346,10 @@ class TaskHubViewModel @Inject constructor(
                         val folders = runCatching {
                             repository.client(profile)?.listFolders().orEmpty()
                         }.getOrDefault(emptyList())
+                            // 批v149：worktree 子目录不进 folderNames——任务的 folder_id
+                            // 恒为项目根（服务端 attach_worktree 写的是独立的
+                            // worktree_folder_id 列），worktree 名字只会污染过滤选择器。
+                            .filter { it.parentId == null }
                         if (folders.isNotEmpty()) {
                             _ui.update { state ->
                                 state.copy(

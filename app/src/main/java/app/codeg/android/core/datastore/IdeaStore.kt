@@ -97,6 +97,9 @@ data class DispatchRef(
      * Idea dispatches true; handoff dispatches false (receiving side decides).
      * Default true keeps pre-field ledger rows (idea-era) behaving as before. */
     val autoStart: Boolean = true,
+    /** 批v149 会话模式：remoteTodoId 实为会话 id，探针走会话列表而非任务列表，
+     * 成功反馈与重派语义随之切换。默认 false 保持旧账本行按任务解读。 */
+    val sessionMode: Boolean = false,
 )
 
 @Singleton

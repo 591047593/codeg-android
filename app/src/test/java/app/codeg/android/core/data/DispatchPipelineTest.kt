@@ -68,4 +68,51 @@ class DispatchPipelineTest {
         // The same wall clock in Shanghai must produce the same absolute instant.
         assertEquals(millis, Instant.parse(utc).toEpochMilli())
     }
+
+    // 批v149 会话模式探针：与任务探针同语义，匹配域是会话列表。
+
+    private fun conv(
+        id: Int,
+        title: String?,
+        folderId: Int,
+        createdAt: Instant,
+    ) = app.codeg.android.core.model.ConversationSummary(
+        id = id,
+        folderId = folderId,
+        title = title,
+        agentType = app.codeg.android.core.model.AgentType.CLAUDE_CODE,
+        status = app.codeg.android.core.model.ConversationStatus.COMPLETED,
+        createdAt = createdAt,
+        updatedAt = createdAt,
+    )
+
+    @Test
+    fun `find created conversation matches title folder and window`() {
+        val windowStart = Instant.parse("2026-11-01T00:00:00Z")
+        val windowEnd = Instant.parse("2026-11-01T01:00:00Z")
+        val c = conv(9, "My Idea", 3, Instant.parse("2026-11-01T00:10:00Z"))
+        val matches = DispatchPipeline.findCreatedConversations(listOf(c), "My Idea", 3, windowStart, windowEnd)
+        assertEquals(listOf(9), matches.map { it.id })
+        // wrong title
+        assertEquals(0, DispatchPipeline.findCreatedConversations(listOf(c), "Other", 3, windowStart, windowEnd).size)
+        // outside window
+        assertEquals(
+            0,
+            DispatchPipeline.findCreatedConversations(
+                listOf(c), "My Idea", 3,
+                Instant.parse("2026-11-02T00:00:00Z"), Instant.parse("2026-11-02T01:00:00Z"),
+            ).size,
+        )
+        // wrong folder
+        assertEquals(0, DispatchPipeline.findCreatedConversations(listOf(c), "My Idea", 4, windowStart, windowEnd).size)
+        // untitled rows can never be attributed (fail-safe)
+        assertEquals(
+            0,
+            DispatchPipeline.findCreatedConversations(
+                listOf(c.copy(title = null)), "My Idea", 3, windowStart, windowEnd,
+            ).size,
+        )
+        // blank needle matches nothing
+        assertEquals(0, DispatchPipeline.findCreatedConversations(listOf(c), "  ", 3, windowStart, windowEnd).size)
+    }
 }

@@ -273,6 +273,9 @@ class InboxViewModel @Inject constructor(
         onDone: (ref: DispatchRef) -> Unit,
         /** Immediate dispatches start the task after create (idea path). */
         autoStart: Boolean = true,
+        /** 批v149 会话模式：目标是直接创建会话（remoteTodoId=会话 id），
+         * 定时/自动开始不适用；成功后 UI 侧负责跳转会话并发送首条指令。 */
+        sessionMode: Boolean = false,
         /** On a hard (non-ambiguous) failure, put this ref back as UNKNOWN — used by
          * redispatch so a failed re-send never destroys the only trace of the
          * original ambiguous request. */
@@ -331,6 +334,7 @@ class InboxViewModel @Inject constructor(
                         baseBranch = baseBranch,
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = autoStart,
+                        sessionMode = sessionMode,
                         restoreOnHardFail = restoreOnHardFail,
                     ),
                 )
@@ -417,11 +421,6 @@ class InboxViewModel @Inject constructor(
                     _ui.value = _ui.value.copy(dispatchError = "设备不可用，无法检查")
                     return@launch
                 }
-                val result = runCatching { client.workTaskList() }
-                val tasks = result.getOrElse {
-                    _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
-                    return@launch
-                }
                 val started = (ref.dispatchedAtEpochMs?.let { Instant.ofEpochMilli(it) }
                     ?: Instant.now().minusSeconds(600))
                     // The window compares the PHONE's send moment against the SERVER's
@@ -438,48 +437,73 @@ class InboxViewModel @Inject constructor(
                     Instant.now().plusSeconds(600),
                     refDispatched.plusSeconds(3_600),
                 )
-                val matches = DispatchPipeline.findCreatedTasks(
-                    tasks, ref.title, ref.folderId, started, windowEnd,
-                )
-                if (matches.size == 1) {
-                    val match = matches.single()
+                // 批v149：会话模式的探针域是会话列表——任务列表永远"查无此任务"，
+                // 会把一个可能已创建的会话误判为未创建，直接诱发重派 → 重复会话。
+                data class ProbeHits(val ids: List<Int>, val sameTitleAnywhere: Boolean)
+                val hits = if (ref.sessionMode) {
+                    runCatching { client.listConversations(search = ref.title) }.getOrElse {
+                        _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
+                        return@launch
+                    }.let { convs ->
+                        ProbeHits(
+                            DispatchPipeline.findCreatedConversations(
+                                convs, ref.title, ref.folderId, started, windowEnd,
+                            ).map { it.id },
+                            convs.any { it.title == ref.title && it.folderId == ref.folderId },
+                        )
+                    }
+                } else {
+                    runCatching { client.workTaskList() }.getOrElse {
+                        _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
+                        return@launch
+                    }.let { tasks ->
+                        ProbeHits(
+                            DispatchPipeline.findCreatedTasks(
+                                tasks, ref.title, ref.folderId, started, windowEnd,
+                            ).map { it.id },
+                            tasks.any { it.title == ref.title && it.folderId == ref.folderId },
+                        )
+                    }
+                }
+                val noun = if (ref.sessionMode) "会话" else "任务"
+                if (hits.ids.size == 1) {
+                    val matchId = hits.ids.single()
                     // The ref may have been discarded while the probe was in
                     // flight — write back only onto a live row, never resurrect
                     // a tombstone (same rule as DispatchService.confirm).
                     val stillLive = dispatchStore.refs.first().any { it.requestId == requestId }
                     if (stillLive) {
-                        dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))
+                        dispatchStore.put(ref.copy(remoteTodoId = matchId, state = DispatchState.CONFIRMED))
                     }
                     _ui.value = _ui.value.copy(
                         dispatchError = null,
-                        lastCreated = "${ref.serverId}:${match.id}",
+                        lastCreated = "${ref.serverId}:$matchId",
                         // Resolved as created — definitely not clear to re-send.
                         probeClearedIds = _ui.value.probeClearedIds - requestId,
                     )
-                } else if (matches.size > 1) {
+                } else if (hits.ids.size > 1) {
                     // Multiple same-titled candidates: claiming one risks binding
                     // the wrong id. Stay UNKNOWN — and do NOT say "not found",
                     // which invites a re-dispatch (double create). The task
                     // almost certainly EXISTS.
                     _ui.value = _ui.value.copy(
-                        dispatchError = "服务端找到 ${matches.size} 个同名任务，无法确认归属；请到设备上人工核对后再处理，未确认前勿重新派发",
+                        dispatchError = "服务端找到 ${hits.ids.size} 个同名$noun，无法确认归属；请到设备上人工核对后再处理，未确认前勿重新派发",
                     )
                 } else {
                     // Exactly 0 in-window matches is NOT yet "not created": the
                     // task may exist outside the window (slow server write,
                     // clock drift). Only when the whole list has no same-titled
                     // task in this folder is a re-dispatch safe (§5.4).
-                    val sameTitleAnywhere = tasks.any { it.title == ref.title && it.folderId == ref.folderId }
-                    if (sameTitleAnywhere) {
+                    if (hits.sameTitleAnywhere) {
                         _ui.value = _ui.value.copy(
-                            dispatchError = "服务端发现同名任务（创建时间不在派发窗口内），无法确认是否本条；未核实前勿重新派发",
+                            dispatchError = "服务端发现同名$noun（创建时间不在派发窗口内），无法确认是否本条；未核实前勿重新派发",
                         )
                     } else {
                         // Verified "not created" — this ref alone earns the
                         // re-dispatch right (任务书 §5.4 未核实不能再次创建).
                         verifiedNotCreated = true
                         _ui.value = _ui.value.copy(
-                            dispatchError = "服务端未找到该任务，可重新派发或放弃",
+                            dispatchError = "服务端未找到该$noun，可重新派发或放弃",
                         )
                     }
                 }
@@ -560,6 +584,9 @@ class InboxViewModel @Inject constructor(
                 scheduleLocalMillis = ref.scheduleLocalMillis
                     ?.takeIf { it > System.currentTimeMillis() }
                     ?: scheduleLocalMillis,
+                // 会话型未知单重派必须仍是会话——否则一条"可能已建会话"的
+                // 记录会在任务板上再落一个任务（跨模式重复创建）。
+                sessionMode = ref.sessionMode,
                 onDone = {},
                 restoreOnHardFail = ref,
             )

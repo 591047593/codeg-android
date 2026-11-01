@@ -1232,6 +1232,14 @@
     <string name="dispatch_branch_failed">Branch list unavailable — dispatch still uses the project default. Tap the row to retry.</string>
     <string name="dispatch_pick_branch">Pick branch</string>
     <string name="dispatch_unknown_need_probe">Run "Check server" first — re-dispatch unlocks only after the server confirms the task was not created.</string>
+    <!-- 批v149 执行方式（会话 / 任务） -->
+    <string name="dispatch_mode">Run as</string>
+    <string name="dispatch_mode_session">Session</string>
+    <string name="dispatch_mode_session_note">Open a session in the project, no worktree</string>
+    <string name="dispatch_mode_task">Task</string>
+    <string name="dispatch_mode_task_note">Work task with its own worktree branch</string>
+    <string name="dispatch_session_note">Session mode: after dispatch the session opens automatically and the description below is sent as its first prompt. Branch and schedule don\'t apply.</string>
+    <string name="dispatch_session_desc_required">Description is required in session mode — it becomes the first prompt.</string>
     <!-- v141 handoff -->
     <string name="handoff_title">Cross-device session handoff</string>
     <string name="handoff_source_line">From: %1$s · %2$s · %3$s</string>

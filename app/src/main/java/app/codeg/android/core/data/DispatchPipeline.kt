@@ -1,5 +1,6 @@
 package app.codeg.android.core.data
 
+import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.WorkTaskInfo
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -97,6 +98,28 @@ object DispatchPipeline {
     private fun createdAtInRange(task: WorkTaskInfo, start: Instant, end: Instant): Boolean {
         val created = task.createdAt?.let(::parseTimestamp) ?: return false
         return !created.isBefore(start) && !created.isAfter(end)
+    }
+
+    /**
+     * 批v149 会话模式的 UNKNOWN 探针：语义与 [findCreatedTasks] 完全一致，只是
+     * 匹配域换成会话列表（标题 + folderId + createdAt 窗口）。返回的列表同样由
+     * 调用方区分 0（可能未创建）与 >1（已创建但归属不明）。
+     */
+    fun findCreatedConversations(
+        conversations: List<ConversationSummary>,
+        title: String,
+        folderId: Int,
+        windowStart: Instant,
+        windowEnd: Instant,
+    ): List<ConversationSummary> {
+        if (title.isBlank()) return emptyList()
+        return conversations.filter { conv ->
+            // Untitled rows can't be attributed to our request (we always create
+            // with a title); leaving them unmatched keeps the ref UNKNOWN.
+            conv.title == title &&
+                conv.folderId == folderId &&
+                !conv.createdAt.isBefore(windowStart) && !conv.createdAt.isAfter(windowEnd)
+        }
     }
 
     /** RFC3339 comes in two shapes: UTC `…Z` (Instant.parse) and offset

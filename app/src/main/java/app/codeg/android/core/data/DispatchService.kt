@@ -58,6 +58,11 @@ class DispatchService @Inject constructor(
          * the "记想法→派发→等它跑" path never runs. Handoff dispatches leave
          * it false: picking up the work is the receiving side's decision. */
         val autoStart: Boolean = false,
+        /** 批v149 会话模式：目标是"项目里直接开一个会话"——服务端
+         * create_conversation 是纯 DB 插入（不建 worktree、不进任务板），返回
+         * 会话 id 记入账本；首条指令由 UI 跳转会话后自动发送。定时/自动开始
+         * 对会话无意义，此模式下被忽略。 */
+        val sessionMode: Boolean = false,
         /** On a hard failure, put this ref back as UNKNOWN — a re-dispatch must
          * never destroy the only trace of the original ambiguous request. */
         val restoreOnHardFail: DispatchRef? = null,
@@ -146,6 +151,7 @@ class DispatchService @Inject constructor(
             dispatchedAtEpochMs = now,
             scheduleLocalMillis = req.scheduleLocalMillis,
             autoStart = req.autoStart,
+            sessionMode = req.sessionMode,
         )
         if (client == null) {
             restoreOnHardFail(req.restoreOnHardFail)
@@ -162,20 +168,34 @@ class DispatchService @Inject constructor(
             }
             dispatchStore.put(request)
         }
-        val config = DispatchPipeline.taskConfig(
-            description = req.description.trim(),
-            agentTypeWire = req.agentTypeWire,
-            baseBranch = req.baseBranch,
-        )
-        val created = runCatching {
-            client.workTaskCreate(req.folderId, request.title, config)
+        // Unified "remote id" result: task mode maps the created row to its id,
+        // session mode gets the conversation id straight from create_conversation
+        // (a bare JSON int). null/<=0 = the request reached the server but the
+        // row did not decode — ambiguous, handled identically below.
+        val created: kotlin.Result<Int?> = if (req.sessionMode) {
+            // The server requires a concrete agent_type; resolve 自动 (null) and
+            // an UNKNOWN wire to the client default, same fallback the new-task
+            // draft screen applies when a device reports no agents.
+            val agent = req.agentTypeWire?.let { app.codeg.android.core.model.AgentType.fromWire(it) }
+                ?.takeIf { it != app.codeg.android.core.model.AgentType.UNKNOWN }
+                ?: app.codeg.android.core.model.AgentType.CLAUDE_CODE
+            runCatching { client.createConversation(req.folderId, agent, request.title) }
+        } else {
+            val config = DispatchPipeline.taskConfig(
+                description = req.description.trim(),
+                agentTypeWire = req.agentTypeWire,
+                baseBranch = req.baseBranch,
+            )
+            runCatching { client.workTaskCreate(req.folderId, request.title, config)?.id }
         }
         return created.fold(
-            onSuccess = { task ->
-                if (task != null) {
-                    confirm(request, task.id, profile, req.scheduleLocalMillis, req.autoStart)
+            onSuccess = { remoteId ->
+                if (remoteId != null && remoteId > 0) {
+                    // Session mode: no schedule/no auto-start — the first prompt
+                    // IS the start, sent by the session screen after the jump.
+                    if (req.sessionMode) confirm(request, remoteId, profile, null, false)
+                    else confirm(request, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
                 } else {
-                    // Request reached the server but the row did not decode — ambiguous.
                     markUnknown(request)
                 }
             },
@@ -318,9 +338,6 @@ class DispatchService @Inject constructor(
             // response was in flight when the connection died.
             kotlinx.coroutines.delay(1_500)
             val client = repository.client(profile) ?: return DispatchOutcome.Unknown(request)
-            val tasks = runCatching { client.workTaskList() }.getOrElse {
-                return DispatchOutcome.Unknown(request)
-            }
             val started = (request.dispatchedAtEpochMs
                 ?: System.currentTimeMillis()).let { java.time.Instant.ofEpochMilli(it) }
                 .minusSeconds(300)
@@ -328,11 +345,28 @@ class DispatchService @Inject constructor(
                 java.time.Instant.now().plusSeconds(600),
                 started.plusSeconds(3_900),
             )
-            val matches = DispatchPipeline.findCreatedTasks(
-                tasks, request.title, request.folderId, started, windowEnd,
-            )
-            if (matches.size == 1) {
-                return confirm(request, matches.single().id, profile, request.scheduleLocalMillis, request.autoStart)
+            // 会话模式的探针域是会话列表（任务列表永远"查无此任务"会把一个
+            // 可能已创建的会话误判为未创建，直接诱发重派 → 重复会话）。
+            if (request.sessionMode) {
+                val convs = runCatching { client.listConversations(search = request.title) }.getOrElse {
+                    return DispatchOutcome.Unknown(request)
+                }
+                val matches = DispatchPipeline.findCreatedConversations(
+                    convs, request.title, request.folderId, started, windowEnd,
+                )
+                if (matches.size == 1) {
+                    return confirm(request, matches.single().id, profile, null, false)
+                }
+            } else {
+                val tasks = runCatching { client.workTaskList() }.getOrElse {
+                    return DispatchOutcome.Unknown(request)
+                }
+                val matches = DispatchPipeline.findCreatedTasks(
+                    tasks, request.title, request.folderId, started, windowEnd,
+                )
+                if (matches.size == 1) {
+                    return confirm(request, matches.single().id, profile, request.scheduleLocalMillis, request.autoStart)
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e

@@ -92,7 +92,12 @@ import java.time.format.DateTimeFormatter
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
+fun InboxScreen(
+    viewModel: InboxViewModel = hiltViewModel(key = "inbox"),
+    // 批v149 会话模式：派发确认后自动跳转会话（serverId 先落设备再推详情，
+    // 会话详情读 selectedProfile 恰好一次，见 MainShell 的 onOpenSession 接线）。
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit = { _, _ -> },
+) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val target by viewModel.target.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
@@ -234,7 +239,17 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
             target = target,
             ui = ui,
             onClose = { dispatchingId = null },
-            onResult = { dispatchResult = it },
+            // 批v149：会话模式确认后不弹回执框——直接关单跳会话（首条指令由
+            // 会话详情页自动发送）；任务模式维持原回执对话框。
+            onResult = { ref ->
+                val convId = ref.remoteTodoId
+                if (ref.sessionMode && ref.state == DispatchState.CONFIRMED && convId != null) {
+                    dispatchingId = null
+                    onOpenSession(ref.serverId, convId)
+                } else {
+                    dispatchResult = ref
+                }
+            },
         )
     }
 
@@ -563,6 +578,10 @@ private fun DispatchSheet(
     var folderId by rememberSaveable { mutableStateOf<Int?>(null) }
     var agent by rememberSaveable { mutableStateOf<AgentType?>(null) }
     var branch by rememberSaveable { mutableStateOf<String?>(null) }
+    // 批v149 执行方式：会话（默认）= 项目里直接开会话并发首条指令，不建
+    // worktree；任务 = 上游原生 work_task（自动建 worktree 分支隔离）。默认
+    // 会话是主人的主用路径——最基础功能，不需要平行目录。
+    var sessionMode by rememberSaveable { mutableStateOf(true) }
     var title by rememberSaveable("t") { mutableStateOf(idea.title) }
     var description by rememberSaveable("d") { mutableStateOf(idea.description) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
@@ -590,11 +609,13 @@ private fun DispatchSheet(
     // a picked branch only counts while it belongs to the CURRENT device+repo.
     val branchFresh = ui.branchFolderKey == (device?.let { d -> folder?.let { f -> "$d:${f.path}" } })
     // Project (or device) switched → the picked branch no longer describes the
-    // new repo; reset and reload (§6.2 项目切换后重新加载分支).
-    LaunchedEffect(device, folderId) {
+    // new repo; reset and reload (§6.2 项目切换后重新加载分支). Session mode
+    // needs no branch list (it never sends base_branch) — reload only on the
+    // task path so toggling the mode doesn't leak a stale list either way.
+    LaunchedEffect(device, folderId, sessionMode) {
         branch = null
         val d = device
-        if (d != null && folder != null) viewModel.loadBranches(d, folder)
+        if (!sessionMode && d != null && folder != null) viewModel.loadBranches(d, folder)
     }
     // Process-death restore: rememberSaveable brings back device/folder/agent
     // but NOT the loaded folders/agents (the loader lives in the VM, which died
@@ -763,6 +784,33 @@ private fun DispatchSheet(
                 )
             }
 
+            // ①b 执行方式（批v149）：会话 / 任务。会话=直接建会话发首条指令；
+            // 任务=上游 work_task（自动 worktree）。两卡片单选，选中高亮。
+            SectionLabel(stringResource(R.string.dispatch_mode))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DispatchModeOption(
+                    label = stringResource(R.string.dispatch_mode_session),
+                    note = stringResource(R.string.dispatch_mode_session_note),
+                    selected = sessionMode,
+                    onClick = { sessionMode = true },
+                    modifier = Modifier.weight(1f),
+                )
+                DispatchModeOption(
+                    label = stringResource(R.string.dispatch_mode_task),
+                    note = stringResource(R.string.dispatch_mode_task_note),
+                    selected = !sessionMode,
+                    onClick = { sessionMode = false },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (sessionMode) {
+                Text(
+                    stringResource(R.string.dispatch_session_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CodegTheme.colors.textTertiary,
+                )
+            }
+
             // ② 任务描述 — prefilled from the idea; multi-line, scrollable.
             SectionLabel(stringResource(R.string.dispatch_section_description))
             OutlinedTextField(
@@ -779,6 +827,14 @@ private fun DispatchSheet(
                 minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 会话模式的描述就是首条指令，空描述派出去只会得到一个空会话。
+            if (sessionMode && description.isBlank()) {
+                Text(
+                    stringResource(R.string.dispatch_session_desc_required),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CodegTheme.colors.textTertiary,
+                )
+            }
 
             // ③ 目标：项目 + 分支.
             SectionLabel(stringResource(R.string.dispatch_section_target))
@@ -807,6 +863,9 @@ private fun DispatchSheet(
             }
             // Branch selector: real branch list for the picked project's repo
             // path; failure keeps dispatching possible on the project default.
+            // 会话模式整块隐藏——分支是 work_task 的概念，会话跟着项目当前
+            // 分支走（服务端 create_conversation 自己探测）。
+            if (!sessionMode) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -852,15 +911,18 @@ private fun DispatchSheet(
                     )
                 }
             }
-            if (ui.branchesError && !ui.branchesLoading) {
+            if (ui.branchesError && !ui.branchesLoading && !sessionMode) {
                 Text(
                     stringResource(R.string.dispatch_branch_failed),
                     color = CodegTheme.colors.danger,
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+            } // !sessionMode (branch block)
 
             // ④ 创建 — schedule, guards, result feedback (unchanged semantics).
+            // 会话模式无定时（定时拉起的是任务板里的 work_task；会话即发即跑）。
+            if (!sessionMode) {
             SectionLabel(stringResource(R.string.dispatch_schedule))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = scheduled, onCheckedChange = { scheduled = it })
@@ -885,9 +947,11 @@ private fun DispatchSheet(
                     )
                 }
             }
+            } // !sessionMode（定时开关区到此为止）
+
             // Suppressed once the success dialog is up: a schedule/auto-start
             // note rides the same field and would render in error styling
-            // behind the dialog.
+            // behind the dialog. 批v149：挪出定时区——会话模式同样要看派发错误。
             if (result == null) ui.dispatchError?.let {
                 Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
             }
@@ -896,13 +960,13 @@ private fun DispatchSheet(
             // both look "scheduled" to the user. Block the button and say why.
             val scheduleNotSet = scheduled && scheduleMillis <= 0L
             val scheduleInPast = scheduled && scheduleMillis in 1..clockTick
-            if (scheduleNotSet) {
+            if (!sessionMode && scheduleNotSet) {
                 Text(
                     stringResource(R.string.dispatch_schedule_not_set),
                     color = CodegTheme.colors.danger,
                     style = MaterialTheme.typography.bodySmall,
                 )
-            } else if (scheduleInPast) {
+            } else if (!sessionMode && scheduleInPast) {
                 Text(
                     stringResource(R.string.dispatch_schedule_past),
                     color = CodegTheme.colors.danger,
@@ -910,7 +974,8 @@ private fun DispatchSheet(
                 )
             }
             val canDispatch = device != null && folderId != null && title.isNotBlank() &&
-                !ui.dispatching && !scheduleNotSet && !scheduleInPast
+                (!sessionMode || description.isNotBlank()) &&
+                !ui.dispatching && (sessionMode || (!scheduleNotSet && !scheduleInPast))
             TextButton(
                 onClick = {
                     val dev = device ?: return@TextButton
@@ -918,20 +983,26 @@ private fun DispatchSheet(
                     // A branch picked against a stale folder list must never ride
                     // along — the branchFresh key pins it to the current repo.
                     val effectiveBranch = if (branch != null && branchFresh) branch else null
+                    // 会话模式的"自动"落到项目默认 Agent（没有则客户端默认）——
+                    // 服务端 create_conversation 需要具体 agent_type。
+                    val effectiveAgent = if (sessionMode) {
+                        agent ?: folder?.defaultAgentType?.takeIf { it != AgentType.UNKNOWN }
+                    } else agent
                     viewModel.dispatch(
                         idea = idea,
                         serverId = dev,
                         folderId = fid,
                         folderName = target.folders.firstOrNull { it.id == fid }?.name.orEmpty(),
-                        agentType = agent,
+                        agentType = effectiveAgent,
                         title = title,
                         description = description,
-                        baseBranch = effectiveBranch,
-                        scheduleLocalMillis = if (scheduled && scheduleMillis > 0) scheduleMillis else null,
+                        baseBranch = if (sessionMode) null else effectiveBranch,
+                        scheduleLocalMillis = if (!sessionMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
                         // The dialog rendering the outcome lives at screen level
                         // (it must survive the sheet unmounting when the idea
                         // is deleted on CONFIRMED).
                         onDone = { ref -> result = ref; onResult(ref) },
+                        sessionMode = sessionMode,
                     )
                 },
                 enabled = canDispatch,
@@ -1047,6 +1118,44 @@ private fun BranchOptionRow(label: String, selected: Boolean, onClick: () -> Uni
         if (selected) {
             Text("✓", color = colors.accent, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+}
+
+/**
+ * 批v149 执行方式单选卡：选中 = accent 淡底 + 主文字；未选 = 抬升底色 +
+ * 次文字。标签一行 + 说明一行小字（与 SectionLabel 体系同一套配色）。
+ */
+@Composable
+private fun DispatchModeOption(
+    label: String,
+    note: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = CodegTheme.colors
+    Column(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.bgElevated, RoundedCornerShape(10.dp))
+            .background(
+                colors.accent.copy(alpha = if (selected) 0.14f else 0f),
+                RoundedCornerShape(10.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) colors.accent else colors.textPrimary,
+        )
+        Text(
+            note,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textTertiary,
+            modifier = Modifier.padding(top = 2.dp),
+        )
     }
 }
 

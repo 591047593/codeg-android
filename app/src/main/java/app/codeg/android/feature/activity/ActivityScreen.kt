@@ -83,6 +83,8 @@ fun ActivityScreen(
     onRefreshAll: () -> Unit = {},
     onOpenRow: (serverId: String, conversationId: Int) -> Unit = { _, id -> onOpenConversation(id) },
     onHandoff: (serverId: String, folderId: Int, reference: String) -> Unit = { _, _, _ -> },
+    // 批v149 会话模式派发：收件箱确认后自动跳转（serverId 先落设备再推详情）。
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit = { _, _ -> },
     onManageProjects: () -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
@@ -204,7 +206,7 @@ fun ActivityScreen(
                 // when its page is first shown — its init fetches must not run
                 // just because the feed is on screen, and a failing init can
                 // never take the feed down with it.
-                app.codeg.android.feature.inbox.InboxScreen()
+                app.codeg.android.feature.inbox.InboxScreen(onOpenSession = onOpenSession)
             } else if (tasksMode) {
                 app.codeg.android.feature.taskhub.TaskHubScreen()
             } else {

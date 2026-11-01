@@ -149,6 +149,7 @@ class SessionDetailViewModel @Inject constructor(
     private val catalogStore: AgentCatalogStore,
     private val draftFolderPrefs: DraftFolderPrefsStore,
     private val projectRepo: app.codeg.android.core.data.SessionProjectRepository,
+    private val sessionAutoStart: app.codeg.android.core.data.SessionAutoStart,
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
     @ApplicationScope private val appScope: CoroutineScope,
@@ -291,7 +292,15 @@ class SessionDetailViewModel @Inject constructor(
                     }
                     // Reattach when the server reports the turn live — via an explicit
                     // in-flight user turn id or the conversation status (iOS parity).
-                    if (detail.inFlightUserTurnId != null || detail.summary.status.isLive) reattachIfLive()
+                    val liveTurn = detail.inFlightUserTurnId != null || detail.summary.status.isLive
+                    if (liveTurn) reattachIfLive()
+                    // 批v149 会话模式派发：收件箱"会话"方式创建会话后跳进来，这里
+                    // 消费armed 的首条指令并发送。只在空闲会话发送（live 轮由
+                    // isInFlight 守卫挡下，这里显式跳过更清楚）；指令总是先取出
+                    // （consume-once），绝不让它从一个更晚的无关访问里复活。
+                    sessionAutoStart.take(p.id, id)?.let { prompt ->
+                        if (!liveTurn) send(prompt, withAttachments = false)
+                    }
                 } else {
                     // New task: load the draft pickers' sources (top-level open folders +
                     // installed/enabled agents) and pick sensible defaults — honoring a

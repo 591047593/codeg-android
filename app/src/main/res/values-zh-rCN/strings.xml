@@ -1218,6 +1218,14 @@
     <string name="dispatch_branch_failed">分支列表获取失败——仍可按项目默认分支派发。点按分支行可重试。</string>
     <string name="dispatch_pick_branch">选择分支</string>
     <string name="dispatch_unknown_need_probe">请先「检查服务器」——确认任务未创建后才能重新派发。</string>
+    <!-- 批v149 执行方式（会话 / 任务） -->
+    <string name="dispatch_mode">执行方式</string>
+    <string name="dispatch_mode_session">会话</string>
+    <string name="dispatch_mode_session_note">在项目内直接创建会话，不建 worktree</string>
+    <string name="dispatch_mode_task">任务</string>
+    <string name="dispatch_mode_task_note">创建任务并自动建 worktree 分支隔离</string>
+    <string name="dispatch_session_note">会话模式：派发后自动打开会话，并把下方描述作为首条指令发送；分支与定时不适用于会话模式。</string>
+    <string name="dispatch_session_desc_required">会话模式需要填写描述——它将作为首条指令发送。</string>
     <!-- v141 handoff -->
     <string name="handoff_title">跨设备会话交接</string>
     <string name="handoff_source_line">来源：%1$s · %2$s · %3$s</string>
