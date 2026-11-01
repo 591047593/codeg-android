@@ -386,6 +386,16 @@ class SessionDetailViewModel @Inject constructor(
         // now would land on the wrong session (or race the re-point entirely).
         if (_ui.value.forking) return
 
+        // 2 MiB axum prompt-body ceiling (v149.2): the composer's aggregate
+        // attachment cap enforces this at pick time, but a restored draft or a
+        // future caller could bypass it — refuse here with a clear reason
+        // instead of a bare plaintext 413 the agent screen can't explain.
+        val attachmentChars = attachments.sumOf { it.base64.length }
+        if (attachmentChars > AttachmentPrep.MAX_TOTAL_BYTES * 4 / 3) {
+            _ui.update { it.copy(notice = appContext.getString(R.string.send_prompt_too_large)) }
+            return
+        }
+
         // Supersede any post-turn reconcile still running for the previous turn so it can't
         // wipe the turn we're about to start (its identity guard is the backstop).
         reconcileJob?.cancel()
@@ -1797,7 +1807,9 @@ class SessionDetailViewModel @Inject constructor(
                 _ui.update { it.copy(attachments = it.attachments + att) }
                 added++
             }
-            if (skipped > 0) _ui.update { it.copy(notice = "Added $added image(s); $skipped skipped (too large or over the limit).") }
+            if (added > 0 || skipped > 0) {
+                _ui.update { it.copy(notice = appContext.getString(R.string.image_attach_done, added, skipped)) }
+            }
         }
     }
 
@@ -1815,6 +1827,12 @@ class SessionDetailViewModel @Inject constructor(
      * immediately (same multipart path the project file browser uses); without one,
      * small text files fall back to inlining their content into the prompt. Per-file
      * failures are counted, not aborting the batch.
+     *
+     * v149.2: failures surface their REASON (server 413/409/404/401 …) instead of
+     * being swallowed into an opaque "过大或失败" count, and an "already exists"
+     * conflict retries once under an auto-renamed name — a prior attempt that
+     * errored client-side may have landed the bytes, and the server refuses to
+     * overwrite, so the old flow failed the same retry forever.
      */
     fun addFileAttachments(uris: List<Uri>, resolver: ContentResolver) {
         if (uris.isEmpty()) return
@@ -1823,26 +1841,20 @@ class SessionDetailViewModel @Inject constructor(
             val c = client
             var added = 0
             var skipped = 0
+            val failures = mutableListOf<String>()
             for (uri in uris) {
                 if (_ui.value.fileAttachments.size >= FILE_MAX_COUNT) { skipped++; continue }
                 val name = queryDisplayName(resolver, uri) ?: uri.lastPathSegment ?: "file-${System.currentTimeMillis()}"
                 val size = querySize(resolver, uri) ?: 0L
-                if (size > FILE_MAX_BYTES) { skipped++; continue }
+                if (size > FILE_MAX_BYTES) {
+                    skipped++
+                    failures += appContext.getString(R.string.file_attach_reason_too_large, name)
+                    continue
+                }
                 val att: FileAttachment? = if (c != null && !root.isNullOrBlank()) {
-                    try {
-                        val uploaded = withContext(Dispatchers.IO) {
-                            c.uploadWorkspaceFile(root, UPLOAD_DIR, name, size) { resolver.openInputStream(uri)!! }
-                        }
-                        FileAttachment(
-                            id = UUID.randomUUID().toString(),
-                            name = uploaded.name.ifBlank { name },
-                            size = uploaded.size.takeIf { it > 0 } ?: size,
-                            absolutePath = root.trimEnd('/') + "/" + uploaded.path.trimStart('/'),
-                        )
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        null
+                    when (val staged = stageWorkspaceFile(c, root, uri, name, size, resolver)) {
+                        is StageResult.Ok -> staged.att
+                        is StageResult.Failed -> { failures += staged.reason; null }
                     }
                 } else {
                     inlineTextAttachment(resolver, uri, name, size)
@@ -1851,9 +1863,69 @@ class SessionDetailViewModel @Inject constructor(
                 _ui.update { it.copy(fileAttachments = it.fileAttachments + att) }
                 added++
             }
-            if (added > 0 || skipped > 0) {
-                _ui.update { it.copy(notice = appContext.getString(R.string.file_attach_done, added, skipped)) }
+            if (added > 0 || skipped > 0 || failures.isNotEmpty()) {
+                _ui.update {
+                    it.copy(
+                        notice = if (failures.isEmpty()) {
+                            appContext.getString(R.string.file_attach_done, added, skipped)
+                        } else {
+                            appContext.getString(R.string.file_attach_failed_list, added, skipped, failures.joinToString("；"))
+                        }
+                    )
+                }
             }
+        }
+    }
+
+    /** Outcome of one workspace staging attempt ([stageWorkspaceFile]). */
+    private sealed interface StageResult {
+        data class Ok(val att: FileAttachment) : StageResult
+        data class Failed(val reason: String) : StageResult
+    }
+
+    /**
+     * Upload one document into `uploads/`; on a 409 "already exists" retry once
+     * under [autoRenamedFileName]. Any other failure surfaces its reason —
+     * never a silent null (the old `catch (_: Exception) { null }` made a 413
+     * from an old server indistinguishable from an unreadable file).
+     */
+    private suspend fun stageWorkspaceFile(
+        c: CodegClient,
+        root: String,
+        uri: Uri,
+        name: String,
+        size: Long,
+        resolver: ContentResolver,
+    ): StageResult {
+        suspend fun attempt(fileName: String): FileAttachment {
+            val uploaded = withContext(Dispatchers.IO) {
+                c.uploadWorkspaceFile(root, UPLOAD_DIR, fileName, size) {
+                    resolver.openInputStream(uri) ?: throw java.io.IOException("unreadable: $fileName")
+                }
+            }
+            return FileAttachment(
+                id = UUID.randomUUID().toString(),
+                name = uploaded.name.ifBlank { fileName },
+                size = uploaded.size.takeIf { it > 0 } ?: size,
+                absolutePath = root.trimEnd('/') + "/" + uploaded.path.trimStart('/'),
+            )
+        }
+
+        val first = runCatching { attempt(name) }
+        if (first.isSuccess) return StageResult.Ok(first.getOrThrow())
+        when (val e = first.exceptionOrNull()) {
+            is CancellationException -> throw e
+            else -> {
+                val conflict = e is ApiError.Server &&
+                    (e.status == 409 || e.serverMessage.contains("already exists", ignoreCase = true))
+                if (!conflict) return StageResult.Failed("$name：${e.displayMessage()}")
+            }
+        }
+        val retried = runCatching { attempt(autoRenamedFileName(name)) }
+        return when (val e2 = retried.exceptionOrNull()) {
+            null -> StageResult.Ok(retried.getOrThrow())
+            is CancellationException -> throw e2
+            else -> StageResult.Failed("$name：${e2.displayMessage()}")
         }
     }
 

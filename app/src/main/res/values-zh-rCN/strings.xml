@@ -911,7 +911,11 @@
     <!-- ===== Session Detail · Insert sheet ===== -->
     <string name="insert_pick_files">上传文件</string>
     <string name="insert_pick_files_hint">从文件管理器选择 Markdown、PRD、Plan 等文档</string>
-    <string name="file_attach_done">已添加 %1$d 个文件，跳过 %2$d 个（过大或失败）</string>
+    <string name="file_attach_done">已添加 %1$d 个文件，跳过 %2$d 个</string>
+    <string name="file_attach_failed_list">已添加 %1$d 个文件，跳过 %2$d 个；失败：%3$s</string>
+    <string name="file_attach_reason_too_large">%1$s 超过 20 MB 单文件上限</string>
+    <string name="image_attach_done">已添加 %1$d 张图片，跳过 %2$d 张（过大或超限）</string>
+    <string name="send_prompt_too_large">图片总体积超过单条消息上限，请先移除部分图片再发送</string>
     <string name="file_attach_inline">内联内容</string>
     <string name="insert_quick_messages">快捷消息</string>
     <string name="insert_experts">专家</string>
