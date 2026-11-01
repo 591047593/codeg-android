@@ -37,6 +37,8 @@
     <string name="tab_chats">会话</string>
     <string name="tab_folders">文件夹</string>
     <string name="tab_activity">动态</string>
+    <string name="tab_inbox">收件箱</string>
+    <string name="tab_tasks">任务板</string>
     <string name="tab_search">搜索</string>
     <string name="tab_settings">设置</string>
 
@@ -368,8 +370,6 @@
     <string name="general_tab_order_subtitle">点 ▲▼ 调整底部栏顺序；点行名把它设为启动时打开的页。</string>
     <string name="general_activity_swipe_title">动态页横滑切换设备</string>
     <string name="general_activity_swipe_subtitle">在动态页左右滑动可在全部设备与各设备之间切换；滑到尽头再滑才会切换底部标签。</string>
-    <string name="general_folders_swipe_title">文件夹页横滑切换设备</string>
-    <string name="general_folders_swipe_subtitle">在文件夹页左右滑动可切换设备；滑到尽头再滑才会切换底部标签。</string>
 
     <!-- ===== Settings · Agents ===== -->
     <string name="agents_empty_title">暂无智能体</string>
@@ -1087,8 +1087,6 @@
     <string name="ball_gesture_up_left_then_down">左上再下（↖↓）</string>
     <string name="ball_gesture_right_then_left">右再左（→←）</string>
     <string name="ball_gesture_left_then_right">左再右（←→）</string>
-    <string name="task_toggle_feed">动态</string>
-    <string name="task_toggle_tasks">任务</string>
     <string name="task_seg_todo">待办</string>
     <string name="task_seg_running">进行中</string>
     <string name="task_seg_attention">等你处理</string>

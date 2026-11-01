@@ -37,6 +37,8 @@
     <string name="tab_chats">Chats</string>
     <string name="tab_folders">Folders</string>
     <string name="tab_activity">Activity</string>
+    <string name="tab_inbox">Inbox</string>
+    <string name="tab_tasks">Tasks</string>
     <string name="tab_search">Search</string>
     <string name="tab_settings">Settings</string>
 
@@ -368,8 +370,6 @@
     <string name="general_tab_order_subtitle">Tap ▲▼ to reorder the bottom bar; tap a row\'s name to make it the tab the app opens on.</string>
     <string name="general_activity_swipe_title">Swipe between devices on Activity</string>
     <string name="general_activity_swipe_subtitle">On the Activity tab, horizontal swipes switch devices (All → each device); swiping past the ends moves between tabs.</string>
-    <string name="general_folders_swipe_title">Swipe between devices on Folders</string>
-    <string name="general_folders_swipe_subtitle">On the Folders tab, horizontal swipes switch devices; swiping past the ends moves between tabs.</string>
 
     <!-- ===== Settings · Agents ===== -->
     <string name="agents_empty_title">No agents</string>
@@ -1101,8 +1101,6 @@
     <string name="ball_gesture_up_left_then_down">Up-left then down (↖↓)</string>
     <string name="ball_gesture_right_then_left">Right then left (→←)</string>
     <string name="ball_gesture_left_then_right">Left then right (←→)</string>
-    <string name="task_toggle_feed">Activity</string>
-    <string name="task_toggle_tasks">Tasks</string>
     <string name="task_seg_todo">To do</string>
     <string name="task_seg_running">Running</string>
     <string name="task_seg_attention">Needs you</string>

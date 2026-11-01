@@ -55,4 +55,38 @@ class SessionAutoStartTest {
         assertNull(s.take("srv1", 1))
         assertEquals("second", s.take("srv1", 2))
     }
+
+    // ---- 批v150 staleness window: a lingering slot never fires late ----
+
+    @Test
+    fun `a fresh prompt fires inside the window`() {
+        val s = SessionAutoStart()
+        var now = 1_000_000L
+        s.clock = { now }
+        s.arm("srv1", 42, "prompt")
+        now += SessionAutoStart.STALE_MS - 1
+        assertEquals("prompt", s.take("srv1", 42))
+    }
+
+    @Test
+    fun `a stale prompt never fires and the slot is consumed`() {
+        val s = SessionAutoStart()
+        var now = 1_000_000L
+        s.clock = { now }
+        s.arm("srv1", 42, "late prompt")
+        now += SessionAutoStart.STALE_MS + 1
+        assertNull(s.take("srv1", 42))
+        // Consumed, not retained: a second visit must not resurrect it either.
+        assertNull(s.take("srv1", 42))
+    }
+
+    @Test
+    fun `staleness is judged per slot not per visit`() {
+        val s = SessionAutoStart()
+        var now = 1_000_000L
+        s.clock = { now }
+        s.arm("srv1", 42, "prompt")
+        now += SessionAutoStart.STALE_MS - 1
+        assertEquals("prompt", s.take("srv1", 42))
+    }
 }

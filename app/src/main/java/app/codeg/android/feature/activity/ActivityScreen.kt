@@ -22,8 +22,6 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,8 +81,6 @@ fun ActivityScreen(
     onRefreshAll: () -> Unit = {},
     onOpenRow: (serverId: String, conversationId: Int) -> Unit = { _, id -> onOpenConversation(id) },
     onHandoff: (serverId: String, folderId: Int, reference: String) -> Unit = { _, _, _ -> },
-    // 批v149 会话模式派发：收件箱确认后自动跳转（serverId 先落设备再推详情）。
-    onOpenSession: (serverId: String, conversationId: Int) -> Unit = { _, _ -> },
     onManageProjects: () -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
 ) {
@@ -95,13 +91,6 @@ fun ActivityScreen(
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    // Page switcher: 0 = feed, 1 = task board, 2 = idea inbox. One Int keeps
-    // the three pages mutually exclusive and survives process death. Rendered
-    // as a TabRow (not filter chips): these are PAGES, and the chip styling is
-    // why the task board / inbox went unnoticed by real users.
-    var pageMode by rememberSaveable { mutableStateOf(0) }
-    val tasksMode = pageMode == 1
-    val inboxMode = pageMode == 2
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
@@ -144,8 +133,8 @@ fun ActivityScreen(
         items.mapNotNull { it.row }
             .map { "${it.serverId}:${it.conversation.id}|${it.conversation.trimmedTitle.orEmpty()}|${it.serverName}" }
     }
-    DisposableEffect(focusRowKeys, tasksMode, inboxMode) {
-        if (!tasksMode && !inboxMode) viewModel.focusHub.register(
+    DisposableEffect(focusRowKeys) {
+        viewModel.focusHub.register(
             ACTIVITY_FOCUS_OWNER,
             items.mapNotNull { it.row }.map { row ->
                 FocusItem(
@@ -166,7 +155,7 @@ fun ActivityScreen(
     // (a ball gesture fired with this list visible) scrolls.
     var lastScrolledStamp by remember { mutableStateOf(highlight?.stamp ?: 0L) }
     LaunchedEffect(highlight, items) {
-        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER }?.takeIf { !tasksMode && !inboxMode } ?: return@LaunchedEffect
+        val hl = highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER } ?: return@LaunchedEffect
         if (hl.stamp == lastScrolledStamp) return@LaunchedEffect
         val idx = items.indexOfFirst { it.row != null && it.row.refKey == hl.item.ref.key }
         if (idx >= 0) {
@@ -187,30 +176,9 @@ fun ActivityScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(
-                selectedTabIndex = pageMode,
-                containerColor = Color.Transparent,
-                contentColor = colors.textPrimary,
-            ) {
-                listOf(R.string.task_toggle_feed, R.string.task_toggle_tasks, R.string.inbox_title)
-                    .forEachIndexed { index, labelRes ->
-                        Tab(
-                            selected = pageMode == index,
-                            onClick = { pageMode = index },
-                            text = { Text(stringResource(labelRes)) },
-                        )
-                    }
-            }
-            if (inboxMode) {
-                // Lazy VM creation: an inbox/task-hub ViewModel is built only
-                // when its page is first shown — its init fetches must not run
-                // just because the feed is on screen, and a failing init can
-                // never take the feed down with it.
-                app.codeg.android.feature.inbox.InboxScreen(onOpenSession = onOpenSession)
-            } else if (tasksMode) {
-                app.codeg.android.feature.taskhub.TaskHubScreen()
-            } else {
-        Box(Modifier.fillMaxSize()) {
+            // 批v150: the task board and the idea inbox are first-class bottom tabs
+            // now (new mandate §一.2) — this screen is the workbench feed only.
+            Box(Modifier.fillMaxSize()) {
             when {
                 ui.loading && !ui.hasLoaded ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingView(stringResource(R.string.common_loading)) }
@@ -397,7 +365,6 @@ fun ActivityScreen(
                     }
                 }
             }
-        }
         }
         }
     }

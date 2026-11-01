@@ -68,9 +68,12 @@ fun GeneralContent(
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Section(stringResource(R.string.general_shell_section)) {
+            // 批v150: a persisted five-tab-era startTab ("chats") is not a tab
+            // route any more — display the MIGRATED value so the start marker
+            // lands on the workbench instead of vanishing.
             TabOrderEditor(
                 savedOrder = appSettings.homeTabOrder,
-                startTab = appSettings.startTab,
+                startTab = app.codeg.android.feature.main.HomeTab.byRoute(appSettings.startTab).route,
                 onReorder = viewModel::setHomeTabOrder,
                 onStartTab = viewModel::setStartTab,
             )
@@ -79,12 +82,6 @@ fun GeneralContent(
                 stringResource(R.string.general_activity_swipe_subtitle),
                 appSettings.activityDeviceSwipe,
                 viewModel::setActivityDeviceSwipe,
-            )
-            ToggleRow(
-                stringResource(R.string.general_folders_swipe_title),
-                stringResource(R.string.general_folders_swipe_subtitle),
-                appSettings.foldersDeviceSwipe,
-                viewModel::setFoldersDeviceSwipe,
             )
         }
         Section(stringResource(R.string.general_floating_ball_section)) {

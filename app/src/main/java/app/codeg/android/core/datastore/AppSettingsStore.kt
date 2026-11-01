@@ -34,10 +34,9 @@ data class AppSettings(
     val homeTabOrder: List<String> = emptyList(),
     /** Route name of the tab the app opens on cold start (default: chats). */
     val startTab: String = DEFAULT_START_TAB,
-    /** Horizontal swipe between devices while on the Activity tab (default: off). */
+    /** Horizontal swipe between devices while on the Activity tab (default: off).
+     *  批v150: the Folders twin toggle retired with the Folders tab. */
     val activityDeviceSwipe: Boolean = false,
-    /** Same gesture on the Folders tab (default: off; separate from [activityDeviceSwipe]). */
-    val foldersDeviceSwipe: Boolean = false,
     /** Floating ball on/off (batch v126; default on — it's a primary nav surface). */
     val floatBallEnabled: Boolean = true,
     /** Floating ball size tier: "small" | "medium" | "large" (unknown → medium). */
@@ -54,7 +53,9 @@ data class AppSettings(
 ) {
     companion object {
         const val DEFAULT_ACCENT = "orange"
-        const val DEFAULT_START_TAB = "chats"
+        // 批v150 four-tab workbench: the app opens on the workbench. A stored
+        // startTab from the five-tab era ("chats") falls back here via HomeTab.byRoute.
+        const val DEFAULT_START_TAB = "activity"
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
@@ -80,11 +81,6 @@ class AppSettingsStore @Inject constructor(
             homeTabOrder = prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
             startTab = prefs[START_TAB] ?: AppSettings.DEFAULT_START_TAB,
             activityDeviceSwipe = prefs[ACTIVITY_DEVICE_SWIPE] ?: false,
-            // Migration: the folders toggle was born from the activity one (v123), so
-            // a user who already had the activity gesture on keeps it there AND gets
-            // the folders gesture — matching what they'd have seen had the two been
-            // one switch all along. Once set, each evolves independently.
-            foldersDeviceSwipe = prefs[FOLDERS_DEVICE_SWIPE] ?: false,
             floatBallEnabled = prefs[FLOAT_BALL_ENABLED] ?: true,
             floatBallSize = prefs[FLOAT_BALL_SIZE]?.takeIf { it in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
@@ -141,11 +137,6 @@ class AppSettingsStore @Inject constructor(
     /** Persist the Activity-tab device-swipe toggle. */
     suspend fun setActivityDeviceSwipe(enabled: Boolean) {
         dataStore.edit { it[ACTIVITY_DEVICE_SWIPE] = enabled }
-    }
-
-    /** Persist the Folders-tab device-swipe toggle (independent since v123). */
-    suspend fun setFoldersDeviceSwipe(enabled: Boolean) {
-        dataStore.edit { it[FOLDERS_DEVICE_SWIPE] = enabled }
     }
 
     /** Persist the floating-ball on/off toggle (batch v126). */
@@ -229,7 +220,6 @@ class AppSettingsStore @Inject constructor(
         val TAB_ORDER = stringPreferencesKey("home_tab_order")
         val START_TAB = stringPreferencesKey("start_tab")
         val ACTIVITY_DEVICE_SWIPE = booleanPreferencesKey("activity_device_swipe")
-        val FOLDERS_DEVICE_SWIPE = booleanPreferencesKey("folders_device_swipe")
         val SESSION_READ_MARKS = stringPreferencesKey("session_read_marks")
         val FLOAT_BALL_ENABLED = booleanPreferencesKey("float_ball_enabled")
         val FLOAT_BALL_SIZE = stringPreferencesKey("float_ball_size")

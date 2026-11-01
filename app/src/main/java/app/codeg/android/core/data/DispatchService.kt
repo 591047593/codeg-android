@@ -39,6 +39,10 @@ sealed interface DispatchOutcome {
 class DispatchService @Inject constructor(
     private val dispatchStore: DispatchStore,
     private val repository: ServerRepository,
+    // 批v150 P0: the session-mode "first prompt" transmitter. The consumer
+    // (SessionDetailViewModel.take) shipped in v149 but nothing ever armed the
+    // station — session-mode dispatches opened a blank conversation.
+    private val sessionAutoStart: SessionAutoStart,
 ) {
     data class SendRequest(
         val ideaId: String? = null,
@@ -193,8 +197,16 @@ class DispatchService @Inject constructor(
                 if (remoteId != null && remoteId > 0) {
                     // Session mode: no schedule/no auto-start — the first prompt
                     // IS the start, sent by the session screen after the jump.
-                    if (req.sessionMode) confirm(request, remoteId, profile, null, false)
-                    else confirm(request, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
+                    // 批v150 P0: that sender finally has a transmitter — arm the
+                    // handoff station on every CONFIRMED session create, or the
+                    // conversation the UI jumps to opens permanently blank.
+                    if (req.sessionMode) {
+                        confirm(request, remoteId, profile, null, false).also { outcome ->
+                            if (outcome is DispatchOutcome.Confirmed) {
+                                sessionAutoStart.arm(req.serverId, remoteId, req.description)
+                            }
+                        }
+                    } else confirm(request, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
                 } else {
                     markUnknown(request)
                 }
@@ -355,7 +367,16 @@ class DispatchService @Inject constructor(
                     convs, request.title, request.folderId, started, windowEnd,
                 )
                 if (matches.size == 1) {
-                    return confirm(request, matches.single().id, profile, null, false)
+                    val id = matches.single().id
+                    // 批v150 P0: a probe-resolved session create arms the handoff
+                    // too — the UI's jump may already be gone (this path runs after
+                    // an ambiguous send), so the armed slot can linger; the
+                    // staleness window in take() bounds it.
+                    return confirm(request, id, profile, null, false).also { outcome ->
+                        if (outcome is DispatchOutcome.Confirmed) {
+                            sessionAutoStart.arm(request.serverId, id, request.description)
+                        }
+                    }
                 }
             } else {
                 val tasks = runCatching { client.workTaskList() }.getOrElse {

@@ -15,11 +15,24 @@ import javax.inject.Singleton
  * - 持久化同理，复活一条可能已送达的指令违背"结果未知绝盲目重发"的底线。
  *   内存槽在进程死亡时消失——丢失方向永远安全（用户可从想法记录重派）。
  * 单槽即够：一次派发只产生一个待发指令，跳转是紧随其后的下一步。
+ *
+ * 批v150 P0：发射端接线补全前，arm 只在 probe 恢复 CONFIRMED 的路径也可能
+ * 发生（用户早已离开派发界面）。为防一条滞留槽位在用户很久之后手动打开同一
+ * 会话时突然发射，[Pending] 带武装时刻，[take] 拒绝超过 [STALE_MS] 的滞留
+ * 指令——旧指令宁可不发（用户可从想法记录重派），也不迟到一个错愕的时机。
  */
 @Singleton
 class SessionAutoStart @Inject constructor() {
 
-    data class Pending(val serverId: String, val conversationId: Int, val prompt: String)
+    data class Pending(
+        val serverId: String,
+        val conversationId: Int,
+        val prompt: String,
+        val armedAtEpochMs: Long,
+    )
+
+    /** 可注入时钟：单测把时间拨快，生产用墙钟（10 分钟窗对 NTP 跳变不敏感）。 */
+    internal var clock: () -> Long = System::currentTimeMillis
 
     private var pending: Pending? = null
 
@@ -28,20 +41,33 @@ class SessionAutoStart @Inject constructor() {
     fun arm(serverId: String, conversationId: Int, prompt: String) {
         val trimmed = prompt.trim()
         if (trimmed.isEmpty()) return
-        pending = Pending(serverId, conversationId, trimmed)
+        pending = Pending(serverId, conversationId, trimmed, clock())
     }
 
     /**
      * Consume-once, exact-match: a different conversation (or a re-entry after
      * the match was already consumed) reads null. Consuming on a LIVE session is
      * the caller's decision — take() always clears so an armed prompt can never
-     * fire from a later, unrelated visit to the same session.
+     * fire from a later, unrelated visit to the same session. A slot older than
+     * [STALE_MS] is consumed AND dropped: stale never fires.
      */
     @Synchronized
     fun take(serverId: String, conversationId: Int): String? {
         val p = pending ?: return null
         if (p.serverId != serverId || p.conversationId != conversationId) return null
         pending = null
+        if (clock() - p.armedAtEpochMs > STALE_MS) return null
         return p.prompt
+    }
+
+    companion object {
+        /**
+         * An armed prompt older than this is stale and never fires. The normal
+         * path is seconds (confirm → jump → load → send); this window only has
+         * to cover a probe-resolution the user walks away from — long enough to
+         * never eat a legitimate send, short enough that "why is my old prompt
+         * sending NOW" can't happen.
+         */
+        const val STALE_MS = 10 * 60_000L
     }
 }

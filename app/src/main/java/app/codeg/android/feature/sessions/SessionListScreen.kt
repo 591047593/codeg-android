@@ -672,7 +672,7 @@ private fun RefreshErrorBanner(
 
 // ---- Cross-device aggregate ("全部") list — batch v132 ----
 
-/** Owner id the Chats list registers under in [SessionFocusHub] (HomeTab.CHATS.route). */
+/** Owner id the Chats list registers under in [SessionFocusHub] ("chats" — since 批v150 a push surface, not a tab). */
 private const val CHATS_FOCUS_OWNER = "chats"
 
 /** One virtualized item of the aggregate LazyColumn — the single source of truth

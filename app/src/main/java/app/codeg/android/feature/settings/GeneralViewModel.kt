@@ -199,10 +199,6 @@ class GeneralViewModel @Inject constructor(
         viewModelScope.launch { appSettingsStore.setActivityDeviceSwipe(enabled) }
     }
 
-    fun setFoldersDeviceSwipe(enabled: Boolean) {
-        viewModelScope.launch { appSettingsStore.setFoldersDeviceSwipe(enabled) }
-    }
-
     // ---- Floating ball + font scale (batch v126; device-local prefs) ----
 
     fun setFloatBallEnabled(enabled: Boolean) {
