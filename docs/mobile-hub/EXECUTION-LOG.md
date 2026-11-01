@@ -84,3 +84,11 @@
 - 背景：主人装 v36 反馈——二级卡片（派发单/任务详情/项目选择）支持拖动下滑但「瞬间弹回，无法触发手动隐藏」。根因=批v147 一刀切：confirmValueChange 拒绝 Hidden 让所有拖拽关闭失效（原意防手势穿透，结果把标准关闭手势也禁了）。
 - 修复（单向闸替代一刀切）：SheetDragLockConnection.onPostScroll 改方向闸——向下剩余拖拽（内容已在顶部，available.y>0）放行给 sheet → 标准拖拽关闭恢复；向上剩余+全部剩余惯性照旧吞掉 → 滚轮/短列表滑动手感保持独立，卡片不被拽走。五表 confirmValueChange 全部撤除，dragHandle=null 与锁保留。
 - 发版：tag v1.0.1-fengx.37（versionCode 39），Verify+Release 绿，双 APK+TG 直链。同批主人报的 dell 服务端 500（archived 枚举）与「任务必建 worktree」两项经调研定性为服务端/产品层，出规划待拍板，不在本批代码内。
+
+## 批v149：会话模式派发（不建 worktree 直接开会话）+ worktree 目录过滤（2026-11-02）
+- 背景：主人装 v37 后拍板执行批v148 规划的 方案A+C：派发要「最基础的功能——创建会话，无需创建 worktree，也无需在项目同级新建平行目录」。上游设计任务=worktree 隔离（服务端 engine 硬编码 `git worktree add`），故会话模式复用既有 create_conversation 接口（纯 DB 插入+分支探测，零目录副作用），不改服务端。
+- P1 worktree 过滤：DispatchTargetLoader（派发单/交接单/派发默认设置三处共用）与 TaskHubViewModel.loadFolderNames 两处 `parentId != null` 过滤（复用新建会话选择器的 FolderVisibility.filterTopLevel 语义）。已核实服务端 attach_worktree 只写独立 worktree_folder_id 列、任务 folder_id 恒为项目根——任务页过滤不丢卡片名。
+- P2 会话模式：派发单新增「执行方式」单选（会话默认/任务），会话模式隐藏分支+定时区、描述必填（即首条指令）；DispatchService 分支走 createConversation（agent 自动→项目默认→客户端默认 CLAUDE_CODE），remoteTodoId=会话 id 记账。成功后 InboxScreen 不弹回执框，直接 onOpenSession → MainShell handoffTo（先落 owning 设备再推详情）→ 会话详情 load 完成后经 SessionAutoStart（进程内单槽 consume-once，进程死亡即丢失=安全方向）自动发送首条指令；live 轮显式跳过。
+- P3 生命周期：探针/重派按 ref.sessionMode 分流——探针域改 listConversations(search)+findCreatedConversations（任务列表会误判"未创建"诱发重复会话）；redispatch 强制保留原模式防跨模式重复创建；确认成功照旧删草稿。文案名词化（会话/任务共用三段探针话术）。
+- 门禁：本地零编译（主人纪律），CI Verify 绿（run 41341813802）+ 新增 SessionAutoStartTest 5 例 + DispatchPipelineTest 会话探针 6 断言。
+- 发版：tag v1.0.1-fengx.38（versionCode 40），Release 绿（run 41342480657），双 APK+sha256 挂 Release+TG 直链。
