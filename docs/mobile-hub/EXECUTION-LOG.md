@@ -35,3 +35,13 @@
 - 双重审查发现并修复：密码 rememberSaveable 落 Bundle（高危）；applyImport 无 busy 守卫；粘贴文本清洗 \r\n/零宽字符；导出跳过无提示；新设备无法排除导入；1MB→数千行预览拖垮对话框；覆盖选中设备静默换后端；部分导入失败丢计数；剪贴板失败仍显示成功；envelope Json 未开 ignoreUnknownKeys。
 - 测试：ConfigSyncCryptoTest 7 例（roundtrip/错密码/篡改/每次新盐nonce/版本拒绝/坏文本/恶意KDF参数）+ 454 全量单测 + 双 flavor 编译绿。
 - 发版：tag v1.0.1-fengx.31（versionCode 33）。
+
+## 批v143：真机反馈全面返工 + 十轮对抗审查（2026-11-01）
+- 背景：主人装 v1.0.1-fengx.32-legacy 反馈①动态页闪退②任务/想法/交接等新功能"找不到"（实际藏在动态页）。v143 先做闪退加固+TabRow 三页签+入口惰性创建；随后按主人要求做十轮多维度对抗子代理审查（≤2 并发），每轮修复后编译+454 单测+双 flavor 编译再进下一轮。
+- R1+R2（崩溃面+UI/双语言，d200a9a）：DataStore 读失败其实多在写路径/未知路径——全部裸协程兜底；probe/redispatch/discard/sweep 全链 try/catch；46 条引入串默认库补英文。
+- R3+R4（双创建闸门+任务中心，e1fff05）：清扫年龄门槛2min（防误杀在途请求）；hasUnresolvedDuplicate 台账查重（后扩为含 PENDING）；autoStart 持久化进 DispatchRef；交接补文件夹失效校验+autoStart=false；probe 多同名不认领；redispatch 保留原 autoStart/降级过期定时/UNKNOWN agent 不重发；send 失败恢复 restoreOnHardFail；任务详情重取键、全局busy、半失败不缓存、幽灵 details 清理、解码不吞格式变化、时间戳 offset 回退。
+- R5+R6（资源双语言+UX 走查，b5bc468）：settings_leaf_config_sync 中文串混入默认库（英文用户可见中文，H）；两处引号转义；交接中断安全（取消不再删台账→markUnknown、reset 拒绝在飞行中清态）；收件箱旋转保留编辑器/派发单（id 化 rememberSaveable）；回查 busy 反馈；提交中卡片可见+30s 周期清扫；任务中心 hasLoaded 空态闸+详情失败可重试+按钮禁用不消失+错误横幅滚入视野+幽灵过滤器复位；配置同步导入结果可见化；15 条死串清理；52 处 VM 层硬编码中文留档为技术债。
+- R7+R8（并发竞态+legacy API28，b41f139）：AppViewModel 四处裸协程护栏（闪退级 H）；send() 内 Mutex 原子查重预留（TOCTOU 保险）；tick 去重防切页重复 fan-out；详情 epoch 防旧快照回填；redispatch 早期拒绝/取消路径追回台账；活动页先读后取消；R8 结论=API28 零崩溃级问题（java.time 全 API26+，动态色未用，唯二 SDK_INT 守卫均正确）。
+- R9+R10（端到端墨菲+终极红队，ba71d48）：**R10 对照服务端 Rust 源码抓出致命线上 bug——work_task_create 嵌套 draft 发 folderId 而服务端 WorkTaskDraft 无 rename_all 要求 folder_id（全量派发会 4xx）；taskConfig 六键 camelCase 被服务端 serde(default) 静默忽略（任务会以空 prompt 创建）**——均已改 snake_case+测试同步；changed_files 读 file、files_changed 按计数、deferred_at 按字符串、workTaskDefer 补必填 deferred；sendJsonElement 不再吞传输错误（超时→UNKNOWN 而非删台账）；回查二遍宽匹配（慢时钟不误报"未找到"）；派发前过期定时归一+文件夹失效校验；空态闸含提交中卡；密文剥离空格；V138 能力矩阵文档字段名勘误（文档 camelCase 说法是根因）。
+- 教训沉淀：**派发管线此前九轮全绿但从未对过服务端源码字段名，R10 以 /mnt/Projects/codeg/repo/src-tauri 为准逐一核对才抓出**；V138-API-Capability-Matrix.md 的"全 camelCase"是根因性错误文档。
+- 发版：tag v1.0.1-fengx.33（versionCode 35），双 APK 挂 Release。

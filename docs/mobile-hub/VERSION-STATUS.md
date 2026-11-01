@@ -10,3 +10,4 @@
 | v142 | ✅ 完成 | 10c8bc3 | ✅ | Verify+Release 绿（tag .31；Verify 首跑为既有用例 CI 超时抖动，rerun 绿） | 配置同步 |
 
 | 终审修复 | ✅ 完成 | 3ce3d25 | ✅ | tag v1.0.1-fengx.32（v34） | 十维度终审收尾，FINAL-REPORT.md 出稿 |
+| v143 | ✅ 完成 | d200a9a→ba71d48（6提交） | ✅ | tag v1.0.1-fengx.33（v35） | 真机反馈返工+十轮对抗审查（崩溃加固/TabRow三页签/双创建闸门/线上字段名致命修正） |
