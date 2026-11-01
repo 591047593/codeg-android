@@ -80,6 +80,18 @@
 - ⑤死亡红框：任务板 FailedBanner 红底大卡改柔和文字行+内联重试钮；孤儿 UNKNOWN 卡红底改中性底色+红字标题。会话频道/专家页的 alpha-0.12 行内提示为紧凑行不属「大块红卡」，未动（避免自由发挥）。
 - 门禁：本批起本地零编译（主人指示编译打包一律走 GitHub Actions），语法/契约人工核对+新增 5 例单测随 CI Verify 跑。
 
+## 批v150：Mobile Hub V2 UI/UX 重建（四栏导航+动态工作台+悬浮球快捷中心+统一选择器+派发表单双宿主）（2026-11-02）
+- 依据：/mnt/Projects/codeg/docs/ 两篇任务书 + ui1/ui2 对照图；先摸排审计（docs/mobile-hub/UX-AUDIT.md 阶段0）→ 调研 → 规划 → 子代理审查通过 → 分期实施 → 交付三文档（UIUX-AUDIT/UIUX-IMPLEMENTATION/UIUX-TEST-REPORT）。
+- Phase A（77a22b7）：底部导航五栏改四栏 动态|收件箱|任务板|设置；会话/文件夹/搜索降级推入面（路由字符串全保留）；P0 会话模式首条指令发射端接线。
+- Phase B（87dd237+fb90dfa）：动态页升工作台——固定头部（设备统计/快捷入口/需要处理预览）+ feed 零改动；WorkbenchViewModel 60s 只读轮询（active+foreground 双闸门，与 TaskHub 25s 互斥不并跑）；首版 onFailure 花括号错位同批修复并立「剥离源码括号平衡」静态闸。
+- Phase C+D1（f40845f）：悬浮球=快捷中心（2×2 快捷卡+全局搜索行+全部动作折叠区，单击开面板保留 1s 拖动）；+4 可绑定动作 quickIdea/quickTask/quickHandoff/quickSearch（默认绑定零变更）；QuickIdeaSheet ≤2 步记想法；统一选择器四组件 Pickers.kt（chips+OptionListSheet，无假在线点）；DispatchForm+DispatchFormHost 双宿主契约（宿主B=QuickActionViewModel 薄守卫管线→DispatchService，UNKNOWN 归收件箱账本，不造第二套状态机）；RecentSessionPickerSheet 真实聚合选会话+HandoffAutoOpenBus 交接自动展开（serverId:conversationId 消费防撞车）。
+- Phase D2（6f01ed6）：收件箱派发单切共享 DispatchForm（宿主 A 适配器：formUi 投影+dispatch overload），610 行三滚轮旧表单退役；v146 不变量（saveable id/30s tick/branchFresh 键控/进程死亡恢复/双创建闸/定时归零/canDispatch/屏级回执/sheet 拖拽锁）随契约迁移。
+- Phase D3（d938ca3）：交接单三滚轮换 chips+OptionListSheet；composer 两处文件夹锚定菜单换可搜索 OptionListSheet（路径作 note）；滚轮 UI 调用点清零（组件+几何单测保留）。
+- Phase E（d3255d5）：ServerEditorScreen 硬编码绿换 success token；版本 v1.0.1-fengx.41/versionCode 43；VM 作用域复核（动态/任务板轮询各自 active 闸互斥）。
+- 偏差（规划内）：DispatchForm 提前至 C 提交（快捷任务卡必须开真实表单）；工作台统计为固定头部；需要处理预览置顶；WheelColumn 组件保留（几何单测仍锁行为）。
+- 测试限制：dell 无模拟器/真机+本地编译纪律禁止 → 静态审查+ui1/ui2 对照+CI 云端闸，无截图不做假图；真机验收清单（10 项+八张截图）移交主人，回填 UIUX-TEST-REPORT.md。
+- 发版：tag v1.0.1-fengx.41（versionCode 43）。
+
 ## 批v148：二级卡片拖拽关闭恢复（v147 手势锁真机回归修复）（2026-11-02）
 - 背景：主人装 v36 反馈——二级卡片（派发单/任务详情/项目选择）支持拖动下滑但「瞬间弹回，无法触发手动隐藏」。根因=批v147 一刀切：confirmValueChange 拒绝 Hidden 让所有拖拽关闭失效（原意防手势穿透，结果把标准关闭手势也禁了）。
 - 修复（单向闸替代一刀切）：SheetDragLockConnection.onPostScroll 改方向闸——向下剩余拖拽（内容已在顶部，available.y>0）放行给 sheet → 标准拖拽关闭恢复；向上剩余+全部剩余惯性照旧吞掉 → 滚轮/短列表滑动手感保持独立，卡片不被拽走。五表 confirmValueChange 全部撤除，dragHandle=null 与锁保留。

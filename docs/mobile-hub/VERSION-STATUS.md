@@ -18,3 +18,4 @@
 | v149 | ✅ 完成 | a9c55b1 | ✅ | tag v1.0.1-fengx.38（v40） | 会话模式派发（执行方式选择器+createConversation分支+自动跳会话发首条指令+worktree目录过滤+会话探针/重派保模式+SessionAutoStart） |
 | v149.1 | ✅ 完成 | ad11c0f | ✅ | tag v1.0.1-fengx.39（v41） | 会话模式派发空白修复（liveTurn 只认 inFlightUserTurnId，服务端出生即 in_progress）+ WheelPicker 行号几何三修（末行吞提交/错位一行/预选偏一行） |
 | v149.2 | ✅ 完成 | bf43de0→67a9610 | ✅ | tag v1.0.1-fengx.40（v42；Verify 一次编译错修复+一次既有用例抖动 rerun） | 上传失败修复：图片自适应重编码阶梯（≤550KB）+文件失败原因显形+409自动改名重试+发送前聚合守卫 |
+| v150 | ✅ 完成 | 77a22b7→d3255d5（7提交） | ✅ | tag v1.0.1-fengx.41（v43） | Mobile Hub V2 UI/UX 重建：四栏导航+动态工作台+悬浮球快捷中心+统一选择器（滚轮退役）+派发表单双宿主契约；交付 UIUX 三文档 |
