@@ -290,14 +290,21 @@ class SessionDetailViewModel @Inject constructor(
                             error = null,
                         )
                     }
-                    // Reattach when the server reports the turn live — via an explicit
-                    // in-flight user turn id or the conversation status (iOS parity).
-                    val liveTurn = detail.inFlightUserTurnId != null || detail.summary.status.isLive
+                    // Reattach only when a turn is GENUINELY executing:
+                    // in_flight_user_turn_id is sourced from the live connection's
+                    // pending user message (set on UserMessage, cleared on
+                    // TurnComplete), so it is null for an idle conversation. The
+                    // conversation STATUS cannot play this role — every freshly
+                    // created row is born in_progress (server create_inner), so
+                    // status.isLive is true for a conversation that has never seen
+                    // a turn, and gating on it skipped the dispatch auto-send
+                    // below forever (v149.1: session-mode detail always blank).
+                    val liveTurn = detail.inFlightUserTurnId != null
                     if (liveTurn) reattachIfLive()
                     // 批v149 会话模式派发：收件箱"会话"方式创建会话后跳进来，这里
-                    // 消费armed 的首条指令并发送。只在空闲会话发送（live 轮由
-                    // isInFlight 守卫挡下，这里显式跳过更清楚）；指令总是先取出
-                    // （consume-once），绝不让它从一个更晚的无关访问里复活。
+                    // 消费armed 的首条指令并发送。只在真有轮次在跑时让位（live 轮
+                    // 由 isInFlight 守卫挡下）；指令总是先取出（consume-once），
+                    // 绝不让它从一个更晚的无关访问里复活。
                     sessionAutoStart.take(p.id, id)?.let { prompt ->
                         if (!liveTurn) send(prompt, withAttachments = false)
                     }

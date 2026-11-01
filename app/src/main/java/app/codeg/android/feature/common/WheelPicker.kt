@@ -23,7 +23,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
+/**
+ * Display row a settled LazyColumn index reports as, or null when the settle
+ * landed on one of the half-viewport pads (LazyColumn indices 0 and
+ * [itemCount] + 1) with no row centered. Real rows sit at LazyColumn indices
+ * 1..[itemCount], so the display row is always lazyIndex − 1 — v149.1: the raw
+ * index was reported/validated directly, which silently dropped the last
+ * row's settle (the dispatch agent wheel's last entry) and committed one row
+ * below every other scroll selection. Pure so the geometry is unit-testable.
+ */
+internal fun wheelDisplayIndex(lazyColumnIndex: Int, itemCount: Int): Int? =
+    (lazyColumnIndex - 1).takeIf { it in 0 until itemCount }
 
 /**
  * One vertical wheel column (clock-app style): drag to spin, snap to the
@@ -33,7 +47,9 @@ import kotlin.math.abs
  * Sizing contract: [itemHeightDp] × [visibleCount] fixed rows; odd
  * [visibleCount] so one row sits exactly in the middle. External selection
  * changes (e.g. preselected defaults) scroll the wheel; user settles select
- * back through [onSelect].
+ * back through [onSelect]. [onSelect] reports DISPLAY indices (0-based into
+ * [items]) — never raw LazyColumn indices, which the internal half-viewport
+ * pads shift by one.
  */
 @Composable
 fun WheelColumn(
@@ -51,21 +67,26 @@ fun WheelColumn(
     val fling = rememberSnapFlingBehavior(lazyListState = state)
 
     // External selection (defaults, device switch reset) drives the wheel.
+    // Centering display row [target] takes a content scroll of exactly
+    // itemHeight × target: the half-viewport pad-top is the runway that lets
+    // row 0 reach the center band, and pad-bottom clamps the last row there
+    // too. (Scrolling by LazyColumn ITEM index was off by one row for every
+    // target > 0.)
     LaunchedEffect(items, selectedIndex) {
         if (items.isEmpty()) return@LaunchedEffect
         val target = selectedIndex.coerceIn(0, items.lastIndex)
-        val current = state.firstVisibleItemIndex
-        if (current != target || state.firstVisibleItemScrollOffset != 0) {
-            state.scrollToItem(target)
-        }
+        state.scrollToItem(0, (itemHeightPx * target).roundToInt())
     }
 
     // Settled scroll → report the centered item. Fires only when the wheel
-    // comes to rest, so dragging never spams onSelect mid-gesture.
+    // comes to rest, so dragging never spams onSelect mid-gesture. drop(1)
+    // skips the flow's initial "not scrolling" emission, which would report
+    // the pre-positioning row and clobber an external preselect at composition.
     LaunchedEffect(items) {
         if (items.isEmpty()) return@LaunchedEffect
         snapshotFlow { state.isScrollInProgress }
             .distinctUntilChanged()
+            .drop(1)
             .collect { scrolling ->
                 if (!scrolling) {
                     val layout = state.layoutInfo
@@ -75,8 +96,10 @@ fun WheelColumn(
                         val nearest = visible.minByOrNull {
                             abs(it.offset + it.size / 2 - viewportCenter)
                         }
-                        if (nearest != null && nearest.index in items.indices) {
-                            onSelect(nearest.index)
+                        if (nearest != null) {
+                            // See [wheelDisplayIndex]: report the display row,
+                            // never the pad-shifted LazyColumn index.
+                            wheelDisplayIndex(nearest.index, items.size)?.let(onSelect)
                         }
                     }
                 }
