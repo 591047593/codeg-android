@@ -30,8 +30,6 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +64,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.AgentVisuals
+import app.codeg.android.core.designsystem.component.OptionListSheet
+import app.codeg.android.core.designsystem.component.PickerOption
 import app.codeg.android.core.designsystem.component.CodegTextField
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
@@ -422,33 +423,27 @@ private fun WorkspaceSection(
 @Composable
 private fun FolderMenuRow(ui: SessionDetailUiState, onSelectFolder: (FolderDetail) -> Unit) {
     val colors = CodegTheme.colors
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            Modifier.fillMaxWidth().clickable { expanded = true }.padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(Icons.Rounded.Folder, null, tint = colors.accent, modifier = Modifier.size(18.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(ui.folderName ?: stringResource(R.string.agentopts_choose_folder), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                ui.folderPath?.let { PathLine(it) }
-            }
-            Icon(Icons.Rounded.UnfoldMore, null, tint = colors.textTertiary, modifier = Modifier.size(16.dp))
+    var sheetOpen by rememberSaveable { mutableStateOf(false) }
+    // 批v150：锚定菜单换成统一 OptionListSheet——可搜索、路径作 note。
+    Row(
+        Modifier.fillMaxWidth().clickable { sheetOpen = true }.padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Rounded.Folder, null, tint = colors.accent, modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(ui.folderName ?: stringResource(R.string.agentopts_choose_folder), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            ui.folderPath?.let { PathLine(it) }
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            ui.availableFolders.forEach { f ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(f.name, fontSize = 14.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(f.path, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    },
-                    leadingIcon = { Icon(Icons.Rounded.Folder, null, tint = if (f.id == ui.selectedFolderId) colors.accent else colors.textTertiary, modifier = Modifier.size(18.dp)) },
-                    onClick = { onSelectFolder(f); expanded = false },
-                )
-            }
-        }
+        Icon(Icons.Rounded.UnfoldMore, null, tint = colors.textTertiary, modifier = Modifier.size(16.dp))
+    }
+    if (sheetOpen) {
+        OptionListSheet(
+            title = stringResource(R.string.agentopts_choose_folder),
+            options = ui.availableFolders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
+            selectedId = ui.selectedFolderId?.toString(),
+            onSelect = { opt -> ui.availableFolders.firstOrNull { it.id.toString() == opt.id }?.let(onSelectFolder) },
+            onDismiss = { sheetOpen = false },
+        )
     }
 }
 

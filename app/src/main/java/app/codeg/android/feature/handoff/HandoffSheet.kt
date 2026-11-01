@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -35,13 +37,16 @@ import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.HandoffSource
+import app.codeg.android.core.designsystem.component.AgentChipRow
+import app.codeg.android.core.designsystem.component.DeviceChipRow
+import app.codeg.android.core.designsystem.component.OptionListSheet
+import app.codeg.android.core.designsystem.component.PickerField
+import app.codeg.android.core.designsystem.component.PickerOption
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.core.model.AgentType
-import app.codeg.android.feature.common.WheelColumn
 
 /**
  * Handoff composer (batch v141): edit the generated package, pick relay mode
@@ -59,6 +64,7 @@ fun HandoffSheet(
     var device by rememberSaveable { mutableStateOf<String?>(null) }
     var folderId by rememberSaveable { mutableStateOf<Int?>(null) }
     var agent by rememberSaveable { mutableStateOf<AgentType?>(null) }
+    var folderSheet by rememberSaveable { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(source.conversationId) {
         viewModel.generate(source)
@@ -195,9 +201,6 @@ fun HandoffSheet(
                     }
                 }
             }
-            if (device != null && targets.foldersLoading) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            }
             targets.error?.let {
                 Text(
                     it,
@@ -217,68 +220,51 @@ fun HandoffSheet(
                     modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
                 )
             }
-            // 三列并排滚轮选择器（手机时钟风格），与派发 sheet 同款交互。
-            Row(Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.dispatch_device),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = CodegTheme.colors.textTertiary,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                    WheelColumn(
-                        items = targets.profiles.map { it.name },
-                        selectedIndex = targets.profiles.indexOfFirst { it.id == device }.coerceAtLeast(0),
-                        onSelect = { idx ->
-                            val profile = targets.profiles.getOrNull(idx) ?: return@WheelColumn
-                            if (profile.id != device) {
-                                device = profile.id
-                                folderId = null
-                                agent = null
-                                viewModel.loadTarget(profile.id)
-                            }
-                        },
-                        emptyText = stringResource(R.string.dispatch_no_device),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.dispatch_project),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = CodegTheme.colors.textTertiary,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                    WheelColumn(
-                        items = targets.folders.map { it.name },
-                        selectedIndex = targets.folders.indexOfFirst { it.id == folderId }.coerceAtLeast(0),
-                        onSelect = { idx -> folderId = targets.folders.getOrNull(idx)?.id },
-                        emptyText = stringResource(
-                            if (targets.foldersLoading) R.string.dispatch_defaults_loading else R.string.dispatch_no_folder,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.dispatch_agent),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = CodegTheme.colors.textTertiary,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                    )
-                    val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
-                    val agentOptions = remember(targets.agents, autoAgentLabel) {
-                        listOf(autoAgentLabel) + targets.agents.map { it.displayName }
+            // 统一选择器（批v150）：设备 chips + 项目 PickerField→OptionListSheet
+            // + Agent chips，与共享派发表单同款交互；三列滚轮在此退役。
+            DeviceChipRow(
+                devices = targets.profiles.map { PickerOption(id = it.id, label = it.name) },
+                selectedId = device,
+                loadingDeviceId = if (targets.foldersLoading) device else null,
+                errorDeviceIds = if (targets.error != null || targets.agentsError || targets.foldersError) {
+                    setOfNotNull(device)
+                } else emptySet(),
+                onSelect = { id ->
+                    if (id != device) {
+                        device = id
+                        folderId = null
+                        agent = null
+                        viewModel.loadTarget(id)
                     }
-                    WheelColumn(
-                        items = agentOptions,
-                        selectedIndex = (if (agent == null) 0 else targets.agents.indexOf(agent) + 1)
-                            .coerceIn(0, agentOptions.lastIndex),
-                        onSelect = { idx -> agent = if (idx <= 0) null else targets.agents.getOrNull(idx - 1) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                },
+            )
+            if (targets.profiles.isEmpty()) {
+                Text(
+                    stringResource(R.string.dispatch_no_device),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = CodegTheme.colors.textTertiary,
+                )
             }
+            val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
+            AgentChipRow(
+                autoLabel = autoAgentLabel,
+                agents = targets.agents.map { PickerOption(id = it.name, label = it.displayName) },
+                selectedId = agent?.name,
+                onSelect = { name -> agent = AgentType.entries.firstOrNull { it.name == name } },
+            )
+            PickerField(
+                icon = Icons.Rounded.Folder,
+                label = stringResource(R.string.dispatch_project),
+                value = targets.folders.firstOrNull { it.id == folderId }?.name,
+                placeholder = stringResource(
+                    when {
+                        targets.foldersLoading -> R.string.dispatch_defaults_loading
+                        targets.foldersError -> R.string.dispatch_folders_failed
+                        else -> R.string.dispatch_no_folder
+                    },
+                ),
+                onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
+            )
             ui.error?.let {
                 Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
             }
@@ -303,6 +289,16 @@ fun HandoffSheet(
                 style = MaterialTheme.typography.labelSmall,
                 color = CodegTheme.colors.textSecondary,
             )
+
+            if (folderSheet) {
+                OptionListSheet(
+                    title = stringResource(R.string.dispatch_project),
+                    options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name) },
+                    selectedId = folderId?.toString(),
+                    onSelect = { opt -> folderId = opt.id.toIntOrNull() },
+                    onDismiss = { folderSheet = false },
+                )
+            }
         }
     }
 
@@ -330,11 +326,3 @@ private fun HandoffField(label: String, value: String, onChange: (String) -> Uni
     )
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = CodegTheme.colors.textSecondary,
-    )
-}

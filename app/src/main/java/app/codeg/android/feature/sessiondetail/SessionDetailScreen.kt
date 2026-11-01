@@ -58,8 +58,6 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -121,6 +119,8 @@ import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
+import app.codeg.android.core.designsystem.component.OptionListSheet
+import app.codeg.android.core.designsystem.component.PickerOption
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -1049,6 +1049,8 @@ private fun SessionContextChips(
     val colors = CodegTheme.colors
     val editable = ui.isDraftEditable && !ui.isInFlight
     val agentDescription = stringResource(R.string.compose_ctx_agent)
+    // 批v150：文件夹选择从锚定菜单换成统一 OptionListSheet（大列表可搜索）。
+    var folderSheet by rememberSaveable { mutableStateOf(false) }
 
     LazyRow(
         Modifier.fillMaxWidth(),
@@ -1168,30 +1170,13 @@ private fun SessionContextChips(
         if (ui.folderName != null || editable) {
             item(key = "ctx-folder") {
                 if (editable) {
-                    var expanded by remember { mutableStateOf(false) }
-                    Box {
-                        ContextChip(
-                            icon = Icons.Rounded.Folder,
-                            label = ui.folderName ?: stringResource(R.string.agentopts_choose_folder),
-                            contentDescription = stringResource(R.string.compose_ctx_folder),
-                            enabled = ui.availableFolders.isNotEmpty(),
-                            onClick = { expanded = true },
-                        )
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            ui.availableFolders.forEach { f ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(f.name, fontSize = 14.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text(f.path, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
-                                    },
-                                    leadingIcon = { Icon(Icons.Rounded.Folder, null, tint = if (f.id == ui.selectedFolderId) colors.accent else colors.textTertiary, modifier = Modifier.size(16.dp)) },
-                                    onClick = { viewModel.selectFolder(f); expanded = false },
-                                )
-                            }
-                        }
-                    }
+                    ContextChip(
+                        icon = Icons.Rounded.Folder,
+                        label = ui.folderName ?: stringResource(R.string.agentopts_choose_folder),
+                        contentDescription = stringResource(R.string.compose_ctx_folder),
+                        enabled = ui.availableFolders.isNotEmpty(),
+                        onClick = { folderSheet = true },
+                    )
                 } else {
                     ContextChip(
                         icon = Icons.Rounded.Folder,
@@ -1227,6 +1212,17 @@ private fun SessionContextChips(
                 )
             }
         }
+    }
+
+    // 批v150：与共享派发表单同款的项目选择 sheet——可搜索、路径作 note、高亮当前值。
+    if (folderSheet) {
+        OptionListSheet(
+            title = stringResource(R.string.agentopts_choose_folder),
+            options = ui.availableFolders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
+            selectedId = ui.selectedFolderId?.toString(),
+            onSelect = { opt -> ui.availableFolders.firstOrNull { it.id.toString() == opt.id }?.let(viewModel::selectFolder) },
+            onDismiss = { folderSheet = false },
+        )
     }
 }
 
