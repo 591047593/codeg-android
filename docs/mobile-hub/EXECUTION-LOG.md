@@ -100,3 +100,12 @@
 - 影响：v34→v38 期间任何**滚动**选过的设备/目录/Agent 都可能选中相邻行（预选默认未滚动的不受影响）；本批起滚动选择恢复所见即所得。
 - 门禁：本地零编译，CI Verify 绿（run 41349416217，含新单测）。
 - 发版：tag v1.0.1-fengx.39（versionCode 41），Release 绿（run 41349971443），双 APK+sha256 挂 Release+TG 直链。注：v38 已卡死的旧会话（指令已被消费）升级后不自动补发，重派或手输即可。
+
+## 批v149.2：上传图片/文件失败与「重试永久失败」修复（2026-11-02）
+- 背景：主人报「1MB 多的图片提示文件过大上传失败，之后图片/文件（哪怕几 KB）全部失败，在当前对话窗口重试仍失败」。
+- 取证：dell 服务端 0.41.1002 实测 `/api/upload_workspace_file` **无体积上限**（3MB → 200，488c5afb 起 DefaultBodyLimit::disable）；`/upload_attachment` 才有 20MB 上限且 Android 不走它；`/acp_prompt` 有 axum 默认 2MiB body 上限（客户端聚合预算 MAX_TOTAL_BYTES×4/3≈1.73M base64 字符已在保护）。
+- 根因①（图片连锁失败）：AttachmentPrep 原逻辑「长边≤1568px 的原图直接透传」（上限 4MB）——一张 ~1.5MB 截图原样进聚合预算后**吃光全部额度**，之后任何图片（哪怕几 KB）都在聚合闸被跳过；且被拒的图片仍留在选择器里，感知为「之后全失败」。修复：自适应重编码阶梯 LADDER（1568/q75 → 1280/q60 → 1024/q50 → 768/q40），原图超 550KB 或超 1568px 即步降，首个达标即用、全败取最小结果兜底；新增纯函数 prepRoute + 单测。
+- 根因②（文件重试永久失败）：addFileAttachments `catch (_: Exception) { null }` 把 413/409/404/401 全部吞成 null——尤其 409 already exists（上次尝试报错前字节可能已落盘，服务端拒绝覆盖），同一文件**重试永远失败**且无原因提示。修复：stageWorkspaceFile 用 Result.fold 把失败原因显形（`文件名：原因` 列表），409 冲突自动改名（`a.png`→`a (1).png`）重试一次；`openInputStream!!` NPE 改显式 IOException；超 20MB 单文件给具体文件名提示；图片通知改双语 string 并补 image_attach_done / send_prompt_too_large 等五条双语文案。
+- 根因③（兜底）：send() 新增发送前聚合体积守卫（>1.73M base64 字符给「请先移除部分图片」提示而非裸 413），防恢复的草稿或未来调用方绕过选择期聚合闸。
+- 门禁：本地零编译。Verify 首跑暴露一处空安全编译错（when(exceptionOrNull()) 无 null 分支，else 内可空接收者）→ fold 重写修复（67a9610）；二跑 ServerStoreTest 既有用例超时抖动假红（7b66be9 同源，与本次改动无关）→ rerun 绿。
+- 发版：tag v1.0.1-fengx.40（versionCode 42），Release 绿（run 41354466127），双 APK+sha256 挂 Release+TG 直链。单测 AttachmentPrepRouteTest 8 例（prepRoute 路由/LADDER 单调不变量/autoRenamedFileName）。

@@ -17,3 +17,4 @@
 | v147 | ✅ 完成 | 65ac774→70e4ff7（suspend签名修正） | ✅ | tag v1.0.1-fengx.36（v38） | 真机五连Bug修复：archived崩溃面单测钉死/五表手势锁+禁拖拽关闭/定时完整回显到时分/收件箱净化/死亡红框清除；dell服务端500需升级（待授权） |
 | v149 | ✅ 完成 | a9c55b1 | ✅ | tag v1.0.1-fengx.38（v40） | 会话模式派发（执行方式选择器+createConversation分支+自动跳会话发首条指令+worktree目录过滤+会话探针/重派保模式+SessionAutoStart） |
 | v149.1 | ✅ 完成 | ad11c0f | ✅ | tag v1.0.1-fengx.39（v41） | 会话模式派发空白修复（liveTurn 只认 inFlightUserTurnId，服务端出生即 in_progress）+ WheelPicker 行号几何三修（末行吞提交/错位一行/预选偏一行） |
+| v149.2 | ✅ 完成 | bf43de0→67a9610 | ✅ | tag v1.0.1-fengx.40（v42；Verify 一次编译错修复+一次既有用例抖动 rerun） | 上传失败修复：图片自适应重编码阶梯（≤550KB）+文件失败原因显形+409自动改名重试+发送前聚合守卫 |
