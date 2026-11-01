@@ -2,40 +2,53 @@ package app.codeg.android.feature.taskhub
 
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +57,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,41 +67,50 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.data.DeviceLoadStatus
+import app.codeg.android.core.data.SEGMENT_ORDER
 import app.codeg.android.core.data.TaskBoardEntry
-import app.codeg.android.core.data.TaskColumn
-import app.codeg.android.core.data.activeColumns
-import app.codeg.android.core.data.taskColumnOf
+import app.codeg.android.core.data.TaskSegment
+import app.codeg.android.core.data.TaskStatusTone
+import app.codeg.android.core.data.taskStatusUi
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import java.time.Instant
-import java.time.format.DateTimeParseException
 
 /**
- * The cross-device work-task board (batch v139): one screen, every participating
- * device, the server's own statuses grouped into PRD §8.2's columns. Rendered
- * inside the Activity tab's "任务" toggle — see [TaskHubViewModel] for the
- * fetch/projection split.
+ * The cross-device work-task board (ui重构 阶段2+3): global device scope (the
+ * bar above — this page renders no second device row), a compact toolbar
+ * (folder / search / filter), the four web-parity segments with counts, and
+ * vertical task cards with ONE primary action each. Everything else lives in
+ * the detail sheet. Server statuses are shown via [taskStatusUi]; unknown
+ * statuses get a neutral section and no state actions (never "done").
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val board by viewModel.board.collectAsStateWithLifecycle()
+    val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
+
+    var segmentName by rememberSaveable { mutableStateOf(TaskSegment.TODO.name) }
+    val segment = runCatching { TaskSegment.valueOf(segmentName) }.getOrDefault(TaskSegment.TODO)
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var folderSheet by remember { mutableStateOf(false) }
+    var detailEntry by remember { mutableStateOf<TaskBoardEntry?>(null) }
     var confirm by remember { mutableStateOf<ConfirmAction?>(null) }
 
     // The 25s poll runs only while the board is actually on screen: entering
     // this composable arms it, leaving the Activity tab (or switching back to
     // the feed page) disposes it and stops the radio. The VM survives tab
     // switches, so without this the poll leaked forever after one visit.
-    androidx.compose.runtime.DisposableEffect(viewModel) {
+    DisposableEffect(viewModel) {
         viewModel.setActive(true)
         onDispose { viewModel.setActive(false) }
     }
 
     PullToRefreshBox(
         isRefreshing = ui.deviceStates.any { it.status == DeviceLoadStatus.LOADING } && ui.tasks.isEmpty(),
-        onRefresh = viewModel::refresh,
+        onRefresh = { viewModel.refresh(); viewModel.refreshFolders() },
         modifier = Modifier.fillMaxSize(),
     ) {
         val listState = rememberLazyListState()
@@ -100,13 +124,38 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            item(key = "filters") {
-                DeviceFilterRow(
-                    ui = ui,
-                    onSelect = viewModel::setDeviceFilter,
+            item(key = "toolbar") {
+                ToolbarRow(
+                    folderFilter = ui.folderFilter,
+                    searchOpen = searchOpen,
+                    showCanceled = ui.showCanceled,
                     showArchived = ui.showArchived,
-                    onToggleArchived = viewModel::setShowArchived,
+                    onToggleSearch = {
+                        searchOpen = !searchOpen
+                        if (!searchOpen) viewModel.setSearchQuery("")
+                    },
+                    onFolderClick = { folderSheet = true },
+                    onShowCanceled = viewModel::setShowCanceled,
+                    onShowArchived = viewModel::setShowArchived,
                 )
+            }
+            if (searchOpen) {
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = ui.searchQuery,
+                        onValueChange = viewModel::setSearchQuery,
+                        placeholder = { Text(stringResource(R.string.task_search_hint)) },
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.setSearchQuery(""); searchOpen = false }) {
+                                Icon(Icons.Rounded.Close, contentDescription = null)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
             }
             if (ui.failedDevices > 0) {
                 item(key = "banner") {
@@ -122,6 +171,8 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                         text = stringResource(R.string.task_action_failed) + " · " + error,
                         color = colors.danger,
                         style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
@@ -139,10 +190,17 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                     )
                 }
             }
-            val columns = activeColumns(board)
-            // hasLoaded gate: before the first round lands, "no tasks" would sit
-            // right next to running spinners, contradicting them.
-            if (ui.hasLoaded && columns.isEmpty()) {
+            item(key = "segments") {
+                SegmentBar(
+                    counts = board.counts,
+                    selected = segment,
+                    onSelect = { segmentName = it.name },
+                )
+            }
+            val rows = board.segments[segment].orEmpty()
+            val unknownHere = segment == TaskSegment.ATTENTION
+            val isEmpty = ui.hasLoaded && rows.isEmpty() && (!unknownHere || board.unknown.isEmpty())
+            if (isEmpty) {
                 item(key = "empty") {
                     EmptyState(
                         icon = Icons.Rounded.Refresh,
@@ -150,142 +208,280 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                             if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
                         ),
                         message = stringResource(R.string.task_empty_hint),
-                        modifier = Modifier.padding(top = 64.dp),
+                        modifier = Modifier.padding(top = 48.dp),
                     )
                 }
             }
-            columns.forEach { column ->
-                item(key = "col-${column.name}") {
-                    ColumnHeader(column, board[column].orEmpty().size)
+            items(
+                rows,
+                key = { "${it.serverId}-${it.task.id}" },
+                contentType = { "task" },
+            ) { entry ->
+                TaskCard(
+                    entry = entry,
+                    folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
+                    busy = ui.busyKey != null,
+                    spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
+                    onOpenDetail = { detailEntry = entry },
+                    onAction = { confirm = it },
+                )
+            }
+            if (unknownHere && board.unknown.isNotEmpty()) {
+                item(key = "unknown-header") {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.task_unknown_section),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.textPrimary,
+                        )
+                        Text("${board.unknown.size}", style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
+                    }
                 }
                 items(
-                    board[column].orEmpty(),
-                    key = { "${it.serverId}-${it.task.id}" },
+                    board.unknown,
+                    key = { "u-${it.serverId}-${it.task.id}" },
                     contentType = { "task" },
                 ) { entry ->
                     TaskCard(
                         entry = entry,
-                        detail = ui.details[entry.serverId]?.get(entry.task.id),
+                        folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
                         busy = ui.busyKey != null,
-                        spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
-                        onExpand = { viewModel.loadDetail(entry.serverId, entry.task.id) },
-                        onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
-                        onStart = { confirm = ConfirmAction.START(entry) },
-                        onCancel = { confirm = ConfirmAction.CANCEL(entry) },
-                        onRetry = { confirm = ConfirmAction.RETRY(entry) },
-                        onRequeue = { confirm = ConfirmAction.REQUEUE(entry) },
-                        onMerge = { confirm = ConfirmAction.MERGE(entry) },
-                        onComplete = { confirm = ConfirmAction.COMPLETE(entry) },
+                        spinning = false,
+                        onOpenDetail = { detailEntry = entry },
+                        onAction = { confirm = it },
                     )
                 }
             }
         }
     }
 
-    confirm?.let { action ->
-        val (titleRes, msgRes, run) = when (action) {
-            is ConfirmAction.CANCEL -> Triple(
-                R.string.task_confirm_cancel_title,
-                R.string.task_confirm_cancel_msg,
-                { viewModel.cancel(action.entry.serverId, action.entry.task.id) },
-            )
-            is ConfirmAction.MERGE -> Triple(
-                R.string.task_confirm_merge_title,
-                R.string.task_confirm_merge_msg,
-                { viewModel.merge(action.entry.serverId, action.entry.task.id) },
-            )
-            is ConfirmAction.COMPLETE -> Triple(
-                R.string.task_confirm_complete_title,
-                R.string.task_confirm_complete_msg,
-                { viewModel.complete(action.entry.serverId, action.entry.task.id) },
-            )
-            is ConfirmAction.START -> Triple(
-                R.string.task_confirm_start_title,
-                R.string.task_confirm_start_msg,
-                { viewModel.start(action.entry.serverId, action.entry.task.id) },
-            )
-            is ConfirmAction.RETRY -> Triple(
-                R.string.task_confirm_retry_title,
-                R.string.task_confirm_retry_msg,
-                { viewModel.retry(action.entry.serverId, action.entry.task.id) },
-            )
-            is ConfirmAction.REQUEUE -> Triple(
-                R.string.task_confirm_requeue_title,
-                R.string.task_confirm_requeue_msg,
-                { viewModel.requeue(action.entry.serverId, action.entry.task.id) },
+    if (folderSheet) {
+        ModalBottomSheet(onDismissRequest = { folderSheet = false }) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    stringResource(R.string.task_folder_picker),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                FolderOptionRow(
+                    label = stringResource(R.string.task_filter_folder),
+                    selected = ui.folderFilter == null,
+                ) { viewModel.setFolderFilter(null); folderSheet = false }
+                folderOptions.forEach { name ->
+                    FolderOptionRow(
+                        label = name,
+                        selected = ui.folderFilter == name,
+                    ) { viewModel.setFolderFilter(name); folderSheet = false }
+                }
+            }
+        }
+    }
+
+    detailEntry?.let { entry ->
+        ModalBottomSheet(
+            onDismissRequest = { detailEntry = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            TaskDetailSheet(
+                entry = entry,
+                folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
+                detail = ui.details[entry.serverId]?.get(entry.task.id),
+                busy = ui.busyKey != null,
+                spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
+                onAction = { confirm = it },
+                onOpen = { viewModel.loadDetail(entry.serverId, entry.task.id) },
+                onLoadDiff = { viewModel.loadDetail(entry.serverId, entry.task.id, withDiff = true) },
+                onDismiss = { detailEntry = null },
             )
         }
-        AlertDialog(
-            onDismissRequest = { confirm = null },
-            title = { Text(stringResource(titleRes)) },
-            text = { Text(stringResource(msgRes)) },
-            confirmButton = {
-                TextButton(onClick = { run(); confirm = null }) { Text(stringResource(android.R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirm = null }) { Text(stringResource(android.R.string.cancel)) }
-            },
-        )
     }
+
+    ConfirmDialogs(confirm, ui.busyKey != null, onRun = { action ->
+        val id = action.entry.task.id
+        val server = action.entry.serverId
+        when (action) {
+            is ConfirmAction.START -> viewModel.start(server, id)
+            is ConfirmAction.CANCEL -> viewModel.cancel(server, id)
+            is ConfirmAction.RETRY -> viewModel.retry(server, id)
+            is ConfirmAction.REQUEUE -> viewModel.requeue(server, id)
+            is ConfirmAction.MERGE -> viewModel.merge(server, id)
+            is ConfirmAction.COMPLETE -> viewModel.complete(server, id)
+            is ConfirmAction.RETURN -> viewModel.returnTask(server, id, action.feedback)
+            is ConfirmAction.DELIVER_PR -> viewModel.deliverPr(server, id)
+            is ConfirmAction.ARCHIVE -> viewModel.setArchived(server, id, true)
+            is ConfirmAction.UNARCHIVE -> viewModel.setArchived(server, id, false)
+            is ConfirmAction.DEFER -> viewModel.setDeferred(server, id, true)
+            is ConfirmAction.UNDEFER -> viewModel.setDeferred(server, id, false)
+            is ConfirmAction.DELETE -> viewModel.deleteTask(server, id)
+        }
+    }, onDismiss = { confirm = null })
 }
 
-private sealed interface ConfirmAction {
-    val entry: TaskBoardEntry
-
-    data class CANCEL(override val entry: TaskBoardEntry) : ConfirmAction
-    data class MERGE(override val entry: TaskBoardEntry) : ConfirmAction
-    data class COMPLETE(override val entry: TaskBoardEntry) : ConfirmAction
-    data class START(override val entry: TaskBoardEntry) : ConfirmAction
-    data class RETRY(override val entry: TaskBoardEntry) : ConfirmAction
-    data class REQUEUE(override val entry: TaskBoardEntry) : ConfirmAction
-}
-
+/** Toolbar: folder picker chip left, search + filter icons right (任务书 §4.1). */
 @Composable
-private fun DeviceFilterRow(
-    ui: TaskHubViewModel.UiState,
-    onSelect: (String?) -> Unit,
+private fun ToolbarRow(
+    folderFilter: String?,
+    searchOpen: Boolean,
+    showCanceled: Boolean,
     showArchived: Boolean,
-    onToggleArchived: (Boolean) -> Unit,
+    onToggleSearch: () -> Unit,
+    onFolderClick: () -> Unit,
+    onShowCanceled: (Boolean) -> Unit,
+    onShowArchived: (Boolean) -> Unit,
 ) {
-    val devices = ui.deviceStates
+    val colors = CodegTheme.colors
+    var filterMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        FilterChip(
-            selected = ui.deviceFilter == null,
-            onClick = { onSelect(null) },
-            label = { Text(stringResource(R.string.task_filter_all)) },
-        )
-        devices.forEach { device ->
-            FilterChip(
-                selected = ui.deviceFilter == device.serverId,
-                onClick = { onSelect(device.serverId) },
-                label = { Text(device.name) },
-                leadingIcon = {
-                    when (device.status) {
-                        DeviceLoadStatus.LOADING -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        DeviceLoadStatus.FAILED -> Icon(
-                            Icons.Rounded.CloudOff, contentDescription = null,
-                            modifier = Modifier.size(14.dp), tint = CodegTheme.colors.danger,
-                        )
-                        DeviceLoadStatus.OK -> null
-                    }
-                },
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onFolderClick)
+                .padding(horizontal = 8.dp, vertical = 8.dp)
+                .heightIn(min = 36.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Folder,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                folderFilter ?: stringResource(R.string.task_filter_folder),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+            Icon(
+                Icons.Rounded.ArrowDropDown,
+                contentDescription = null,
+                tint = colors.textSecondary,
+                modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.width(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.task_show_archived),
-                style = MaterialTheme.typography.labelSmall,
-                color = CodegTheme.colors.textSecondary,
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onToggleSearch, modifier = Modifier.size(40.dp)) {
+            Icon(
+                if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                contentDescription = null,
+                tint = if (searchOpen) colors.accent else colors.textSecondary,
             )
-            Switch(checked = showArchived, onCheckedChange = onToggleArchived, modifier = Modifier.padding(start = 2.dp))
+        }
+        Box {
+            IconButton(onClick = { filterMenu = true }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Rounded.FilterList,
+                    contentDescription = null,
+                    // Accent only when the user drifted from the default view
+                // (canceled shown, archived hidden) — a "filters active" hint.
+                tint = if (!showCanceled || showArchived) colors.accent else colors.textSecondary,
+                )
+            }
+            DropdownMenu(expanded = filterMenu, onDismissRequest = { filterMenu = false }) {
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showCanceled, onCheckedChange = null)
+                            Text(stringResource(R.string.task_filter_show_canceled))
+                        }
+                    },
+                    onClick = { onShowCanceled(!showCanceled) },
+                )
+                DropdownMenuItem(
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = showArchived, onCheckedChange = null)
+                            Text(stringResource(R.string.task_filter_show_archived))
+                        }
+                    },
+                    onClick = { onShowArchived(!showArchived) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .heightIn(min = 44.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) colors.accent else colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Text("✓", color = colors.accent, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+/** Four web-parity segments with live counts (待办 | 进行中 | 等你处理 | 已完成). */
+@Composable
+private fun SegmentBar(
+    counts: Map<TaskSegment, Int>,
+    selected: TaskSegment,
+    onSelect: (TaskSegment) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SEGMENT_ORDER.forEach { seg ->
+            val isSel = seg == selected
+            val count = counts[seg] ?: 0
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSel) colors.accentDim else colors.bgElevated)
+                    .border(
+                        1.dp,
+                        if (isSel) colors.accent.copy(alpha = 0.5f) else Color.Transparent,
+                        RoundedCornerShape(12.dp),
+                    )
+                    .clickable { onSelect(seg) }
+                    .padding(vertical = 10.dp),
+            ) {
+                Text(
+                    stringResource(seg.labelRes),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSel) colors.accent else colors.textSecondary,
+                    maxLines = 1,
+                )
+                Text(
+                    "$count",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isSel) colors.textPrimary else colors.textSecondary,
+                )
+            }
         }
     }
 }
@@ -308,7 +504,13 @@ private fun FailedBanner(ui: TaskHubViewModel.UiState, onRetry: () -> Unit) {
             color = CodegTheme.colors.danger,
         )
         ui.deviceStates.firstOrNull { it.status == DeviceLoadStatus.FAILED }?.error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = CodegTheme.colors.textSecondary)
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = CodegTheme.colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         TextButton(onClick = onRetry, contentPadding = PaddingValues(0.dp)) {
             Text(stringResource(R.string.task_retry_failed))
@@ -316,184 +518,311 @@ private fun FailedBanner(ui: TaskHubViewModel.UiState, onRetry: () -> Unit) {
     }
 }
 
+/** Colored status pill; the color IS the tone mapping, the label the raw truth. */
 @Composable
-private fun ColumnHeader(column: TaskColumn, count: Int) {
-    Row(
+private fun StatusTag(task: app.codeg.android.core.model.WorkTaskInfo) {
+    val status = taskStatusUi(task)
+    val colors = CodegTheme.colors
+    val color = when (status.tone) {
+        TaskStatusTone.NEUTRAL -> colors.textSecondary
+        TaskStatusTone.RUN -> colors.success
+        TaskStatusTone.WARN -> colors.warning
+        TaskStatusTone.INFO -> colors.accent
+        TaskStatusTone.DANGER -> colors.danger
+        TaskStatusTone.DONE -> colors.success
+    }
+    Tag(status.raw ?: stringResource(status.labelRes), color)
+}
+
+@Composable
+private fun Tag(text: String, color: Color) {
+    Box(
         Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .background(color.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
     ) {
         Text(
-            stringResource(columnLabel(column)),
-            style = MaterialTheme.typography.titleSmall,
-            color = CodegTheme.colors.textPrimary,
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            maxLines = 1,
         )
-        Text("$count", style = MaterialTheme.typography.labelMedium, color = CodegTheme.colors.textSecondary)
     }
 }
 
-private fun columnLabel(column: TaskColumn): Int = when (column) {
-    TaskColumn.PENDING -> R.string.task_column_pending
-    TaskColumn.RUNNING -> R.string.task_column_running
-    TaskColumn.ATTENTION -> R.string.task_column_attention
-    TaskColumn.DONE -> R.string.task_column_done
-    TaskColumn.ENDED -> R.string.task_column_ended
-    TaskColumn.UNKNOWN -> R.string.task_column_unknown
-}
-
+/**
+ * Compact card (任务书 §4.3): project + status on top, title, snippet, meta row
+ * with ONE primary action, 查看详情 affordance at the bottom right.
+ */
 @Composable
 private fun TaskCard(
     entry: TaskBoardEntry,
-    detail: TaskHubViewModel.TaskDetail?,
+    folderName: String?,
     busy: Boolean,
     spinning: Boolean,
-    onExpand: () -> Unit,
-    onLoadDiff: () -> Unit,
-    onStart: () -> Unit,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    onRequeue: () -> Unit,
-    onMerge: () -> Unit,
-    onComplete: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onAction: (ConfirmAction) -> Unit,
 ) {
     val task = entry.task
     val colors = CodegTheme.colors
-    var expanded by rememberSaveable(key = "${entry.serverId}-${task.id}-expanded") { mutableStateOf(false) }
-    // Keyed on detail==null too: post() drops the cached detail after an action;
-    // without the key a sheet left open through the action would never refetch.
-    LaunchedEffect(expanded, detail == null) { if (expanded && detail == null) onExpand() }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable { expanded = !expanded },
+            .clickable(onClick = onOpenDetail),
         colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    task.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textPrimary,
-                    maxLines = 2,
+                    folderName
+                        ?: task.folderId?.let { stringResource(R.string.task_folder_fallback, it) }
+                        ?: "—",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textSecondary,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (spinning) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                if (spinning) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.size(6.dp))
+                }
+                StatusTag(task)
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Text(
+                task.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
-            ) {
-                Tag(entry.serverName)
-                task.agentType?.let { Tag(it) }
-                if (task.status == "merging") Tag(stringResource(R.string.task_merging_tag))
-                if (taskColumnOf(task.status) == TaskColumn.UNKNOWN) {
-                    Tag(stringResource(R.string.task_unknown_status, task.status), danger = true)
-                }
-                task.scheduledAt?.let { Tag(stringResource(R.string.task_scheduled_at, relativeLabel(it))) }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 2.dp)) {
-                task.additions?.let { Text("+$it", color = colors.accent, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace) }
-                task.deletions?.let { Text("-$it", color = colors.danger, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace) }
-                relativeLine(task.updatedAt)?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
-                }
-            }
-            task.resultSummary?.let {
+            )
+            task.resultSummary?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
-                    maxLines = if (expanded) Int.MAX_VALUE else 2,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (expanded) {
-                TaskActions(task, busy, onLoadDiff, onStart, onCancel, onRetry, onRequeue, onMerge, onComplete)
-                TaskDetailBody(detail, onLoadDiff, onRetry = onExpand)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 6.dp),
+            ) {
+                Tag(entry.serverName, colors.textSecondary)
+                task.agentType?.let { Tag(it, colors.textSecondary) }
+                if (task.deferred) Tag(stringResource(R.string.task_deferred_tag), colors.warning)
+                relativeLabel(task.updatedAt ?: task.createdAt)?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+                }
+                Spacer(Modifier.weight(1f))
+                primaryAction(task.status)?.let { action ->
+                    if (!busy || spinning) {
+                        MiniButton(
+                            label = stringResource(action.labelRes),
+                            danger = action.danger,
+                            enabled = !busy,
+                        ) { onAction(action.toConfirm(entry)) }
+                    }
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun Tag(text: String, danger: Boolean = false) {
-    Box(
-        Modifier
-            .background(
-                (if (danger) CodegTheme.colors.danger else CodegTheme.colors.textSecondary).copy(alpha = 0.14f),
-                RoundedCornerShape(6.dp),
+            Text(
+                stringResource(R.string.task_view_detail) + " ›",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.accent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .clickable(onClick = onOpenDetail),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
             )
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (danger) CodegTheme.colors.danger else CodegTheme.colors.textSecondary,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun TaskActions(
-    task: app.codeg.android.core.model.WorkTaskInfo,
-    busy: Boolean,
-    onLoadDiff: () -> Unit,
-    onStart: () -> Unit,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    onRequeue: () -> Unit,
-    onMerge: () -> Unit,
-    onComplete: () -> Unit,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(top = 8.dp),
-    ) {
-        // Buttons stay VISIBLE (disabled) while an action is in flight: removing
-        // them made every card's buttons blink out on any unrelated action, and
-        // post() already gates concurrency synchronously.
-        when (task.status) {
-            "todo", "queued" -> {
-                ActionButton(R.string.task_action_start, onStart, enabled = !busy)
-                ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
-            }
-            "preparing", "running", "awaiting_input" -> ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
-            "review" -> {
-                ActionButton(R.string.task_action_merge, onMerge, enabled = !busy)
-                ActionButton(R.string.task_action_complete, onComplete, enabled = !busy)
-                ActionButton(R.string.task_action_cancel, onCancel, danger = true, enabled = !busy)
-            }
-            "failed" -> {
-                ActionButton(R.string.task_action_retry, onRetry, enabled = !busy)
-                ActionButton(R.string.task_action_requeue, onRequeue, enabled = !busy)
-            }
-            "canceled" -> ActionButton(R.string.task_action_requeue, onRequeue, enabled = !busy)
         }
     }
 }
 
 @Composable
-private fun ActionButton(labelRes: Int, onClick: () -> Unit, danger: Boolean = false, enabled: Boolean = true) {
-    TextButton(onClick = onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+private fun MiniButton(label: String, danger: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    val tint = if (danger) colors.danger else colors.accent
+    Box(
+        modifier = Modifier
+            .heightIn(min = 32.dp)
+            .background(tint.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
-            stringResource(labelRes),
+            label,
             style = MaterialTheme.typography.labelMedium,
-            color = if (danger) CodegTheme.colors.danger else CodegTheme.colors.textPrimary,
+            color = if (enabled) tint else tint.copy(alpha = 0.4f),
         )
     }
 }
+
+private class PrimaryAction(val labelRes: Int, val danger: Boolean, val kind: Kind) {
+    enum class Kind { START, CANCEL, RETRY, REQUEUE, MERGE }
+    fun toConfirm(entry: TaskBoardEntry): ConfirmAction = when (kind) {
+        Kind.START -> ConfirmAction.START(entry)
+        Kind.CANCEL -> ConfirmAction.CANCEL(entry)
+        Kind.RETRY -> ConfirmAction.RETRY(entry)
+        Kind.REQUEUE -> ConfirmAction.REQUEUE(entry)
+        Kind.MERGE -> ConfirmAction.MERGE(entry)
+    }
+}
+
+/** The ONE primary action per status; everything else lives in the detail sheet. */
+private fun primaryAction(status: String): PrimaryAction? = when (status) {
+    "todo", "queued" -> PrimaryAction(R.string.task_action_start, false, PrimaryAction.Kind.START)
+    "preparing", "running", "awaiting_input" -> PrimaryAction(R.string.task_action_cancel, true, PrimaryAction.Kind.CANCEL)
+    "review" -> PrimaryAction(R.string.task_action_merge, false, PrimaryAction.Kind.MERGE)
+    "failed" -> PrimaryAction(R.string.task_action_retry, false, PrimaryAction.Kind.RETRY)
+    "canceled", "cancelled" -> PrimaryAction(R.string.task_action_requeue, false, PrimaryAction.Kind.REQUEUE)
+    else -> null // merging/done/unknown: no state action on the card
+}
+
+// region Detail sheet
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskDetailSheet(
+    entry: TaskBoardEntry,
+    folderName: String?,
+    detail: TaskHubViewModel.TaskDetail?,
+    busy: Boolean,
+    spinning: Boolean,
+    onAction: (ConfirmAction) -> Unit,
+    onOpen: () -> Unit,
+    onLoadDiff: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val task = entry.task
+    val colors = CodegTheme.colors
+    LaunchedEffect(entry.serverId, task.id) { onOpen() }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                task.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (spinning) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(8.dp))
+            }
+            StatusTag(task)
+            if (task.deferred) {
+                Spacer(Modifier.size(6.dp))
+                Tag(stringResource(R.string.task_deferred_tag), colors.warning)
+            }
+        }
+        task.resultSummary?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        InfoGrid(entry, folderName)
+        // All native actions, confirm-gated (任务书 §4.4 — 以实际 API 能力为准).
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+        ) {
+            when (task.status) {
+                "todo", "queued" -> {
+                    SheetAction(R.string.task_action_start, busy) { onAction(ConfirmAction.START(entry)) }
+                    SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
+                }
+                "preparing", "running", "awaiting_input" ->
+                    SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
+                "review" -> {
+                    SheetAction(R.string.task_action_merge, busy) { onAction(ConfirmAction.MERGE(entry)) }
+                    SheetAction(R.string.task_action_complete, busy) { onAction(ConfirmAction.COMPLETE(entry)) }
+                    SheetAction(R.string.task_action_return, busy) { onAction(ConfirmAction.RETURN(entry)) }
+                    SheetAction(R.string.task_action_deliver_pr, busy) { onAction(ConfirmAction.DELIVER_PR(entry)) }
+                }
+                "failed" -> {
+                    SheetAction(R.string.task_action_retry, busy) { onAction(ConfirmAction.RETRY(entry)) }
+                    SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
+                }
+                "canceled", "cancelled" ->
+                    SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
+            }
+            when {
+                // 搁置 applies to settled states (review/failed/canceled/done per
+                // upstream); unshelve shows whenever the flag is set.
+                task.deferred -> SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
+                task.status in setOf("review", "failed", "canceled", "cancelled", "done") ->
+                    SheetAction(R.string.task_action_defer, busy) { onAction(ConfirmAction.DEFER(entry)) }
+            }
+            when {
+                task.archivedAt != null -> SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
+                task.status == "done" || task.status == "canceled" || task.status == "cancelled" ->
+                    SheetAction(R.string.task_action_archive, busy) { onAction(ConfirmAction.ARCHIVE(entry)) }
+            }
+            SheetAction(R.string.task_action_delete, busy, danger = true) { onAction(ConfirmAction.DELETE(entry)) }
+        }
+        TaskDetailBody(detail, onLoadDiff, onRetry = onOpen)
+        Spacer(Modifier.padding(bottom = 24.dp))
+    }
+}
+
+@Composable
+private fun InfoGrid(entry: TaskBoardEntry, folderName: String?) {
+    val task = entry.task
+    val colors = CodegTheme.colors
+    val rows = listOf(
+        stringResource(R.string.task_detail_device) to entry.serverName,
+        stringResource(R.string.task_detail_project) to (folderName ?: "#${task.folderId}"),
+        stringResource(R.string.task_detail_agent) to (task.agentType ?: "—"),
+        stringResource(R.string.task_detail_branch) to (task.workBranch ?: task.baseBranch ?: "—"),
+        stringResource(R.string.task_detail_created) to (relativeLabel(task.createdAt) ?: "—"),
+        stringResource(R.string.task_detail_updated) to (relativeLabel(task.updatedAt) ?: "—"),
+        task.scheduledAt?.let { stringResource(R.string.task_detail_scheduled) to (relativeLabel(it) ?: it) },
+        stringResource(R.string.task_detail_task_id) to "#${task.id}",
+    )
+    Column(Modifier.padding(top = 10.dp)) {
+        rows.filterNotNull().forEach { (label, value) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textTertiary,
+                    modifier = Modifier.padding(end = 16.dp),
+                )
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetAction(labelRes: Int, busy: Boolean, danger: Boolean = false, onClick: () -> Unit) {
+    MiniButton(stringResource(labelRes), danger, enabled = !busy, onClick = onClick)
+}
+
+// endregion
 
 @Composable
 private fun TaskDetailBody(
@@ -508,7 +837,7 @@ private fun TaskDetailBody(
     detail.loadError?.let { err ->
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         ) {
             Text(
                 err,
@@ -577,21 +906,126 @@ private fun TaskDetailBody(
 
 @Composable
 private fun DetailSection(title: String, content: @Composable () -> Unit) {
-    Column(Modifier.padding(top = 8.dp)) {
+    Column(Modifier.padding(top = 10.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = CodegTheme.colors.textPrimary)
         content()
     }
 }
 
-/** RFC3339 → relative label; unparsable strings pass through untouched. */
-private fun relativeLine(iso: String?): String? = iso?.let { "· " + relativeLabel(it) }
+// region Confirmations — every write goes through one of these (任务书 §4.4).
 
-private fun relativeLabel(iso: String): String {
+private sealed interface ConfirmAction {
+    val entry: TaskBoardEntry
+
+    data class CANCEL(override val entry: TaskBoardEntry) : ConfirmAction
+    data class MERGE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class COMPLETE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class START(override val entry: TaskBoardEntry) : ConfirmAction
+    data class RETRY(override val entry: TaskBoardEntry) : ConfirmAction
+    data class REQUEUE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class RETURN(override val entry: TaskBoardEntry, val feedback: String = "") : ConfirmAction
+    data class DELIVER_PR(override val entry: TaskBoardEntry) : ConfirmAction
+    data class ARCHIVE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class UNARCHIVE(override val entry: TaskBoardEntry) : ConfirmAction
+    data class DEFER(override val entry: TaskBoardEntry) : ConfirmAction
+    data class UNDEFER(override val entry: TaskBoardEntry) : ConfirmAction
+    data class DELETE(override val entry: TaskBoardEntry) : ConfirmAction
+}
+
+@Composable
+private fun ConfirmDialogs(
+    confirm: ConfirmAction?,
+    busy: Boolean,
+    onRun: (ConfirmAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    confirm?.let { action ->
+        // 退回 needs a feedback text (server ReturnParams requires it) — own dialog.
+        if (action is ConfirmAction.RETURN) {
+            ReturnDialog(action, busy, onRun, onDismiss)
+            return
+        }
+        val (titleRes, msgRes, danger) = when (action) {
+            is ConfirmAction.CANCEL -> Triple(R.string.task_confirm_cancel_title, R.string.task_confirm_cancel_msg, true)
+            is ConfirmAction.MERGE -> Triple(R.string.task_confirm_merge_title, R.string.task_confirm_merge_msg, true)
+            is ConfirmAction.COMPLETE -> Triple(R.string.task_confirm_complete_title, R.string.task_confirm_complete_msg, false)
+            is ConfirmAction.START -> Triple(R.string.task_confirm_start_title, R.string.task_confirm_start_msg, false)
+            is ConfirmAction.RETRY -> Triple(R.string.task_confirm_retry_title, R.string.task_confirm_retry_msg, false)
+            is ConfirmAction.REQUEUE -> Triple(R.string.task_confirm_requeue_title, R.string.task_confirm_requeue_msg, false)
+            is ConfirmAction.RETURN -> Triple(0, 0, false) // handled above
+            is ConfirmAction.DELIVER_PR -> Triple(R.string.task_confirm_deliver_title, R.string.task_confirm_deliver_msg, false)
+            is ConfirmAction.ARCHIVE -> Triple(R.string.task_confirm_archive_title, R.string.task_confirm_archive_msg, false)
+            is ConfirmAction.UNARCHIVE -> Triple(R.string.task_confirm_unarchive_title, R.string.task_confirm_unarchive_msg, false)
+            is ConfirmAction.DEFER -> Triple(R.string.task_confirm_defer_title, R.string.task_confirm_defer_msg, false)
+            is ConfirmAction.UNDEFER -> Triple(R.string.task_confirm_undefer_title, R.string.task_confirm_undefer_msg, false)
+            is ConfirmAction.DELETE -> Triple(R.string.task_confirm_delete_title, R.string.task_confirm_delete_msg, true)
+        }
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(titleRes)) },
+            text = { Text(stringResource(msgRes)) },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = { onRun(action); onDismiss() }) {
+                    Text(
+                        stringResource(android.R.string.ok),
+                        color = if (danger) CodegTheme.colors.danger else MaterialTheme.colorScheme.primary,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ReturnDialog(
+    action: ConfirmAction.RETURN,
+    busy: Boolean,
+    onRun: (ConfirmAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var feedback by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.task_confirm_return_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.task_confirm_return_msg))
+                OutlinedTextField(
+                    value = feedback,
+                    onValueChange = { feedback = it },
+                    placeholder = { Text(stringResource(R.string.task_return_hint)) },
+                    minLines = 2,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !busy && feedback.isNotBlank(),
+                onClick = { onRun(action.copy(feedback = feedback.trim())); onDismiss() },
+            ) { Text(stringResource(android.R.string.ok)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
+}
+
+// endregion
+
+/** RFC3339 → relative label; unparsable strings pass through untouched. */
+private fun relativeLabel(iso: String?): String? {
+    val raw = iso ?: return null
     // Offset form (…+08:00) throws in Instant.parse — fall back to the
     // tolerant parser the wire layer already ships.
-    val instant = runCatching { Instant.parse(iso) }
-        .recoverCatching { app.codeg.android.core.model.wire.Rfc3339.parse(iso) }
-        .getOrNull() ?: return iso
+    val instant = runCatching { Instant.parse(raw) }
+        .recoverCatching { app.codeg.android.core.model.wire.Rfc3339.parse(raw) }
+        .getOrNull() ?: return raw
     return DateUtils.getRelativeTimeSpanString(
         instant.toEpochMilli(),
         System.currentTimeMillis(),

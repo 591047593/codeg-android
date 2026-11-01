@@ -8,8 +8,8 @@ import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
-import app.codeg.android.core.data.TaskColumn
 import app.codeg.android.core.data.buildBoard
 import app.codeg.android.core.data.participating
 import app.codeg.android.core.data.retryableIds
@@ -24,17 +24,15 @@ import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -42,22 +40,23 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import javax.inject.Inject
 
 /**
- * The task hub (batch v139): the Codeg native work-task board aggregated across
- * every participating device. Pure projection — tasks, statuses and their
- * transitions live on the servers; this VM only fetches, groups and relays
- * actions. One offline device degrades its own slice (banner + retry), never
- * the board (v137 mechanism).
+ * The task hub (ui重构 阶段2+3): the Codeg native work-task board projected onto
+ * the four web-parity segments, scoped by the GLOBAL device selection (the
+ * global bar in [app.codeg.android.core.designsystem.component.GlobalDeviceBar]
+ * — this page renders no second device row) plus its own folder/search/filter
+ * toolbar. Pure projection — tasks, statuses and their transitions live on the
+ * servers; this VM only fetches, groups and relays actions. One offline device
+ * degrades its own slice (banner + retry), never the board (v137 mechanism).
  *
- * Realtime: a 25s poll + pull-to-refresh. The server's `task://changed` push
- * carries only the task id (no payload), so it would still need an HTTP
- * round-trip per event; the poll already covers that at feed latency. A
- * WebSocket-driven board is tracked in KNOWN-ISSUES as a future upgrade.
+ * Realtime: a 25s poll + pull-to-refresh; switching the global device re-runs
+ * the round immediately (selectedId/activityAll feed the poll combine).
  */
 @HiltViewModel
 class TaskHubViewModel @Inject constructor(
@@ -79,9 +78,14 @@ class TaskHubViewModel @Inject constructor(
         val deviceStates: List<DeviceLoad> = emptyList(),
         val tasks: List<TaskBoardEntry> = emptyList(),
         val lastRefreshed: Instant? = null,
+        /** Web-parity board filters (web defaults: canceled shown, archived not). */
+        val showCanceled: Boolean = true,
         val showArchived: Boolean = false,
-        /** null = all devices. */
-        val deviceFilter: String? = null,
+        /** Folder filter by NAME (folder ids are per-server, names travel). */
+        val folderFilter: String? = null,
+        /** serverId -> (folderId -> folder name), best-effort for filter + cards. */
+        val folderNames: Map<String, Map<Int, String>> = emptyMap(),
+        val searchQuery: String = "",
         /** serverId -> (taskId -> detail); fetched lazily when a task expands. */
         val details: Map<String, Map<Int, TaskDetail>> = emptyMap(),
         /** serverId:taskId of an in-flight action, for row spinners. */
@@ -109,18 +113,42 @@ class TaskHubViewModel @Inject constructor(
     /** Bumped by post(): in-flight loadDetail rounds from before an action must
      * not repopulate the dropped (pre-action) detail afterwards. */
     private var detailEpoch = 0
+    /** Folder lists load once per device (they change rarely); refreshed on
+     * pull-to-refresh via [refreshFolders]. */
+    private var foldersLoadedFor = setOf<String>()
 
-    /** Board columns, recomputed only when tasks/filters change (off the poll's spinner). */
-    val board: StateFlow<Map<TaskColumn, List<TaskBoardEntry>>> =
-        combine(_ui, repository.profiles) { state, profiles ->
+    /**
+     * Board projection: global device scope + folder/search/filters → segments.
+     * Counts ignore the search query so the segment bar stays a stable map of
+     * what exists while typing.
+     */
+    val board: StateFlow<TaskBoardData> =
+        combine(
+            _ui,
+            repository.profiles,
+            repository.selectedId,
+            repository.activityAll,
+        ) { state, profiles, selectedId, allMode ->
             val names = profiles.associate { it.id to it.name }
-            val rows = state.tasks
-                .asSequence()
-                .filter { state.showArchived || !it.task.isArchivedLike }
-                .filter { state.deviceFilter == null || it.serverId == state.deviceFilter }
+            val scopeIds = scopeIds(profiles, allMode, selectedId)
+            val inScope = state.tasks.asSequence()
+                .filter { it.serverId in scopeIds }
                 .map { it.copy(serverName = names[it.serverId] ?: it.serverName) }
                 .toList()
-            buildBoard(rows)
+            val folderMatch: (TaskBoardEntry) -> Boolean = { entry ->
+                state.folderFilter == null ||
+                    state.folderNames[entry.serverId]?.get(entry.task.folderId) == state.folderFilter
+            }
+            val searchMatch: (TaskBoardEntry) -> Boolean = { entry ->
+                val q = state.searchQuery.trim()
+                q.isEmpty() ||
+                    entry.task.title.contains(q, ignoreCase = true) ||
+                    entry.task.resultSummary?.contains(q, ignoreCase = true) == true
+            }
+            val base = inScope.filter { folderMatch(it) && boardFilter(it, state) }
+            val counts = buildBoard(base, state.showCanceled, state.showArchived).counts
+            val searchable = if (state.searchQuery.isBlank()) base else base.filter(searchMatch)
+            buildBoard(searchable, state.showCanceled, state.showArchived).copy(counts = counts)
         }
             // Upstream (profiles) is a DataStore flow: a read failure must keep
             // the board ALIVE, not silently dead. `.catch` would terminate the
@@ -131,7 +159,38 @@ class TaskHubViewModel @Inject constructor(
                 true
             }
             .distinctUntilChanged()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TaskBoardData())
+
+    /** Folder names present on the currently scoped devices, sorted — the picker. */
+    val folderOptions: StateFlow<List<String>> =
+        combine(_ui, repository.profiles, repository.selectedId, repository.activityAll) { state, profiles, selectedId, allMode ->
+            val ids = scopeIds(profiles, allMode, selectedId)
+            ids.flatMap { state.folderNames[it]?.values.orEmpty() }
+                .distinct()
+                .sorted()
+        }
+            .retryWhen { _, attempt ->
+                kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
+                true
+            }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private fun scopeIds(profiles: List<ServerProfile>, allMode: Boolean, selectedId: String?): Set<String> =
+        if (allMode) {
+            profiles.filter { it.visible && it.includeInAll }.map { it.id }.toSet()
+        } else {
+            // Single-device mode follows the global bar; a selected-but-hidden
+            // device is still fetchable (the bar only lists visible ones).
+            profiles.filter { it.id == selectedId }.map { it.id }.toSet()
+        }
+
+    private fun boardFilter(entry: TaskBoardEntry, state: UiState): Boolean {
+        val task = entry.task
+        if (task.isArchivedLike && !state.showArchived) return false
+        if ((task.status == "canceled" || task.status == "cancelled") && !state.showCanceled) return false
+        return true
+    }
 
     /**
      * Task tab visibility — the poll only runs while the board is on screen.
@@ -163,9 +222,13 @@ class TaskHubViewModel @Inject constructor(
 
     fun refresh() { _refreshTick.value += 1 }
 
+    fun setShowCanceled(show: Boolean) { _ui.update { it.copy(showCanceled = show) } }
+
     fun setShowArchived(show: Boolean) { _ui.update { it.copy(showArchived = show) } }
 
-    fun setDeviceFilter(serverId: String?) { _ui.update { it.copy(deviceFilter = serverId) } }
+    fun setFolderFilter(name: String?) { _ui.update { it.copy(folderFilter = name) } }
+
+    fun setSearchQuery(query: String) { _ui.update { it.copy(searchQuery = query) } }
 
     fun retryFailedDevices() {
         val retryIds = _ui.value.deviceStates.retryableIds()
@@ -185,30 +248,40 @@ class TaskHubViewModel @Inject constructor(
 
     private fun pollLoop() {
         viewModelScope.launch {
-            combine(_refreshTick, _active, foreground) { tick, active, fg -> Triple(tick, active, fg) }
-                .collectLatest { (tick, active, fg) ->
+            // Global device scope feeds the poll: switching the bar re-runs the
+            // round immediately (collectLatest cancels any round in flight).
+            combine(
+                _refreshTick,
+                _active,
+                foreground,
+                repository.selectedId,
+                repository.activityAll,
+            ) { tick, active, fg, _, _ -> PollInputs(tick, active, fg) }
+                .collectLatest { input ->
                     // Pull-to-refresh / device-set change: refetch now (any new tick
                     // cancels this collector, superseding a round in flight)...
-                    if (tick > 0 && tick != lastSeenTick) {
-                        lastSeenTick = tick
+                    if (input.tick > 0 && input.tick != lastSeenTick) {
+                        lastSeenTick = input.tick
                         fetchAll()
                     }
                     when {
                         // ...then ALWAYS resume the foreground poll (a one-shot
                         // `tick>0 -> return` would kill the 25s loop forever, v139 H1).
-                        active && fg -> {
-                            if (tick == 0) fetchAll()
+                        input.active && input.fg -> {
+                            if (input.tick == 0) fetchAll()
                             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
                                 delay(25_000)
                                 fetchAll()
                             }
                         }
                         // Board hidden or app backgrounded: cold start does one fetch, no poll.
-                        tick == 0 -> fetchAll()
+                        input.tick == 0 -> fetchAll()
                     }
                 }
         }
     }
+
+    private data class PollInputs(val tick: Int, val active: Boolean, val fg: Boolean)
 
     private suspend fun fetchAll() {
         // Top-level guard: this runs from bare init/poll coroutines, and a
@@ -226,8 +299,8 @@ class TaskHubViewModel @Inject constructor(
     }
 
     private suspend fun fetchAllInner() {
-        val devices = repository.profiles.first()
-            .filter { it.visible && it.includeInAll }
+        val profiles = repository.profiles.first()
+        val devices = profiles.filter { it.id in scopeIds(profiles, repository.activityAll.value, repository.selectedId.first()) }
         if (devices.isEmpty()) {
             _ui.update { it.copy(deviceStates = emptyList(), tasks = emptyList(), lastRefreshed = Instant.now(), hasLoaded = true) }
             return
@@ -247,13 +320,45 @@ class TaskHubViewModel @Inject constructor(
                 // (rows, and the detail cache that back-expansion would serve).
                 tasks = state.tasks.filter { it.serverId in ids },
                 details = state.details.filterKeys { it in ids },
-                // A filter pointing at a removed device would strand an empty
-                // board with no selected chip — fall back to "all devices".
-                deviceFilter = state.deviceFilter?.takeIf { it in ids },
             )
         }
+        loadFolderNames(devices)
         fetchDevices(devices.map { it.id }.toSet(), devices, gen)
         if (gen == generation) _ui.update { it.copy(lastRefreshed = Instant.now(), hasLoaded = true) }
+    }
+
+    /** Best-effort per-device folder lists (names for the filter + cards). */
+    private fun loadFolderNames(devices: List<ServerProfile>) {
+        val todo = devices.filter { it.id !in foldersLoadedFor }
+        if (todo.isEmpty()) return
+        foldersLoadedFor += todo.map { it.id }
+        viewModelScope.launch {
+            coroutineScope {
+                todo.forEach { profile ->
+                    launch {
+                        val folders = runCatching {
+                            repository.client(profile)?.listFolders().orEmpty()
+                        }.getOrDefault(emptyList())
+                        if (folders.isNotEmpty()) {
+                            _ui.update { state ->
+                                state.copy(
+                                    folderNames = state.folderNames +
+                                        (profile.id to folders.associate { it.id to it.name }),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Pull-to-refresh also reloads folder lists (a new project should appear). */
+    fun refreshFolders() {
+        foldersLoadedFor = emptySet()
+        viewModelScope.launch {
+            runCatching { loadFolderNames(repository.profiles.first().filter { it.id in _ui.value.deviceStates.map { d -> d.serverId } }) }
+        }
     }
 
     private suspend fun fetchDevices(ids: Set<String>, devices: List<ServerProfile>? = null, gen: Int = generation) {
@@ -360,6 +465,23 @@ class TaskHubViewModel @Inject constructor(
         post(serverId, taskId) { it.workTaskMerge(taskId, message) }
 
     fun complete(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskComplete(taskId) }
+
+    /** 验收退回（review → agent 重做），feedback 必填（服务端 ReturnParams）。 */
+    fun returnTask(serverId: String, taskId: Int, feedback: String) =
+        post(serverId, taskId) { it.workTaskReturn(taskId, feedback) }
+
+    /** 交付 PR（review → PR 出门，任务随 markDone 落完成）。 */
+    fun deliverPr(serverId: String, taskId: Int) =
+        post(serverId, taskId) { it.workTaskDeliverPr(taskId) }
+
+    fun setArchived(serverId: String, taskId: Int, archived: Boolean) =
+        post(serverId, taskId) { it.workTaskArchive(taskId, archived) }
+
+    fun setDeferred(serverId: String, taskId: Int, deferred: Boolean) =
+        post(serverId, taskId) { it.workTaskDefer(taskId, deferred) }
+
+    fun deleteTask(serverId: String, taskId: Int) =
+        post(serverId, taskId) { it.workTaskDelete(taskId) }
 
     // endregion
 

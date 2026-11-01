@@ -48,6 +48,9 @@ data class CodegColors(
     val accent: Color,
     val onAccent: Color,
     val accentDim: Color,
+    /** Status-tag tones (task board): running/done green, waiting amber. */
+    val success: Color,
+    val warning: Color,
 )
 
 /** Build the colour set for the given mode + accent (iOS `Theme.swift` values). */
@@ -69,6 +72,8 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
+            success = Color(0xFF57C79A),
+            warning = Color(0xFFE0B15C),
         )
     } else {
         CodegColors(
@@ -86,6 +91,8 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             accent = accentColor,
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
+            success = Color(0xFF0F946B),
+            warning = Color(0xFFB07A10),
         )
     }
 }

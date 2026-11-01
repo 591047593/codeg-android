@@ -760,18 +760,62 @@ class CodegClient(
 
     /** Accept-without-merge completion (for tasks that changed nothing). */
     suspend fun workTaskComplete(id: Int, deleteWorktree: Boolean = false) {
+        // CompleteParams has no rename_all and no serde default on
+        // delete_worktree — snake_case or 422 (v145 fix; the camelCase key used
+        // to be silently dropped and the call rejected as a missing field).
         send("work_task_complete", buildJsonObject {
             put("id", id)
-            put("deleteWorktree", deleteWorktree)
+            put("delete_worktree", deleteWorktree)
         }.toString())
     }
 
-    suspend fun workTaskDefer(id: Int) {
+    /** 验收退回：send the task back to the agent with feedback (review → running). */
+    suspend fun workTaskReturn(id: Int, feedback: String, intent: String? = null) {
+        // ReturnParams: no rename_all (single-word fields anyway); feedback REQUIRED.
+        send("work_task_return", buildJsonObject {
+            put("id", id)
+            put("feedback", feedback)
+            intent?.takeIf { it.isNotBlank() }?.let { put("intent", it) }
+        }.toString())
+    }
+
+    /** Deliver the reviewed task as a PR; returns the PR URL (server awaits it). */
+    suspend fun workTaskDeliverPr(id: Int, prTitle: String? = null): String? {
+        // DeliverPrParams IS camelCase (rename_all). draft=false, worktree kept,
+        // markDone=true — PR 出门后任务直接落完成。
+        val root = sendJsonElement("work_task_deliver_pr", buildJsonObject {
+            put("id", id)
+            prTitle?.takeIf { it.isNotBlank() }?.let { put("prTitle", it) }
+            put("draft", false)
+            put("deleteWorktree", false)
+            put("markDone", true)
+        }.toString())
+        return (root as? JsonPrimitive)?.takeIf { it.isString }?.content
+    }
+
+    /** Archive/unarchive — sets/clears archived_at, the board's hide filter. */
+    suspend fun workTaskArchive(id: Int, archived: Boolean) {
+        send("work_task_archive", buildJsonObject {
+            put("id", id)
+            put("archived", archived)
+        }.toString())
+    }
+
+    /** Delete the task row; the worktree stays unless asked (safe default). */
+    suspend fun workTaskDelete(id: Int, deleteWorktree: Boolean = false) {
+        // DeleteParams: no rename_all → snake_case.
+        send("work_task_delete", buildJsonObject {
+            put("id", id)
+            put("delete_worktree", deleteWorktree)
+        }.toString())
+    }
+
+    suspend fun workTaskDefer(id: Int, deferred: Boolean = true) {
         // DeferParams requires `deferred: bool` (no default) — a bare {"id"}
         // would 422 on the server.
         send("work_task_defer", buildJsonObject {
             put("id", id)
-            put("deferred", true)
+            put("deferred", deferred)
         }.toString())
     }
 

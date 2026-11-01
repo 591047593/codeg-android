@@ -36,6 +36,10 @@ data class WorkTaskInfo(
     val archivedAt: String? = null,
     val deferred: Boolean = false,
     val failureReason: String? = null,
+    /** Branch the task was forked from (null = followed HEAD at launch). */
+    val baseBranch: String? = null,
+    /** Per-task work branch the agent commits to. */
+    val workBranch: String? = null,
 ) {
     val isTerminal: Boolean get() = status in TERMINAL_STATUSES
 
@@ -90,6 +94,8 @@ data class WorkTaskInfo(
                 // Server's `deferred_at` is an ISO timestamp STRING, not an object.
                 deferred = obj.stringOrNull("deferred_at") != null || obj.boolOrNull("deferred") == true,
                 failureReason = obj.stringOrNull("failure_reason"),
+                baseBranch = obj.stringOrNull("base_branch"),
+                workBranch = obj.stringOrNull("work_branch"),
             )
         }
     }
@@ -140,20 +146,27 @@ data class WorkTaskChangedFile(
     }
 }
 
-/** Requests (camelCase, [CodegJson.request] conventions). */
+/**
+ * Requests. Most `work_task_*` params structs have NO `rename_all` on the
+ * server (handlers/work_task.rs) — they eat snake_case and silently ignore
+ * camelCase; the camelCase exceptions (DeliverPrParams, DeferParams,
+ * DiffParams) are marked per-method below. WorkTaskMerge/Complete's
+ * `delete_worktree` has no serde default: sending only the camelCase key used
+ * to 422 the whole call (v145 fix).
+ */
 object WorkTaskWire {
     fun idBody(id: Int): JsonObject = buildJsonObject { put("id", id) }
 
     fun cancelBody(id: Int, deleteWorktree: Boolean = false): JsonObject =
         buildJsonObject {
             put("id", id)
-            put("deleteWorktree", deleteWorktree)
+            put("delete_worktree", deleteWorktree)
         }
 
     fun mergeBody(id: Int, deleteWorktree: Boolean = true, message: String? = null): JsonObject =
         buildJsonObject {
             put("id", id)
-            put("deleteWorktree", deleteWorktree)
+            put("delete_worktree", deleteWorktree)
             message?.let { put("message", it) }
         }
 
