@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.codeg.android.feature.common.WheelColumn
 import app.codeg.android.R
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.data.DispatchTargets
@@ -444,24 +445,32 @@ private fun DispatchSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            SectionLabel(stringResource(R.string.dispatch_device))
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                target.profiles.forEach { profile ->
-                    FilterChip(
-                        selected = device == profile.id,
-                        onClick = {
-                            device = profile.id
-                            folderId = null
-                            agent = null
-                            viewModel.loadTarget(profile.id)
-                        },
-                        label = { Text(profile.name) },
-                    )
+            // 派发默认预选：settings 里存好的设备/项目/Agent（设置→通用→派发
+            // 默认选项）在 sheet 打开时自动选中；设备切换后项目/Agent 回到默认。
+            val settings by viewModel.settings.collectAsStateWithLifecycle()
+            LaunchedEffect(target.profiles) {
+                if (device == null && settings.dispatchDefaultDevice.isNotBlank() &&
+                    target.profiles.any { it.id == settings.dispatchDefaultDevice }
+                ) {
+                    device = settings.dispatchDefaultDevice
+                    viewModel.loadTarget(settings.dispatchDefaultDevice)
                 }
             }
+            LaunchedEffect(target.folders, target.agents) {
+                if (device == null) return@LaunchedEffect
+                if (folderId == null && settings.dispatchDefaultFolderId > 0 &&
+                    target.folders.any { it.id == settings.dispatchDefaultFolderId }
+                ) {
+                    folderId = settings.dispatchDefaultFolderId
+                }
+                if (agent == null && settings.dispatchDefaultAgent.isNotBlank()) {
+                    val wire = AgentType.fromWire(settings.dispatchDefaultAgent)
+                    if (wire != AgentType.UNKNOWN && (target.agents.isEmpty() || wire in target.agents)) {
+                        agent = wire
+                    }
+                }
+            }
+
             if (device != null && target.foldersLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             }
@@ -475,36 +484,71 @@ private fun DispatchSheet(
                     modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
                 )
             }
+            // 三列并排滚轮选择器（手机时钟风格）：每列独立上下滑动、松手自动
+            // 吸附，中间项放大高亮、上下项缩小渐隐，纯滚动无按钮样式。
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.dispatch_device),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    WheelColumn(
+                        items = target.profiles.map { it.name },
+                        selectedIndex = target.profiles.indexOfFirst { it.id == device }.coerceAtLeast(0),
+                        onSelect = { idx ->
+                            val profile = target.profiles.getOrNull(idx) ?: return@WheelColumn
+                            if (profile.id != device) {
+                                device = profile.id
+                                folderId = null
+                                agent = null
+                                viewModel.loadTarget(profile.id)
+                            }
+                        },
+                        emptyText = stringResource(R.string.dispatch_no_device),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.dispatch_project),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    WheelColumn(
+                        items = target.folders.map { it.name },
+                        selectedIndex = target.folders.indexOfFirst { it.id == folderId }.coerceAtLeast(0),
+                        onSelect = { idx -> folderId = target.folders.getOrNull(idx)?.id },
+                        emptyText = stringResource(
+                            if (target.foldersLoading) R.string.dispatch_defaults_loading else R.string.dispatch_no_folder,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.dispatch_agent),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    // First wheel row = 自动 (no agent override; folder default applies).
+                    val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
+                    val agentOptions = remember(target.agents, autoAgentLabel) {
+                        listOf(autoAgentLabel) + target.agents.map { it.displayName }
+                    }
+                    WheelColumn(
+                        items = agentOptions,
+                        selectedIndex = (if (agent == null) 0 else target.agents.indexOf(agent) + 1)
+                            .coerceIn(0, agentOptions.lastIndex),
+                        onSelect = { idx -> agent = if (idx <= 0) null else target.agents.getOrNull(idx - 1) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             if (device != null && !target.foldersLoading) {
-                SectionLabel(stringResource(R.string.dispatch_project))
-                if (target.folders.isEmpty()) {
-                    Text(stringResource(R.string.dispatch_no_folder), style = MaterialTheme.typography.bodySmall, color = CodegTheme.colors.textSecondary)
-                }
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    target.folders.forEach { folder ->
-                        FilterChip(
-                            selected = folderId == folder.id,
-                            onClick = { folderId = folder.id },
-                            label = { Text(folder.name, maxLines = 1) },
-                        )
-                    }
-                }
-                SectionLabel(stringResource(R.string.dispatch_agent))
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    target.agents.forEach { candidate ->
-                        FilterChip(
-                            selected = agent == candidate,
-                            onClick = { agent = if (agent == candidate) null else candidate },
-                            label = { Text(candidate.displayName) },
-                        )
-                    }
-                }
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },

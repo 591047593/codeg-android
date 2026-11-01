@@ -187,7 +187,10 @@ class DispatchService @Inject constructor(
                         throw e
                     }
                     // Timeout-style failures are ambiguous: the task may exist.
-                    isAmbiguous(e) -> markUnknown(request)
+                    // Self-heal: one immediate probe — if the request actually
+                    // landed, the ledger resolves to CONFIRMED and the user
+                    // never sees a 提交结果未知 card at all.
+                    isAmbiguous(e) -> probeOrMarkUnknown(request, profile)
                     else -> {
                         dispatchStore.remove(request.requestId)
                         req.restoreOnHardFail?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
@@ -210,11 +213,18 @@ class DispatchService @Inject constructor(
      * (IOException, incl. socket timeout) or a wrapped transport error may mean
      * the server created the task without us seeing the response. The server has
      * no idempotency key, so any of these must block re-sending.
+     *
+     * A [ApiError.Server] response is NOT ambiguous, verified against the server
+     * source (v1.0.1-fengx.34): every rejection path — axum's serde rejection
+     * (422, pre-handler) and every error the create core returns (DbError →
+     * 500, raised on the folder lookup / insert BEFORE any task row exists) —
+     * happens without a task being created. The server answered, so we KNOW
+     * the create failed; treating 5xx as "unknown" surfaced the misleading
+     * 提交结果未知 card for deterministic rejections (e.g. a stale folder id).
      */
     private fun isAmbiguous(e: Throwable): Boolean =
         e is java.io.IOException ||
-            e is ApiError.Transport ||
-            (e as? ApiError)?.let { it is ApiError.Server && it.status >= 500 } == true
+            e is ApiError.Transport
 
     private suspend fun confirm(
         request: DispatchRef,
@@ -263,6 +273,48 @@ class DispatchService @Inject constructor(
 
     private suspend fun markUnknown(request: DispatchRef): DispatchOutcome {
         dispatchStore.put(request.copy(state = DispatchState.UNKNOWN))
+        return DispatchOutcome.Unknown(request)
+    }
+
+    /**
+     * A genuinely ambiguous send (dropped connection mid-flight): mark the
+     * ledger UNKNOWN, then immediately run ONE probe against the server. If
+     * the request actually landed, the ledger resolves to CONFIRMED and the
+     * user never sees the 提交结果未知 card — the probe must stay read-only
+     * (list + exact title/folder/time-window match) and any failure keeps
+     * the UNKNOWN card for manual resolution, never a silent delete.
+     */
+    private suspend fun probeOrMarkUnknown(
+        request: DispatchRef,
+        profile: app.codeg.android.core.datastore.ServerProfile,
+    ): DispatchOutcome {
+        markUnknown(request)
+        try {
+            // Give the server a beat — a socket timeout usually means the
+            // response was in flight when the connection died.
+            kotlinx.coroutines.delay(1_500)
+            val client = repository.client(profile) ?: return DispatchOutcome.Unknown(request)
+            val tasks = runCatching { client.workTaskList() }.getOrElse {
+                return DispatchOutcome.Unknown(request)
+            }
+            val started = (request.dispatchedAtEpochMs
+                ?: System.currentTimeMillis()).let { java.time.Instant.ofEpochMilli(it) }
+                .minusSeconds(300)
+            val windowEnd = minOf(
+                java.time.Instant.now().plusSeconds(600),
+                started.plusSeconds(3_900),
+            )
+            val matches = DispatchPipeline.findCreatedTasks(
+                tasks, request.title, request.folderId, started, windowEnd,
+            )
+            if (matches.size == 1) {
+                return confirm(request, matches.single().id, profile, request.scheduleLocalMillis, request.autoStart)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Ledger write or list failure: stay UNKNOWN — the card remains.
+        }
         return DispatchOutcome.Unknown(request)
     }
 }

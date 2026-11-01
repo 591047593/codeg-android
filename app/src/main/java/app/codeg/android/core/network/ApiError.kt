@@ -27,11 +27,13 @@ sealed class ApiError(message: String) : Exception(message) {
     data class Decoding(val detail: String) : ApiError(detail)
 }
 
-/** Error envelope returned by the server on non-2xx (`{code, message, ...}`). */
+/** Error envelope returned by the server on non-2xx (`{code, message, detail}`). */
 @Serializable
 data class ServerError(
     val code: String? = null,
     val message: String? = null,
+    /** Optional root cause the server appends, e.g. "not found: folder 0". */
+    val detail: String? = null,
 )
 
 /**

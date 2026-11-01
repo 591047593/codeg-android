@@ -125,6 +125,17 @@ class SessionListViewModel @Inject constructor(
     private var lastAggTick: Int? = null
     private var lastDeviceSig: String? = null
 
+    // ---- Aggregate ("全部") branch — its own state space (review #1) ----
+
+    // MUST stay above the init block: on Dispatchers.Main.immediate the
+    // init-launched collector runs synchronously during construction, so a
+    // state flow declared below init is still null when first collected
+    // (same class as the v33 TaskHubViewModel NPE).
+    private val _agg = MutableStateFlow(AggregateUiState())
+    val aggregateUi: StateFlow<AggregateUiState> = _agg.asStateFlow()
+
+    private var aggGeneration = 0
+
     init {
         // Single mode machine (batch v132 review #1): the aggregate ("全部") branch
         // and the single-device branch share ONE collector so they can never write
@@ -230,13 +241,6 @@ class SessionListViewModel @Inject constructor(
             viewModelScope.launch { fetch(isInitial = false) }
         }
     }
-
-    // ---- Aggregate ("全部") branch — its own state space (review #1) ----
-
-    private val _agg = MutableStateFlow(AggregateUiState())
-    val aggregateUi: StateFlow<AggregateUiState> = _agg.asStateFlow()
-
-    private var aggGeneration = 0
 
     /**
      * The in-flight aggregate round. Deliberately NOT a child of the input

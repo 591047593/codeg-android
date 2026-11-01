@@ -1325,8 +1325,15 @@ class CodegClient(
             throw ApiError.Server(
                 status = code,
                 code = parsed?.code,
-                serverMessage = parsed?.message?.takeIf { it.isNotBlank() }
-                    ?: response.status.description,
+                // Surface the server's `detail` root cause (e.g. "not found:
+                // folder 0") — without it a database_error reads as a mystery.
+                serverMessage = listOfNotNull(
+                    parsed?.message?.takeIf { it.isNotBlank() },
+                    parsed?.detail?.takeIf { it.isNotBlank() },
+                ).joinToString(
+                    separator = "（",
+                    postfix = if (parsed?.detail?.isNotBlank() == true) "）" else "",
+                ).ifBlank { response.status.description },
             )
         }
         return text

@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.model.AgentType
 import app.codeg.android.feature.floatingball.FONT_STEPS
 import app.codeg.android.feature.floatingball.stepFontScale
 import kotlin.math.roundToInt
@@ -143,6 +144,9 @@ fun GeneralContent(
                 ),
                 modifier = Modifier.clickable { onOpenBallSettings() },
             )
+        }
+        Section(stringResource(R.string.general_dispatch_defaults_section)) {
+            DispatchDefaultsSection()
         }
         Section(stringResource(R.string.general_font_section)) {
             val stepIndex = FONT_STEPS.indexOfFirst { kotlin.math.abs(it - appSettings.fontScale) < 0.01f }
@@ -416,4 +420,158 @@ private fun TabOrderEditor(
             }
         }
     }
+}
+
+/** 派发默认 section: pick the device/project/agent every dispatch sheet opens
+ *  preselected with (v1.0.1-fengx.34). Plain radio dialogs here — the wheel
+ *  picker is the dispatch sheet's interaction, this screen just stores defaults. */
+@Composable
+private fun DispatchDefaultsSection(viewModel: DispatchDefaultsViewModel = hiltViewModel()) {
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val colors = CodegTheme.colors
+    var showDevice by rememberSaveable { mutableStateOf(false) }
+    var showFolder by rememberSaveable { mutableStateOf(false) }
+    var showAgent by rememberSaveable { mutableStateOf(false) }
+
+    val deviceName = ui.profiles.firstOrNull { it.id == settings.dispatchDefaultDevice }?.name
+        ?: settings.dispatchDefaultDevice.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.dispatch_defaults_unset)
+    val folderName = settings.dispatchDefaultFolderName.takeIf { settings.dispatchDefaultFolderId > 0 }
+        ?: stringResource(R.string.dispatch_defaults_unset)
+    val agentName = AgentType.fromWire(settings.dispatchDefaultAgent)
+        .takeIf { settings.dispatchDefaultAgent.isNotBlank() && it != AgentType.UNKNOWN }?.displayName
+        ?: stringResource(R.string.dispatch_defaults_any)
+
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.dispatch_defaults_device)) },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(deviceName, fontSize = 14.sp, color = colors.textSecondary)
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary),
+        modifier = Modifier.clickable { showDevice = true },
+    )
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.dispatch_defaults_folder)) },
+        supportingContent = {
+            if (settings.dispatchDefaultDevice.isBlank()) {
+                Text(stringResource(R.string.dispatch_defaults_pick_device_first), fontSize = 12.sp)
+            }
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(folderName, fontSize = 14.sp, color = colors.textSecondary)
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary, supportingColor = colors.textTertiary),
+        modifier = Modifier.clickable(enabled = settings.dispatchDefaultDevice.isNotBlank()) {
+            viewModel.loadTargets(settings.dispatchDefaultDevice)
+            showFolder = true
+        },
+    )
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.dispatch_defaults_agent)) },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(agentName, fontSize = 14.sp, color = colors.textSecondary)
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(18.dp))
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = colors.textPrimary),
+        modifier = Modifier.clickable(enabled = settings.dispatchDefaultDevice.isNotBlank()) {
+            viewModel.loadTargets(settings.dispatchDefaultDevice)
+            showAgent = true
+        },
+    )
+    Text(
+        stringResource(R.string.dispatch_defaults_clear),
+        fontSize = 13.sp,
+        color = colors.danger,
+        modifier = Modifier
+            .padding(start = 16.dp, top = 2.dp)
+            .clickable { viewModel.clear() },
+    )
+
+    if (showDevice) {
+        RadioOptionDialog(
+            title = stringResource(R.string.dispatch_defaults_device),
+            options = ui.profiles.map { it.id to it.name },
+            selectedId = settings.dispatchDefaultDevice,
+            onSelect = { id ->
+                showDevice = false
+                ui.profiles.firstOrNull { it.id == id }?.let { viewModel.saveDeviceOnly(it.id, it.name) }
+            },
+            onDismiss = { showDevice = false },
+        )
+    }
+    if (showFolder) {
+        RadioOptionDialog(
+            title = stringResource(R.string.dispatch_defaults_folder),
+            options = ui.folders.map { it.id.toString() to it.name },
+            selectedId = settings.dispatchDefaultFolderId.takeIf { it > 0 }?.toString(),
+            loading = ui.loading,
+            onSelect = { id ->
+                showFolder = false
+                id.toIntOrNull()?.let { fid -> ui.folders.firstOrNull { it.id == fid }?.let(viewModel::saveFolder) }
+            },
+            onDismiss = { showFolder = false },
+        )
+    }
+    if (showAgent) {
+        // First option = 不指定 (agent omitted, server uses the folder default).
+        RadioOptionDialog(
+            title = stringResource(R.string.dispatch_defaults_agent),
+            options = listOf("" to stringResource(R.string.dispatch_defaults_any)) +
+                ui.agents.map { it.wire to it.displayName },
+            selectedId = settings.dispatchDefaultAgent.takeIf { it.isNotBlank() } ?: "",
+            loading = ui.loading,
+            onSelect = { wire ->
+                showAgent = false
+                viewModel.saveAgent(wire.takeIf { it.isNotBlank() }?.let(AgentType::fromWire))
+            },
+            onDismiss = { showAgent = false },
+        )
+    }
+}
+
+@Composable
+private fun RadioOptionDialog(
+    title: String,
+    options: List<Pair<String, String>>,
+    selectedId: String?,
+    loading: Boolean = false,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {},
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (loading) {
+                    Text(stringResource(R.string.dispatch_defaults_loading), fontSize = 14.sp, color = colors.textSecondary)
+                } else if (options.isEmpty()) {
+                    Text(stringResource(R.string.dispatch_defaults_empty), fontSize = 14.sp, color = colors.textSecondary)
+                }
+                options.forEach { (id, label) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(id) }
+                            .padding(vertical = 10.dp),
+                    ) {
+                        RadioButton(selected = id == selectedId, onClick = { onSelect(id) })
+                        Text(label, fontSize = 15.sp, color = colors.textPrimary, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+            }
+        },
+    )
 }

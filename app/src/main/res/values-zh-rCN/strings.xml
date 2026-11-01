@@ -1013,6 +1013,16 @@
     <!-- ===== 悬浮球（批v126）：球本体、面板、设置、动作目录 ===== -->
     <string name="settings_leaf_floating_ball">悬浮球</string>
     <string name="general_floating_ball_section">悬浮球</string>
+    <string name="general_dispatch_defaults_section">派发默认选项</string>
+    <string name="dispatch_defaults_unset">未设置</string>
+    <string name="dispatch_defaults_any">自动（跟随项目）</string>
+    <string name="dispatch_defaults_device">默认设备</string>
+    <string name="dispatch_defaults_folder">默认项目</string>
+    <string name="dispatch_defaults_agent">默认 Agent</string>
+    <string name="dispatch_defaults_pick_device_first">请先选择默认设备</string>
+    <string name="dispatch_defaults_clear">清除派发默认选项</string>
+    <string name="dispatch_defaults_loading">加载中…</string>
+    <string name="dispatch_defaults_empty">暂无可选项</string>
     <string name="general_font_section">显示</string>
     <string name="general_font_scale_title">字号</string>
     <string name="general_font_scale_subtitle">在系统字号基础上整体缩放应用内文字</string>
@@ -1138,6 +1148,8 @@
     <string name="task_confirm_requeue_title">重新排队？</string>
     <string name="task_confirm_requeue_msg">任务将回到待办列，等待再次开始。</string>
     <string name="dispatch_redispatch">重新派发</string>
+    <string name="dispatch_no_device">暂无设备</string>
+    <string name="dispatch_agent_auto">自动</string>
     <string name="dispatch_no_folder">该设备暂无项目</string>
     <!-- v141 handoff -->
     <string name="handoff_title">跨设备会话交接</string>

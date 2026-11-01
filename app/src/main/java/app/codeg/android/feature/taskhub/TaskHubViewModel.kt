@@ -133,6 +133,17 @@ class TaskHubViewModel @Inject constructor(
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /**
+     * Task tab visibility — the poll only runs while the board is on screen.
+     * MUST stay above the init block: `viewModelScope.launch` runs the
+     * coroutine body synchronously on Dispatchers.Main.immediate during
+     * construction, and pollLoop()'s combine collects this flow — a
+     * declaration below init is still null there (the v33 任务页 NPE, stack:
+     * TaskHubViewModel.<init> → combineInternal → Flow.collect on null).
+     */
+    private val _active = MutableStateFlow(false)
+    fun setActive(active: Boolean) { _active.value = active }
+
     init {
         viewModelScope.launch { pollLoop() }
         repository.profiles
@@ -171,10 +182,6 @@ class TaskHubViewModel @Inject constructor(
             }
         }
     }
-
-    /** Task tab visibility — the poll only runs while the board is on screen. */
-    private val _active = MutableStateFlow(false)
-    fun setActive(active: Boolean) { _active.value = active }
 
     private fun pollLoop() {
         viewModelScope.launch {

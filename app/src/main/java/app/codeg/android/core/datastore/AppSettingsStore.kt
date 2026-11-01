@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -43,6 +44,13 @@ data class AppSettings(
     val floatBallSize: String = DEFAULT_FLOAT_BALL_SIZE,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
+    /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
+     *  id/name and agent wire name. Blank device / id <= 0 / blank agent = unset
+     *  (the sheet opens with its previous no-default behavior). */
+    val dispatchDefaultDevice: String = "",
+    val dispatchDefaultFolderId: Int = -1,
+    val dispatchDefaultFolderName: String = "",
+    val dispatchDefaultAgent: String = "",
 ) {
     companion object {
         const val DEFAULT_ACCENT = "orange"
@@ -80,7 +88,36 @@ class AppSettingsStore @Inject constructor(
             floatBallEnabled = prefs[FLOAT_BALL_ENABLED] ?: true,
             floatBallSize = prefs[FLOAT_BALL_SIZE]?.takeIf { it in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
+            dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
+            dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
+            dispatchDefaultFolderName = prefs[DISPATCH_DEFAULT_FOLDER_NAME] ?: "",
+            dispatchDefaultAgent = prefs[DISPATCH_DEFAULT_AGENT] ?: "",
         )
+    }
+
+    /** Persist the dispatch-sheet defaults in one write (they change together). */
+    suspend fun setDispatchDefaults(
+        device: String,
+        folderId: Int,
+        folderName: String,
+        agentWire: String,
+    ) {
+        dataStore.edit {
+            it[DISPATCH_DEFAULT_DEVICE] = device
+            it[DISPATCH_DEFAULT_FOLDER_ID] = folderId
+            it[DISPATCH_DEFAULT_FOLDER_NAME] = folderName
+            it[DISPATCH_DEFAULT_AGENT] = agentWire
+        }
+    }
+
+    /** Clear the dispatch defaults (sheet falls back to no preselection). */
+    suspend fun clearDispatchDefaults() {
+        dataStore.edit {
+            it.remove(DISPATCH_DEFAULT_DEVICE)
+            it.remove(DISPATCH_DEFAULT_FOLDER_ID)
+            it.remove(DISPATCH_DEFAULT_FOLDER_NAME)
+            it.remove(DISPATCH_DEFAULT_AGENT)
+        }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {
@@ -199,6 +236,10 @@ class AppSettingsStore @Inject constructor(
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FLOAT_BALL_POS = stringPreferencesKey("float_ball_pos")
         val FLOAT_BALL_BINDINGS = stringPreferencesKey("float_ball_bindings")
+        val DISPATCH_DEFAULT_DEVICE = stringPreferencesKey("dispatch_default_device")
+        val DISPATCH_DEFAULT_FOLDER_ID = intPreferencesKey("dispatch_default_folder_id")
+        val DISPATCH_DEFAULT_FOLDER_NAME = stringPreferencesKey("dispatch_default_folder_name")
+        val DISPATCH_DEFAULT_AGENT = stringPreferencesKey("dispatch_default_agent")
     }
 }
 

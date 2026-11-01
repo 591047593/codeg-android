@@ -17,6 +17,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,7 +33,14 @@ class HandoffViewModel @Inject constructor(
     private val dispatchService: DispatchService,
     private val targetLoader: DispatchTargetLoader,
     private val repository: app.codeg.android.core.data.ServerRepository,
+    appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel() {
+
+    /** App-wide settings — the handoff sheet reads its preselected defaults
+     *  (device/project/agent) from this flow. */
+    val settings = appSettingsStore.settings
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            app.codeg.android.core.datastore.AppSettings.INITIAL)
 
     /** Git 接力 (mode B) precheck result for the SOURCE project. */
     data class GitPrecheck(

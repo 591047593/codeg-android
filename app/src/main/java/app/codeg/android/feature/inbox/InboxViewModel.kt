@@ -46,7 +46,14 @@ class InboxViewModel @Inject constructor(
     private val dispatchService: DispatchService,
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
+    appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel() {
+
+    /** App-wide settings — the dispatch sheet reads its preselected defaults
+     *  (device/project/agent, 设置→通用→派发默认选项) from this flow. */
+    val settings = appSettingsStore.settings
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            app.codeg.android.core.datastore.AppSettings.INITIAL)
 
     data class UiState(
         val ideas: List<IdeaEntry> = emptyList(),

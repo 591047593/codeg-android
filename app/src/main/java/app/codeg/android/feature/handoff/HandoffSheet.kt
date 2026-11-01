@@ -34,7 +34,11 @@ import app.codeg.android.R
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.HandoffSource
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.feature.common.WheelColumn
 
 /**
  * Handoff composer (batch v141): edit the generated package, pick relay mode
@@ -154,23 +158,32 @@ fun HandoffSheet(
                 )
             }
 
-            SectionLabel(stringResource(R.string.dispatch_device))
             val targets: DispatchTargets = ui.targets
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                targets.profiles.forEach { profile ->
-                    FilterChip(
-                        selected = device == profile.id,
-                        onClick = {
-                            device = profile.id
-                            folderId = null
-                            agent = null
-                            viewModel.loadTarget(profile.id)
-                        },
-                        label = { Text(profile.name) },
-                    )
+            // 派发默认预选（设置→通用→派发默认选项）：sheet 打开时若未选设备，
+            // 自动落到默认设备/项目/Agent。
+            val settings by viewModel.settings.collectAsStateWithLifecycle()
+            LaunchedEffect(targets.profiles) {
+                if (device == null && settings.dispatchDefaultDevice.isNotBlank() &&
+                    targets.profiles.any { it.id == settings.dispatchDefaultDevice }
+                ) {
+                    device = settings.dispatchDefaultDevice
+                    folderId = null
+                    agent = null
+                    viewModel.loadTarget(settings.dispatchDefaultDevice)
+                }
+            }
+            LaunchedEffect(targets.folders, targets.agents) {
+                if (device == null) return@LaunchedEffect
+                if (folderId == null && settings.dispatchDefaultFolderId > 0 &&
+                    targets.folders.any { it.id == settings.dispatchDefaultFolderId }
+                ) {
+                    folderId = settings.dispatchDefaultFolderId
+                }
+                if (agent == null && settings.dispatchDefaultAgent.isNotBlank()) {
+                    val wire = AgentType.fromWire(settings.dispatchDefaultAgent)
+                    if (wire != AgentType.UNKNOWN && (targets.agents.isEmpty() || wire in targets.agents)) {
+                        agent = wire
+                    }
                 }
             }
             if (device != null && targets.foldersLoading) {
@@ -184,39 +197,66 @@ fun HandoffSheet(
                     modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
                 )
             }
-            if (device != null && !targets.foldersLoading) {
-                SectionLabel(stringResource(R.string.dispatch_project))
-                if (targets.folders.isEmpty()) {
+            // 三列并排滚轮选择器（手机时钟风格），与派发 sheet 同款交互。
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        stringResource(R.string.dispatch_no_folder),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = CodegTheme.colors.textSecondary,
+                        stringResource(R.string.dispatch_device),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    WheelColumn(
+                        items = targets.profiles.map { it.name },
+                        selectedIndex = targets.profiles.indexOfFirst { it.id == device }.coerceAtLeast(0),
+                        onSelect = { idx ->
+                            val profile = targets.profiles.getOrNull(idx) ?: return@WheelColumn
+                            if (profile.id != device) {
+                                device = profile.id
+                                folderId = null
+                                agent = null
+                                viewModel.loadTarget(profile.id)
+                            }
+                        },
+                        emptyText = stringResource(R.string.dispatch_no_device),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    targets.folders.forEach { folder ->
-                        FilterChip(
-                            selected = folderId == folder.id,
-                            onClick = { folderId = folder.id },
-                            label = { Text(folder.name, maxLines = 1) },
-                        )
-                    }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.dispatch_project),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    WheelColumn(
+                        items = targets.folders.map { it.name },
+                        selectedIndex = targets.folders.indexOfFirst { it.id == folderId }.coerceAtLeast(0),
+                        onSelect = { idx -> folderId = targets.folders.getOrNull(idx)?.id },
+                        emptyText = stringResource(
+                            if (targets.foldersLoading) R.string.dispatch_defaults_loading else R.string.dispatch_no_folder,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                SectionLabel(stringResource(R.string.dispatch_agent))
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    targets.agents.forEach { candidate ->
-                        FilterChip(
-                            selected = agent == candidate,
-                            onClick = { agent = if (agent == candidate) null else candidate },
-                            label = { Text(candidate.displayName) },
-                        )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.dispatch_agent),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CodegTheme.colors.textTertiary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
+                    val agentOptions = remember(targets.agents, autoAgentLabel) {
+                        listOf(autoAgentLabel) + targets.agents.map { it.displayName }
                     }
+                    WheelColumn(
+                        items = agentOptions,
+                        selectedIndex = (if (agent == null) 0 else targets.agents.indexOf(agent) + 1)
+                            .coerceIn(0, agentOptions.lastIndex),
+                        onSelect = { idx -> agent = if (idx <= 0) null else targets.agents.getOrNull(idx - 1) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
             ui.error?.let {

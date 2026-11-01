@@ -1027,6 +1027,16 @@
     <!-- ===== Floating ball (batch v126): host, panel, settings, catalog ===== -->
     <string name="settings_leaf_floating_ball">Floating Ball</string>
     <string name="general_floating_ball_section">Floating Ball</string>
+    <string name="general_dispatch_defaults_section">Dispatch defaults</string>
+    <string name="dispatch_defaults_unset">Not set</string>
+    <string name="dispatch_defaults_any">Auto (folder default)</string>
+    <string name="dispatch_defaults_device">Default device</string>
+    <string name="dispatch_defaults_folder">Default project</string>
+    <string name="dispatch_defaults_agent">Default agent</string>
+    <string name="dispatch_defaults_pick_device_first">Pick a default device first</string>
+    <string name="dispatch_defaults_clear">Clear dispatch defaults</string>
+    <string name="dispatch_defaults_loading">Loading…</string>
+    <string name="dispatch_defaults_empty">Nothing available</string>
     <string name="general_font_section">Display</string>
     <string name="general_font_scale_title">Font size</string>
     <string name="general_font_scale_subtitle">App-wide text size, on top of the system setting</string>
@@ -1152,6 +1162,8 @@
     <string name="task_confirm_requeue_title">Requeue this task?</string>
     <string name="task_confirm_requeue_msg">The task goes back to the To-do column and waits to be started again.</string>
     <string name="dispatch_redispatch">Dispatch again</string>
+    <string name="dispatch_no_device">No devices</string>
+    <string name="dispatch_agent_auto">Auto</string>
     <string name="dispatch_no_folder">No projects on this device</string>
     <!-- v141 handoff -->
     <string name="handoff_title">Cross-device session handoff</string>
