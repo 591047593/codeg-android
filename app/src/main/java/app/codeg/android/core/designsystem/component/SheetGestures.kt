@@ -22,7 +22,7 @@ class SheetDragLockConnection : NestedScrollConnection {
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
         Offset(0f, available.y)
 
-    override fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
 }
 
 /** Remember a drag-lock connection; pair with [Modifier.nestedScroll] inside the sheet content. */
