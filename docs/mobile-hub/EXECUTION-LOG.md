@@ -70,3 +70,12 @@
 - 门禁：双 flavor 全量单测 928 例 0 失败 + assembleModern/LegacyRelease 双绿 + secret 扫描净。CI 首跑折在既有 ServerStoreTest 超时抖动（v144 同款二次发作：真实 DataStore I/O 的 5s 等待窗在 CI 高负载下被击穿，与本批改动无关）——先放宽到 20s 仍在发版 Run 假红（该测试 v142/v144/v146 三批共四次假红），遂确定性改写：废弃与真实文件 I/O 竞速的 500ms 负窗口，改为记录完整发射历史+有界等待未来状态、历史回放断言门控（同强度零竞速），本地三连绿。
 - 批号勘误：本批与文件上传批撞号（阶段0-6 提交信息误标 v145，其中 c495772 已推远端）。曾 filter-branch 重写整链消息，因会产生强制推送（禁区）而回退、保留原始历史（备份分支 backup-v146-rewritten）；正式批号=批v146，以本条目与 UX-REFACTOR-REPORT.md 为准，代码内批号注释已统一勘误。
 - **不发版**：版本号保持 1.0.1-fengx.34/versionCode 36，不打 tag、不发 Release（待主人真机验收后再授权发版）。报告：docs/mobile-hub/UX-REFACTOR-REPORT.md。
+
+## 批v147：真机四连 Bug 修复（archived 崩溃面/手势穿透/定时完整回显/收件箱净化/死亡红框）（2026-11-02）
+- 背景：主人发 4 张截图（当时装的 v34）指定五优先级修复，严禁加新功能：①archived 枚举白屏 ②弹窗手势穿透+顶部不可点 ③定时缺时间选择 ④收件箱混入「已创建任务 #11」回执 ⑤大块红底报错卡。
+- ①崩溃面：客户端侧 v146 已用手工解码+KNOWN_STATUSES（含 archived/cancelled）+未知状态原样保留兜住——本批补 WorkTaskStatusTest 5 例钉死永不回潮；**截图报错实为 dell 服务端 500**（dell 在跑的旧服务端构建反序列化自家库里 status='archived' 的行就炸，发生在任何列表过滤之前，客户端无法绕过；其他设备不受影响）。根治=dell 服务端升级（生产操作，待主人授权）。
+- ②手势穿透：新组件 core/designsystem/component/SheetGestures.kt（NestedScrollConnection 把内容冒泡上来的全部竖向剩余拖拽+惯性吃掉），垫在派发表/分支表/文件夹表/任务详情表/交接表内容与 sheet 之间——内部列表独立滚动，卡片不再跟着手指走；五表一律 dragHandle=null（顶部拦截层消失，列表第一项可点）+confirmValueChange 拒绝 Hidden（拖拽关闭禁用，关闭只走点遮罩/返回键；已核实 material3 1.3.1 返回键走 scrim→onDismissRequest，不经过被拒的 hide）。
+- ③定时回显：日期→时间两段选择链（v35 已交付）保留，回显从 "MM-dd HH:mm" 升级为完整本地化格式（zh「yyyy年MM月dd日 HH:mm」=主人要求的 2026年11月01日 14:30 样式；en "MMM d, yyyy HH:mm"）；时间弹窗标题改「选择时间」；未选完时间红字提示逻辑不变（scheduleNotSet/scheduleInPast 守卫原样）。
+- ④收件箱净化：列表只放本地草稿——「已提交等待回执」「已创建任务 #N」独立卡全删（confirmedRefs 仍留在台账供去重闸门，只是不再渲染）；UNKNOWN 恢复入口挪到对应草稿卡（PENDING=灰字「提交中」，UNKNOWN=卡内一行 检查/重派/放弃；未决期间主派发钮禁用置灰）；草稿已删的孤儿 UNKNOWN 保留一张紧凑恢复卡——去重闸门必须始终可解析，不能变成看不见的账。
+- ⑤死亡红框：任务板 FailedBanner 红底大卡改柔和文字行+内联重试钮；孤儿 UNKNOWN 卡红底改中性底色+红字标题。会话频道/专家页的 alpha-0.12 行内提示为紧凑行不属「大块红卡」，未动（避免自由发挥）。
+- 门禁：本批起本地零编译（主人指示编译打包一律走 GitHub Actions），语法/契约人工核对+新增 5 例单测随 CI Verify 跑。
