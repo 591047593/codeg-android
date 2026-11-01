@@ -32,7 +32,10 @@ object DispatchPipeline {
         baseBranch: String? = null,
         configValues: Map<String, String> = emptyMap(),
     ): kotlinx.serialization.json.JsonObject = buildJsonObject {
-        put("promptBlocks", buildJsonArray {
+        // WorkTaskConfig on the Rust side has NO rename_all and is serde(default)
+        // everywhere: camelCase keys would be SILENTLY IGNORED and the task
+        // would launch with an empty prompt. The wire is snake_case here.
+        put("prompt_blocks", buildJsonArray {
             if (description.isNotBlank()) add(
                 buildJsonObject {
                     put("type", JsonPrimitive("text"))
@@ -40,13 +43,22 @@ object DispatchPipeline {
                 },
             )
         })
-        put("displayText", JsonPrimitive(description.take(2_000)))
-        agentTypeWire?.let { put("agentType", JsonPrimitive(it)) }
-        modeId?.let { put("modeId", JsonPrimitive(it)) }
-        baseBranch?.let { put("baseBranch", JsonPrimitive(it)) }
+        put("display_text", JsonPrimitive(truncateCodePoints(description, 2_000)))
+        agentTypeWire?.let { put("agent_type", JsonPrimitive(it)) }
+        modeId?.let { put("mode_id", JsonPrimitive(it)) }
+        baseBranch?.let { put("base_branch", JsonPrimitive(it)) }
         if (configValues.isNotEmpty()) {
-            put("configValues", buildJsonObject { configValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
+            put("config_values", buildJsonObject { configValues.forEach { (k, v) -> put(k, JsonPrimitive(v)) } })
         }
+    }
+
+    /** UTF-16 safe truncation for the display field (a raw take(2000) would
+     *  split an emoji surrogate pair in half). */
+    private fun truncateCodePoints(text: String, max: Int): String {
+        if (text.length <= max) return text
+        var end = max
+        while (end > 0 && Character.isHighSurrogate(text[end - 1])) end -= 1
+        return text.substring(0, end)
     }
 
     /**

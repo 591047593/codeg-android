@@ -1,6 +1,6 @@
 # V138 API 能力矩阵
 
-> 审计对象：`/mnt/Projects/codeg/repo/src-tauri`（axum 服务端模式）。全部路由注册于 `src-tauri/src/web/router.rs`，挂载 `/api` 前缀（router.rs:2194），除 public 路由外均过 token 中间件（router.rs:2063-2065）。所有 HTTP 均为 POST + JSON（camelCase）。WS 为 `GET /ws/events`。
+> 审计对象：`/mnt/Projects/codeg/repo/src-tauri`（axum 服务端模式）。全部路由注册于 `src-tauri/src/web/router.rs`，挂载 `/api` 前缀（router.rs:2194），除 public 路由外均过 token 中间件（router.rs:2063-2065）。所有 HTTP 均为 POST + JSON（外层参数包装 camelCase；嵌套 DTO 按服务端 serde 实际命名——WorkTaskDraft/WorkTaskConfig 等无 rename_all 的是 snake_case，如 folder_id/prompt_blocks，2026-11-01 R10 红队对照 Rust 源码修正）。WS 为 `GET /ws/events`。
 > 结论：✅=可直接用；⚠=存在但受限；❌=不存在，需降级。
 
 ## 1. 连接与鉴权 — ✅
@@ -32,7 +32,7 @@
 
 ## 8. To-do 创建 — ✅（无幂等 ❌）
 - `POST /api/work_task_create {"draft": WorkTaskDraft}` → 完整 `WorkTaskInfo`（含 id）。
-- `WorkTaskDraft`（models/work_task.rs:128-132）：`folderId: i32`、`title`、`config: WorkTaskConfig`（内部 models/work_task.rs:173-207：`promptBlocks`、`displayText`、`agentType?`、`modeId?`、`configValues` map、`deliverable?`、`baseBranch?`）。
+- `WorkTaskDraft`（models/work_task.rs:128-132）：`folder_id: i32（嵌套 draft 为 snake_case）`、`title`、`config: WorkTaskConfig`（内部 models/work_task.rs:173-207：`promptBlocks`、`displayText`、`agentType?`、`modeId?`、`configValues` map、`deliverable?`、`baseBranch?`）。
 - ❌ 无幂等键字段。重复 POST = 重复任务。降级：见 V138-Implementation-Plan §幂等。
 
 ## 9. 状态枚举与流转 — ✅（以源码为准）

@@ -16,16 +16,16 @@ class DispatchPipelineTest {
     fun `task config wraps description as text block`() {
         val cfg = DispatchPipeline.taskConfig("do the thing", agentTypeWire = "codex", baseBranch = "main")
         val obj = cfg.jsonObject
-        assertEquals(1, obj["promptBlocks"]!!.jsonArray.size)
-        assertEquals("do the thing", obj["displayText"]!!.jsonPrimitive.content)
-        assertEquals("codex", obj["agentType"]!!.jsonPrimitive.content)
-        assertEquals("main", obj["baseBranch"]!!.jsonPrimitive.content)
+        assertEquals(1, obj["prompt_blocks"]!!.jsonArray.size)
+        assertEquals("do the thing", obj["display_text"]!!.jsonPrimitive.content)
+        assertEquals("codex", obj["agent_type"]!!.jsonPrimitive.content)
+        assertEquals("main", obj["base_branch"]!!.jsonPrimitive.content)
     }
 
     @Test
     fun `blank description yields empty prompt blocks`() {
         val cfg = DispatchPipeline.taskConfig("   ")
-        assertEquals(0, cfg.jsonObject["promptBlocks"]!!.jsonArray.size)
+        assertEquals(0, cfg.jsonObject["prompt_blocks"]!!.jsonArray.size)
     }
 
     @Test

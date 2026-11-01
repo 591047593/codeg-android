@@ -68,13 +68,14 @@ data class WorkTaskInfo(
                 verdict = obj.stringOrNull("verdict"),
                 additions = obj.intOrNull("additions"),
                 deletions = obj.intOrNull("deletions"),
-                changedFileCount = (obj.arrayOrNull("files_changed") as JsonArray?)?.size
-                    ?: obj.intOrNull("files_changed_count"),
+                // Server's `files_changed` is an Option<i32> COUNT, not an array.
+                changedFileCount = obj.intOrNull("files_changed"),
                 createdAt = obj.stringOrNull("created_at"),
                 updatedAt = obj.stringOrNull("updated_at"),
                 scheduledAt = obj.stringOrNull("scheduled_at"),
                 archivedAt = obj.stringOrNull("archived_at"),
-                deferred = obj.objectOrNull("deferred_at") != null || obj.boolOrNull("deferred") == true,
+                // Server's `deferred_at` is an ISO timestamp STRING, not an object.
+                deferred = obj.stringOrNull("deferred_at") != null || obj.boolOrNull("deferred") == true,
                 failureReason = obj.stringOrNull("failure_reason"),
             )
         }
@@ -115,7 +116,8 @@ data class WorkTaskChangedFile(
 ) {
     companion object {
         fun fromWire(obj: JsonObject): WorkTaskChangedFile? {
-            val path = obj.stringOrNull("path") ?: return null
+            // Server's WorkTaskChangedFile serializes the field as `file`.
+            val path = obj.stringOrNull("file") ?: return null
             return WorkTaskChangedFile(
                 path = path,
                 additions = obj.intOrNull("additions"),

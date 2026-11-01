@@ -85,6 +85,9 @@ object ConfigSyncCrypto {
         val cleaned = envelopeText
             .replace("\r", "").replace("\n", "")
             .replace("\u200b", "").replace("\uFEFF", "")
+            // Messengers also fold long pastes with PLAIN SPACES; the envelope
+            // is compact single-line JSON, so spaces inside it are impossible.
+            .replace(" ", "")
             .trim()
         val env = try {
             json.decodeFromString(Envelope.serializer(), cleaned)

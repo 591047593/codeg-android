@@ -246,6 +246,19 @@ class InboxViewModel @Inject constructor(
                     fail("存在同目标「结果未知」的派发记录，请先在派发记录中检查/放弃后再派发，避免重复创建")
                     return@launch
                 }
+                // A schedule time that already passed can't be honored — the
+                // sheet's 30s-ticker guard has a stale window; normalize here so
+                // the server never receives a past scheduledAt (it would run
+                // immediately — the exact behavior the guard warns against).
+                val effectiveSchedule = scheduleLocalMillis?.takeIf { it > System.currentTimeMillis() }
+                // Same stale-selection check the handoff sheet has: the folder
+                // list reloads when the device changes; a restored sheet state
+                // could carry another device's folder id.
+                val folders = _target.value.folders
+                if (folders.isNotEmpty() && folders.none { it.id == folderId }) {
+                    fail("目标项目已失效，请重新选择项目后再派发")
+                    return@launch
+                }
                 val outcome = dispatchService.send(
                     DispatchService.SendRequest(
                         ideaId = idea?.id,
@@ -255,7 +268,7 @@ class InboxViewModel @Inject constructor(
                         title = title,
                         description = description,
                         agentTypeWire = agentType?.wire,
-                        scheduleLocalMillis = scheduleLocalMillis,
+                        scheduleLocalMillis = effectiveSchedule,
                         autoStart = autoStart,
                         restoreOnHardFail = restoreOnHardFail,
                     ),

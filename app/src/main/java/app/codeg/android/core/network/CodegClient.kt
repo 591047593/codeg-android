@@ -718,7 +718,11 @@ class CodegClient(
             "work_task_create",
             buildJsonObject {
                 put("draft", buildJsonObject {
-                    put("folderId", folderId)
+                    // WorkTaskDraft on the Rust side has NO rename_all: the nested
+                    // draft really is snake_case (folder_id), unlike the outer
+                    // params wrappers (camelCase). serde would reject "folderId"
+                    // with "missing field folder_id" → every dispatch would 4xx.
+                    put("folder_id", folderId)
                     put("title", title)
                     put("config", config)
                 })
@@ -763,7 +767,12 @@ class CodegClient(
     }
 
     suspend fun workTaskDefer(id: Int) {
-        send("work_task_defer", WorkTaskWire.idBody(id).toString())
+        // DeferParams requires `deferred: bool` (no default) — a bare {"id"}
+        // would 422 on the server.
+        send("work_task_defer", buildJsonObject {
+            put("id", id)
+            put("deferred", true)
+        }.toString())
     }
 
     suspend fun workTaskDiff(id: Int, file: String? = null): String {
@@ -793,9 +802,16 @@ class CodegClient(
         return arr.mapNotNull { (it as? JsonObject)?.let(WorkTaskEvent::fromWire) }
     }
 
-    private suspend fun sendJsonElement(name: String, body: String): JsonElement =
-        runCatching { CodegJson.response.parseToJsonElement(send(name, body)) }
+    private suspend fun sendJsonElement(name: String, body: String): JsonElement {
+        // send() OUTSIDE the runCatching: a Transport/Server error here means
+        // the request's fate is unknown (timeout = it may have been executed) —
+        // re-wrapping it as Decoding made DispatchService treat an ambiguous
+        // outcome as a hard failure and DELETE its ledger entry (double-create
+        // invite). Only the local parse failure is a true Decoding error.
+        val raw = send(name, body)
+        return runCatching { CodegJson.response.parseToJsonElement(raw) }
             .getOrElse { throw ApiError.Decoding("$name returned invalid JSON") }
+    }
 
     /** Top-level list decoder — drops rows that do not decode instead of failing. */
     fun decodeWorkTaskList(text: String): List<WorkTaskInfo> {
