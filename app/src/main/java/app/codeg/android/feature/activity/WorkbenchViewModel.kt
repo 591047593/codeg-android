@@ -247,8 +247,8 @@ class WorkbenchViewModel @Inject constructor(
                                             error = (e as? ApiError)?.displayMessage()
                                                 ?: e.message ?: "加载失败",
                                         )
-                                    } else it,
-                                ),
+                                    } else it
+                                },
                             )
                         },
                     )
