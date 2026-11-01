@@ -39,15 +39,28 @@ data class WorkTaskInfo(
 ) {
     val isTerminal: Boolean get() = status in TERMINAL_STATUSES
 
+    /**
+     * Shelved rows: the upstream `archived_at` flag, or a stray
+     * `status="archived"` row from a server build that wrote archived as a
+     * status. Both hide behind the "show archived" filter; a status-only
+     * archived row carries no live-state signal, so it must not resurface
+     * as a runnable task after a routine filter flip.
+     */
+    val isArchivedLike: Boolean get() = archivedAt != null || status == "archived"
+
     companion object {
-        /** States seen in server source (`db/entities/work_task.rs`); display only. */
+        /** States seen in server source (`db/entities/work_task.rs`); display only.
+         *  `cancelled`/`archived` are not in current upstream source but exist in
+         *  the wild (dell/win databases written by other builds) — listing them
+         *  here only marks them display-known; the raw string is kept either way. */
         val KNOWN_STATUSES = setOf(
             "todo", "queued", "preparing", "running", "awaiting_input",
             "review", "merging", "done", "failed", "canceled",
+            "cancelled", "archived",
         )
 
         /** failed/canceled — ended without acceptance; shown in their own group. */
-        val TERMINAL_STATUSES = setOf("failed", "canceled")
+        val TERMINAL_STATUSES = setOf("failed", "canceled", "cancelled")
 
         /**
          * Null-tolerant decode of one `work_task_list` row. Returns null only when

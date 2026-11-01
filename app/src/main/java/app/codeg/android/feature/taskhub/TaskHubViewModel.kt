@@ -93,7 +93,7 @@ class TaskHubViewModel @Inject constructor(
     ) {
         val failedDevices: Int get() = deviceStates.count { it.status == DeviceLoadStatus.FAILED }
         val archivedHidden: Int
-            get() = tasks.count { it.task.archivedAt != null }.takeIf { !showArchived } ?: 0
+            get() = tasks.count { it.task.isArchivedLike }.takeIf { !showArchived } ?: 0
     }
 
     private val _ui = MutableStateFlow(UiState())
@@ -116,7 +116,7 @@ class TaskHubViewModel @Inject constructor(
             val names = profiles.associate { it.id to it.name }
             val rows = state.tasks
                 .asSequence()
-                .filter { state.showArchived || it.task.archivedAt == null }
+                .filter { state.showArchived || !it.task.isArchivedLike }
                 .filter { state.deviceFilter == null || it.serverId == state.deviceFilter }
                 .map { it.copy(serverName = names[it.serverId] ?: it.serverName) }
                 .toList()

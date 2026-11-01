@@ -36,15 +36,19 @@ val BOARD_ORDER = listOf(
  *   preparing/running     → 执行中
  *   todo/queued           → 待执行
  *   merging/done          → 已完成 (merging tagged "合并中" by the UI)
- *   failed/canceled       → 失败/取消
- *   anything else         → 未知 (raw string preserved on the row)
+ *   failed/canceled       → 失败/取消 (`cancelled` is the two-L alias some
+ *                           server builds wrote — same meaning, same column)
+ *   anything else         → 未知 (raw string preserved on the row). Archived
+ *                           rows (`archived_at` flag or status="archived")
+ *                           also land here when shown — never in DONE, we
+ *                           don't know what they were before archiving.
  */
 fun taskColumnOf(status: String): TaskColumn = when (status) {
     "awaiting_input", "review" -> TaskColumn.ATTENTION
     "preparing", "running" -> TaskColumn.RUNNING
     "todo", "queued" -> TaskColumn.PENDING
     "merging", "done" -> TaskColumn.DONE
-    "failed", "canceled" -> TaskColumn.ENDED
+    "failed", "canceled", "cancelled" -> TaskColumn.ENDED
     else -> TaskColumn.UNKNOWN
 }
 

@@ -89,4 +89,34 @@ class TaskBoardTest {
         val board = buildBoard(listOf(task(1, "running", serverId = "a"), task(2, "running", serverId = "b")))
         assertEquals(listOf("a", "b"), board[TaskColumn.RUNNING]!!.map { it.serverId })
     }
+
+    /** ui重构 阶段1：wild-server statuses must not fall over or fake done. */
+    @Test
+    fun `cancelled alias maps to ended`() {
+        assertEquals(TaskColumn.ENDED, taskColumnOf("cancelled"))
+        assertEquals(TaskColumn.ENDED, taskColumnOf("canceled"))
+    }
+
+    @Test
+    fun `archived status never lands in done and is archived-like`() {
+        // dell/win databases contain rows written as status="archived" by another
+        // build. Raw string kept; column UNKNOWN; hidden by the archived filter.
+        val entry = task(1, "archived")
+        assertEquals(TaskColumn.UNKNOWN, taskColumnOf("archived"))
+        assertEquals(true, entry.task.isArchivedLike)
+        val board = buildBoard(listOf(entry))
+        assertEquals(0, board[TaskColumn.DONE]!!.size)
+        assertEquals(1, board[TaskColumn.UNKNOWN]!!.size)
+    }
+
+    @Test
+    fun `archivedAt flag alone marks row archived-like`() {
+        val entry = TaskBoardEntry(
+            serverId = "s1",
+            serverName = "srv-s1",
+            task = WorkTaskInfo(id = 2, title = "T2", status = "done", archivedAt = "2026-10-01T00:00:00Z"),
+        )
+        assertEquals(true, entry.task.isArchivedLike)
+        assertEquals(false, task(3, "done").task.isArchivedLike)
+    }
 }
