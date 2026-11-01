@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -47,11 +48,11 @@ class InboxViewModel @Inject constructor(
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
     appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
-) : ViewModel() {
+) : ViewModel(), app.codeg.android.feature.dispatch.DispatchFormHost {
 
-    /** App-wide settings — the dispatch sheet reads its preselected defaults
+    /** App-wide settings — the dispatch form reads its preselected defaults
      *  (device/project/agent, 设置→通用→派发默认选项) from this flow. */
-    val settings = appSettingsStore.settings
+    override val settings = appSettingsStore.settings
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             app.codeg.android.core.datastore.AppSettings.INITIAL)
 
@@ -86,6 +87,26 @@ class InboxViewModel @Inject constructor(
 
     private val _target = MutableStateFlow(DispatchTargets())
     val target: StateFlow<DispatchTargets> = _target.asStateFlow()
+
+    // ---- DispatchFormHost (批v150 §1.5 宿主 A): form-facing projections of the
+    // state this VM already owns. The ledger / probe machinery STAYS inbox-only.
+
+    override val targets: StateFlow<DispatchTargets> get() = target
+
+    /** The ledger's dispatching/error plus the branch state, as the shared form
+     *  reads them. */
+    override val formUi: StateFlow<app.codeg.android.feature.dispatch.DispatchFormUi> =
+        ui.map { u ->
+            app.codeg.android.feature.dispatch.DispatchFormUi(
+                dispatching = u.dispatching,
+                error = u.dispatchError,
+                branches = u.branches,
+                branchesLoading = u.branchesLoading,
+                branchesError = u.branchesError,
+                branchFolderKey = u.branchFolderKey,
+            )
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            app.codeg.android.feature.dispatch.DispatchFormUi())
 
     init {
         // Crash mid-flight sweep: a PENDING ledger entry means the request was
@@ -201,7 +222,7 @@ class InboxViewModel @Inject constructor(
 
     /** Branches for [folder]'s repo path; failure keeps the form usable with
      *  the project default (null base branch), never blocks dispatch. */
-    fun loadBranches(serverId: String, folder: app.codeg.android.core.model.FolderDetail) {
+    override fun loadBranches(serverId: String, folder: app.codeg.android.core.model.FolderDetail) {
         val seq = ++branchSeq
         val key = "$serverId:${folder.path}"
         _ui.value = _ui.value.copy(branchesLoading = true, branchesError = false, branchFolderKey = key)
@@ -242,7 +263,7 @@ class InboxViewModel @Inject constructor(
     /** Precheck + load the target device's projects and agents (PRD §7.3). */
     private var targetSeq = 0
 
-    fun loadTarget(serverId: String) {
+    override fun loadTarget(serverId: String) {
         val seq = ++targetSeq
         viewModelScope.launch {
             _target.value = _target.value.copy(folders = emptyList(), agents = emptyList(), foldersLoading = true, error = null)
@@ -393,6 +414,29 @@ class InboxViewModel @Inject constructor(
                 fail(e.message ?: "派发失败")
             }
         }
+    }
+
+    /** DispatchFormHost entry (批v150 §1.5 宿主 A): the shared form submits
+     *  through here; the ledger pipeline below (idea resolution, dup gate,
+     *  UNKNOWN semantics) remains the single source of truth. */
+    override fun dispatch(
+        submit: app.codeg.android.feature.dispatch.DispatchFormSubmit,
+        onDone: (DispatchRef) -> Unit,
+    ) {
+        dispatch(
+            idea = submit.ideaId?.let { id -> _ui.value.ideas.firstOrNull { it.id == id } },
+            serverId = submit.serverId,
+            folderId = submit.folderId,
+            folderName = submit.folderName,
+            agentType = submit.agentType,
+            title = submit.title,
+            description = submit.description,
+            baseBranch = submit.baseBranch,
+            scheduleLocalMillis = submit.scheduleLocalMillis,
+            onDone = onDone,
+            autoStart = submit.autoStart,
+            sessionMode = submit.sessionMode,
+        )
     }
 
     /** requestIds with a probe in flight, so the button can't fire concurrently. */

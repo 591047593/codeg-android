@@ -137,6 +137,11 @@ fun DispatchForm(
     modifier: Modifier = Modifier,
     /** Host A (inbox) opens in session mode; host B (ball) opens in task mode. */
     defaultSessionMode: Boolean = true,
+    /** Seed values for the title/description fields (host A prefills from the
+     *  idea being dispatched; host B starts blank). Sheet-lifetime state — the
+     *  sheet is disposed between opens, so a plain init matches the old sheet. */
+    initialTitle: String = "",
+    initialDescription: String = "",
     /** Ledger ref of an accepted submit — the screen renders the result dialog. */
     onResult: (DispatchRef) -> Unit = {},
 ) {
@@ -152,8 +157,8 @@ fun DispatchForm(
     var agent by rememberSaveable { mutableStateOf<AgentType?>(null) }
     var branch by rememberSaveable { mutableStateOf<String?>(null) }
     var sessionMode by rememberSaveable { mutableStateOf(defaultSessionMode) }
-    var title by rememberSaveable { mutableStateOf("") }
-    var description by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var description by rememberSaveable { mutableStateOf(initialDescription) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var scheduleMillis by rememberSaveable { mutableStateOf(0L) }
     var showDatePicker by remember { mutableStateOf(false) }
