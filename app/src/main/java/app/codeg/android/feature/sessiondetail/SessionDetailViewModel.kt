@@ -1911,22 +1911,29 @@ class SessionDetailViewModel @Inject constructor(
             )
         }
 
-        val first = runCatching { attempt(name) }
-        if (first.isSuccess) return StageResult.Ok(first.getOrThrow())
-        when (val e = first.exceptionOrNull()) {
-            is CancellationException -> throw e
-            else -> {
+        // fold keeps the error val provably non-null in onFailure — no nullable
+        // smart-cast holes like `when (exceptionOrNull())` without a null branch.
+        val first = runCatching { attempt(name) }.fold(
+            onSuccess = { StageResult.Ok(it) },
+            onFailure = { e ->
+                if (e is CancellationException) throw e
                 val conflict = e is ApiError.Server &&
                     (e.status == 409 || e.serverMessage.contains("already exists", ignoreCase = true))
-                if (!conflict) return StageResult.Failed("$name：${e.displayMessage()}")
-            }
-        }
-        val retried = runCatching { attempt(autoRenamedFileName(name)) }
-        return when (val e2 = retried.exceptionOrNull()) {
-            null -> StageResult.Ok(retried.getOrThrow())
-            is CancellationException -> throw e2
-            else -> StageResult.Failed("$name：${e2.displayMessage()}")
-        }
+                if (conflict) null else StageResult.Failed("$name：${e.displayMessage()}")
+            },
+        )
+        if (first != null) return first
+
+        // "already exists": a prior attempt may have landed the bytes before the
+        // client saw an error, and the server refuses to overwrite — retry once
+        // under an auto-renamed name instead of failing the same retry forever.
+        return runCatching { attempt(autoRenamedFileName(name)) }.fold(
+            onSuccess = { StageResult.Ok(it) },
+            onFailure = { e ->
+                if (e is CancellationException) throw e
+                StageResult.Failed("$name：${e.displayMessage()}")
+            },
+        )
     }
 
     fun removeFileAttachment(id: String) {
