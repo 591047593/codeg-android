@@ -45,3 +45,12 @@
 - R9+R10（端到端墨菲+终极红队，ba71d48）：**R10 对照服务端 Rust 源码抓出致命线上 bug——work_task_create 嵌套 draft 发 folderId 而服务端 WorkTaskDraft 无 rename_all 要求 folder_id（全量派发会 4xx）；taskConfig 六键 camelCase 被服务端 serde(default) 静默忽略（任务会以空 prompt 创建）**——均已改 snake_case+测试同步；changed_files 读 file、files_changed 按计数、deferred_at 按字符串、workTaskDefer 补必填 deferred；sendJsonElement 不再吞传输错误（超时→UNKNOWN 而非删台账）；回查二遍宽匹配（慢时钟不误报"未找到"）；派发前过期定时归一+文件夹失效校验；空态闸含提交中卡；密文剥离空格；V138 能力矩阵文档字段名勘误（文档 camelCase 说法是根因）。
 - 教训沉淀：**派发管线此前九轮全绿但从未对过服务端源码字段名，R10 以 /mnt/Projects/codeg/repo/src-tauri 为准逐一核对才抓出**；V138-API-Capability-Matrix.md 的"全 camelCase"是根因性错误文档。
 - 发版：tag v1.0.1-fengx.33（versionCode 35），双 APK 挂 Release。
+
+## 批v144：真机堆栈定位闪退 + 「提交结果未知」实测根因 + 派发默认选项 + 三列滚轮选择器（2026-11-01）
+- 背景：主人装 v1.0.1-fengx.33-legacy 反馈①点任务页仍闪退（并附上 设置→关于→Last crash 真实堆栈）②派发 sheet 每次要逐行手选设备/项目/Agent，太僵硬③提交后仍显示「提交结果未知」。
+- 闪退根因（堆栈实锤）：TaskHubViewModel `_active` 声明在 init 之后，而 Dispatchers.Main.immediate 下 init 里 viewModelScope.launch 同步执行到 combine 收集 `_active` → NPE on null Flow（Combine.kt:28 ← TaskHubViewModel.kt:137）。修复：`_active`/`setActive` 上移至 init 之前（SessionListViewModel `_agg` 同款地雷一并拆除），附注释防回潮。
+- 「提交结果未知」根因（对真实服务端 curl 实测）：work_task_create 被服务端拒绝时（serde 422 / DbError→500 如 folder 不存在）**不会创建任何任务**，但 App 端把 5xx 一律按「模糊失败」markUnknown → 每次确定性失败都显示「提交结果未知」。修复三连：①isAmbiguous 收窄为仅 IOException/Transport（服务端有响应=确定失败，Rust 源码核实所有拒绝路径都在插入前行）；②ServerError 解析补 detail 字段（如 "not found: folder 0"），HardFailed 消息带根因；③真模糊（断连）时 markUnknown 后自动做一次只读探查（1.5s 延迟+标题/folder/时间窗匹配），命中即自愈 CONFIRMED，用户根本看不到未知卡。
+- 新功能一（派发默认选项）：设置→通用→「派发默认选项」——默认设备/项目/Agent 三行（Agent 可选「自动」），存 AppSettingsStore 四个新键；派发 sheet 与交接 sheet 打开时自动预选（设备切换后项目/Agent 回落默认）。
+- 新功能二（三列滚轮选择器）：新组件 feature/common/WheelColumn（LazyColumn+rememberSnapFlingBehavior：松手自动吸附；中项放大1.2x/accent 高亮，上下项缩小渐隐；纯滚动无按钮样式）。派发 sheet 与交接 sheet 的三行 FilterChip 全部替换为三列并排滚轮（每列独立上下滑，列头小标签）。
+- 测试：双 flavor 编译绿 + 454 单测绿（testLegacy/testModern debug；Release 首跑一个既有 ServerStoreTest 超时抖动，rerun 绿）。
+- 发版：tag v1.0.1-fengx.34（versionCode 36）。
