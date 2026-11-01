@@ -12,8 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -65,6 +70,7 @@ private enum class InsertSource { QUICK, EXPERTS, COMMANDS }
 fun ComposeInsertSheet(
     viewModel: SessionDetailViewModel,
     onInsert: ((String) -> String) -> Unit,
+    onPickFiles: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = CodegTheme.colors
@@ -88,6 +94,29 @@ fun ComposeInsertSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = colors.bgElevated) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // File upload first — it's an action (opens the system file manager), not
+            // an insert source, so it sits above the segmented selector.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onPickFiles() }
+                    .padding(horizontal = 10.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.InsertDriveFile,
+                    contentDescription = null,
+                    tint = colors.accent,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column {
+                    Text(stringResource(R.string.insert_pick_files), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = colors.textPrimary)
+                    Text(stringResource(R.string.insert_pick_files_hint), fontSize = 12.sp, color = colors.textTertiary)
+                }
+            }
+            HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = colors.surfaceStroke)
             // Segmented selector.
             val sources = InsertSource.entries
             val sourceLabels = listOf(
