@@ -70,6 +70,7 @@
 ## 8. 测试与构建
 
 - **单测：双 flavor 全量 928 例（464×2）0 失败**。新增：WorkTaskWireTest 7 例（wire key 钉死）+ TaskBoardTest 重写（Web 口径分段/搁置/野状态/过滤/计数/跨机聚合 ~15 例）+ 阶段1 稳定性 4 例。
+- **CI 抖动根治**：首次 CI 在 `testModernReleaseUnitTest` 折在既有 `ServerStoreTest` 超时抖动（v144 批同款，二次发作）——根因是测试里真实 DataStore I/O 的 5 秒等待窗口在 CI 高负载下被击穿，与代码改动无关；已把该等待上界放宽到 20 秒（真回归仍有界失败），Release 变体本地复验绿。
 - **编译：assembleModernRelease + assembleLegacyRelease 双绿**（本地验证用，APK 不外发）。
 - **secret 扫描：diff 无 Token/密钥/内网 IP**（唯一命中是「Token 缺失」错误文案）。
 - CI：推 fork main 触发 Verify 工作流（同门槛）。

@@ -54,9 +54,12 @@ class ServerStoreTest {
     private fun profile(id: String) =
         ServerProfile(id = id, name = id.uppercase(), baseUrl = "https://$id.test")
 
-    /** Skips the flow's initial (pre-write) emission. */
+    /** Skips the flow's initial (pre-write) emission. 20s, not 5s: these waits
+     *  span REAL DataStore file I/O on Dispatchers.IO — under a loaded CI
+     *  runner 5s was flaky (v144 + v146 both ate one rerun); a genuine
+     *  regression still fails, just 20s later. */
     private suspend fun <T> Channel<T>.awaitMatching(predicate: (T) -> Boolean): T =
-        withTimeout(5_000) {
+        withTimeout(20_000) {
             while (true) {
                 val value = receive()
                 if (predicate(value)) return@withTimeout value
