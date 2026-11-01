@@ -909,6 +909,10 @@
     <string name="cred_invalid_token">令牌无效。</string>
 
     <!-- ===== Session Detail · Insert sheet ===== -->
+    <string name="insert_pick_files">上传文件</string>
+    <string name="insert_pick_files_hint">从文件管理器选择 Markdown、PRD、Plan 等文档</string>
+    <string name="file_attach_done">已添加 %1$d 个文件，跳过 %2$d 个（过大或失败）</string>
+    <string name="file_attach_inline">内联内容</string>
     <string name="insert_quick_messages">快捷消息</string>
     <string name="insert_experts">专家</string>
     <string name="insert_commands">命令</string>

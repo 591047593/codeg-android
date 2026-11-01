@@ -99,6 +99,15 @@ private const val SNAPSHOT_TTL_MS = 30_000L
 /** Server-side folder (inside the working directory) that receives session handoff JSON. */
 private const val HANDOFF_DIR = ".codeg-handoff"
 
+/** Session file-upload staging dir (root-relative) for documents picked from the phone. */
+private const val UPLOAD_DIR = "uploads"
+
+/** Per-session staged file caps: the server allows up to 100 MB per multipart upload. */
+private const val FILE_MAX_COUNT = 5
+private const val FILE_MAX_BYTES = 20_000_000L
+/** Above this a text file is too big to inline when the session has no workspace folder. */
+private const val FILE_MAX_INLINE_BYTES = 200_000
+
 /** Bounded snapshot poll after an options apply (~2.7s total) — `set_*` only enqueues
  *  the change server-side (fire-and-forget), so only a settled snapshot can tell an
  *  applied pick from a refused one. 150ms first step, 500ms after. */
@@ -355,7 +364,8 @@ class SessionDetailViewModel @Inject constructor(
     private fun send(text: String, withAttachments: Boolean) {
         val trimmed = text.trim()
         val attachments = if (withAttachments) _ui.value.attachments else emptyList()
-        if ((trimmed.isEmpty() && attachments.isEmpty()) || _ui.value.isInFlight) return
+        val fileAttachments = if (withAttachments) _ui.value.fileAttachments else emptyList()
+        if ((trimmed.isEmpty() && attachments.isEmpty() && fileAttachments.isEmpty()) || _ui.value.isInFlight) return
         // A fork is mid-flight: the session row is about to be re-pointed, so a send
         // now would land on the wrong session (or race the re-point entirely).
         if (_ui.value.forking) return
@@ -373,12 +383,13 @@ class SessionDetailViewModel @Inject constructor(
         val wasNew = conversationId == null
         if (wasNew) hasStartedFirstSend = true
 
-        // Optimistic user turn: text (if any) then image blocks.
+        // Optimistic user turn: text (if any), the file note (if any), then image blocks.
         val userTurn = MessageTurn(
             id = "pending-${UUID.randomUUID()}",
             role = TurnRole.USER,
             blocks = buildList {
                 if (trimmed.isNotEmpty()) add(ContentBlock.Text(trimmed))
+                fileSummaryNote(fileAttachments)?.let { add(ContentBlock.Text(it)) }
                 attachments.forEach { add(ContentBlock.Image(it.imageData)) }
             },
             timestamp = Instant.now(),
@@ -397,6 +408,7 @@ class SessionDetailViewModel @Inject constructor(
                 notice = null,
                 restoreDraft = null,
                 attachments = if (withAttachments) emptyList() else it.attachments,
+                fileAttachments = if (withAttachments) emptyList() else it.fileAttachments,
                 isDraftEditable = false,
             )
         }
@@ -406,7 +418,36 @@ class SessionDetailViewModel @Inject constructor(
         // POST landed — the optimistic bubble, the cleared draft and the server turns all
         // ended up empty. The send outlives the screen now.
         sendJob = appScope.launch(Dispatchers.Main.immediate) {
-            runSend(trimmed, userTurn, attachments, wasNew, clearDraft = withAttachments)
+            runSend(trimmed, userTurn, attachments, fileAttachments, wasNew, clearDraft = withAttachments)
+        }
+    }
+
+    /**
+     * Human-facing one-liner per staged file, shown as its own text block in the
+     * optimistic user bubble. The machine-facing variant (with inline contents)
+     * is [filePromptAppendix].
+     */
+    private fun fileSummaryNote(files: List<FileAttachment>): String? {
+        if (files.isEmpty()) return null
+        return buildString {
+            append("📎 ")
+            files.forEachIndexed { i, f ->
+                if (i > 0) append("\n")
+                append(f.name)
+                f.absolutePath?.let { append("（已上传：$it）") }
+            }
+        }
+    }
+
+    /** Text appended to the prompt so the agent receives the staged files. */
+    private fun filePromptAppendix(files: List<FileAttachment>): String = buildString {
+        files.forEach { f ->
+            when {
+                f.absolutePath != null ->
+                    append("\n\n📎 附件「${f.name}」已上传到服务器工作目录：${f.absolutePath}（请直接读取该文件）")
+                f.inlineContent != null ->
+                    append("\n\n📎 附件「${f.name}」内容：\n```\n${f.inlineContent}\n```")
+            }
         }
     }
 
@@ -414,6 +455,7 @@ class SessionDetailViewModel @Inject constructor(
         text: String,
         userTurn: MessageTurn,
         attachments: List<Attachment>,
+        fileAttachments: List<FileAttachment>,
         createdConversation: Boolean,
         clearDraft: Boolean,
     ) {
@@ -430,7 +472,7 @@ class SessionDetailViewModel @Inject constructor(
         // pre-send key up front and clear BOTH.
         val preSendDraftKey = currentDraftKey()
         try {
-            ensureConversationCreated(text.ifEmpty { "Image" })
+            ensureConversationCreated(text.ifEmpty { fileAttachments.firstOrNull()?.name ?: "Image" })
             if (createdConversation) createdId = conversationId
             // The screen has already emptied its composer; clear the persisted draft here —
             // on [appScope], so a back-navigation can't cancel it mid-DataStore-write and
@@ -438,7 +480,7 @@ class SessionDetailViewModel @Inject constructor(
             // must not consume the user's pending draft.
             if (clearDraft) clearPersistedDraft(preSendDraftKey)
             try {
-                attemptSend(c, text, attachments, clientMessageId, freshConnection = false)
+                attemptSend(c, text, attachments, fileAttachments, clientMessageId, freshConnection = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -448,7 +490,7 @@ class SessionDetailViewModel @Inject constructor(
                 if (e is StreamAttachFailed || (e is ApiError && e.isStaleConnection)) {
                     closeStream()
                     connectionId = null
-                    attemptSend(c, text, attachments, clientMessageId, freshConnection = true)
+                    attemptSend(c, text, attachments, fileAttachments, clientMessageId, freshConnection = true)
                 } else throw e
             }
             _ui.update { if (it.isInFlight) it.copy(sendStatus = "Thinking…") else it }
@@ -466,6 +508,7 @@ class SessionDetailViewModel @Inject constructor(
         c: CodegClient,
         text: String,
         attachments: List<Attachment>,
+        fileAttachments: List<FileAttachment>,
         clientMessageId: String,
         freshConnection: Boolean,
     ) {
@@ -475,7 +518,8 @@ class SessionDetailViewModel @Inject constructor(
         c.prompt(
             connectionId = conn,
             blocks = buildList {
-                if (text.isNotEmpty()) add(PromptInputBlock.Text(text))
+                val promptText = text + filePromptAppendix(fileAttachments)
+                if (promptText.isNotEmpty()) add(PromptInputBlock.Text(promptText))
                 attachments.forEach { add(it.promptBlock) }
             },
             folderId = folder?.id,
@@ -1747,6 +1791,95 @@ class SessionDetailViewModel @Inject constructor(
 
     // endregion
 
+    // region File attachments (system file manager)
+
+    /**
+     * Pick documents (Markdown/PRD/Plan/…) via the system file manager and stage them
+     * for the next send. With a workspace folder each file uploads into `uploads/`
+     * immediately (same multipart path the project file browser uses); without one,
+     * small text files fall back to inlining their content into the prompt. Per-file
+     * failures are counted, not aborting the batch.
+     */
+    fun addFileAttachments(uris: List<Uri>, resolver: ContentResolver) {
+        if (uris.isEmpty()) return
+        val root = folder?.path ?: _ui.value.folderPath
+        viewModelScope.launch {
+            val c = client
+            var added = 0
+            var skipped = 0
+            for (uri in uris) {
+                if (_ui.value.fileAttachments.size >= FILE_MAX_COUNT) { skipped++; continue }
+                val name = queryDisplayName(resolver, uri) ?: uri.lastPathSegment ?: "file-${System.currentTimeMillis()}"
+                val size = querySize(resolver, uri) ?: 0L
+                if (size > FILE_MAX_BYTES) { skipped++; continue }
+                val att: FileAttachment? = if (c != null && !root.isNullOrBlank()) {
+                    try {
+                        val uploaded = withContext(Dispatchers.IO) {
+                            c.uploadWorkspaceFile(root, UPLOAD_DIR, name, size) { resolver.openInputStream(uri)!! }
+                        }
+                        FileAttachment(
+                            id = UUID.randomUUID().toString(),
+                            name = uploaded.name.ifBlank { name },
+                            size = uploaded.size.takeIf { it > 0 } ?: size,
+                            absolutePath = root.trimEnd('/') + "/" + uploaded.path.trimStart('/'),
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                } else {
+                    inlineTextAttachment(resolver, uri, name, size)
+                }
+                if (att == null) { skipped++; continue }
+                _ui.update { it.copy(fileAttachments = it.fileAttachments + att) }
+                added++
+            }
+            if (added > 0 || skipped > 0) {
+                _ui.update { it.copy(notice = appContext.getString(R.string.file_attach_done, added, skipped)) }
+            }
+        }
+    }
+
+    fun removeFileAttachment(id: String) {
+        _ui.update { it.copy(fileAttachments = it.fileAttachments.filterNot { f -> f.id == id }) }
+    }
+
+    /** No-workspace fallback: small text files ride inside the prompt as a fenced block. */
+    private suspend fun inlineTextAttachment(resolver: ContentResolver, uri: Uri, name: String, size: Long): FileAttachment? {
+        if (size > FILE_MAX_INLINE_BYTES) return null
+        val kind = docPreviewKindOf(name)
+        if (kind != DocPreviewKind.TEXT && kind != DocPreviewKind.MARKDOWN) return null
+        return withContext(Dispatchers.IO) {
+            val text = runCatching { resolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                ?: return@withContext null
+            FileAttachment(id = UUID.randomUUID().toString(), name = name, size = size, inlineContent = text)
+        }
+    }
+
+    // endregion
+
+    /** SAF display-name lookup for a picked document (mirrors FolderFilesView). */
+    private fun queryDisplayName(resolver: ContentResolver, uri: Uri): String? =
+        runCatching {
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) c.getString(idx) else null
+                } else null
+            }
+        }.getOrNull()
+
+    private fun querySize(resolver: ContentResolver, uri: Uri): Long? =
+        runCatching {
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (idx >= 0 && !c.isNull(idx)) c.getLong(idx) else null
+                } else null
+            }
+        }.getOrNull()
+
     // region Workspace (draft agent/folder pickers + git branch)
 
     /** Change the draft's agent before the first send. Drops any resolved
@@ -2958,6 +3091,8 @@ data class SessionDetailUiState(
     val pendingQuestion: PendingQuestionUi? = null,
     val pendingPlanApproval: PendingPlanApprovalUi? = null,
     val attachments: List<Attachment> = emptyList(),
+    /** Documents staged via the file-manager picker (uploaded to the workspace at pick time). */
+    val fileAttachments: List<FileAttachment> = emptyList(),
     /** Drafts typed while a turn was running, waiting for it to finish (in-memory,
      *  like the web client's queue — a process kill loses them). */
     val queue: List<QueuedDraft> = emptyList(),
@@ -2987,6 +3122,23 @@ fun docPreviewKindOf(name: String): DocPreviewKind {
         "", "txt", "json", "xml", "yml", "yaml", "toml", "ini", "conf", "sh", "bash", "py", "rs", "kt", "java", "js", "ts", "css", "c", "h", "cpp", "go", "rb", "php", "sql", "log", "env", "csv", "properties" -> DocPreviewKind.TEXT
         else -> DocPreviewKind.OTHER
     }
+}
+
+/**
+ * A document staged for the next send, picked via the system file manager (SAF).
+ * With a workspace folder the bytes are uploaded into `uploads/` at pick time and
+ * [absolutePath] is injected into the prompt so the agent can read the file
+ * directly; without a folder, small text files fall back to [inlineContent]
+ * (embedded in the prompt as a fenced block).
+ */
+data class FileAttachment(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val absolutePath: String? = null,
+    val inlineContent: String? = null,
+) {
+    val isInline: Boolean get() = absolutePath == null && inlineContent != null
 }
 
 /** One queued draft in the send-while-running bar. */

@@ -43,6 +43,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Checklist
@@ -260,9 +261,19 @@ fun SessionDetailScreen(
         ActivityResultContracts.PickMultipleVisualMedia(AttachmentPrep.MAX_COUNT),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris, context.contentResolver) }
 
+    // System file manager for documents (Markdown/PRD/Plan/…)."*/*" keeps every
+    // provider selectable; per-file caps live in the view model.
+    val pickFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> if (uris.isNotEmpty()) viewModel.addFileAttachments(uris, context.contentResolver) }
+
     if (showInsert) {
         ComposeInsertSheet(
             viewModel = viewModel,
+            onPickFiles = {
+                showInsert = false
+                pickFiles.launch(arrayOf("*/*"))
+            },
             onInsert = { transform ->
                 val next = transform(draft)
                 draft = next
@@ -439,6 +450,7 @@ fun SessionDetailScreen(
                     NoticeBanner(lastNotice, onDismiss = viewModel::dismissNotice)
                 }
                 if (ui.attachments.isNotEmpty()) AttachmentStrip(ui.attachments, onRemove = viewModel::removeAttachment)
+                if (ui.fileAttachments.isNotEmpty()) FileAttachmentStrip(ui.fileAttachments, onRemove = viewModel::removeFileAttachment)
                 QueuedDraftsBar(
                     queue = ui.queue,
                     onInsert = viewModel::insertQueuedNow,
@@ -466,7 +478,7 @@ fun SessionDetailScreen(
                     onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     onTocClick = if (tocEntries.isNotEmpty()) ({ showToc = true }) else null,
                     onExpandClick = { showFullscreenEditor = true },
-                    canSendOverride = ui.attachments.isNotEmpty(),
+                    canSendOverride = ui.attachments.isNotEmpty() || ui.fileAttachments.isNotEmpty(),
                     sendBlocked = ui.forking,
                     statusBar = { SessionStatusRow(ui = ui) },
                     contextBar = {
@@ -916,6 +928,54 @@ private fun NoticeBanner(message: String, onDismiss: () -> Unit) {
             Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_dismiss), tint = colors.textSecondary)
         }
     }
+}
+
+/** A horizontal strip of staged document attachments (name + size chips), each removable. */
+@Composable
+private fun FileAttachmentStrip(files: List<FileAttachment>, onRemove: (String) -> Unit) {
+    val colors = CodegTheme.colors
+    LazyRow(
+        Modifier.fillMaxWidth().background(colors.bgElevated.copy(alpha = 0.92f)).padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(files, key = { it.id }) { f ->
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.codeSurface)
+                    .border(0.5.dp, colors.surfaceStroke, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.InsertDriveFile,
+                    contentDescription = null,
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Column {
+                    Text(f.name, fontSize = 13.sp, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 160.dp))
+                    Text(
+                        if (f.isInline) stringResource(R.string.file_attach_inline) else formatBytes(f.size),
+                        fontSize = 11.sp,
+                        color = colors.textTertiary,
+                    )
+                }
+                Box(
+                    Modifier.size(18.dp).clip(RoundedCornerShape(50)).background(colors.bg.copy(alpha = 0.7f)).clickable { onRemove(f.id) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_remove), tint = colors.textPrimary, modifier = Modifier.size(12.dp)) }
+            }
+        }
+    }
+}
+
+/** Compact human-readable byte size for the file chips. */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000 -> "%.1f MB".format(bytes / 1_000_000f)
+    bytes >= 1_000 -> "${bytes / 1_000} KB"
+    else -> "$bytes B"
 }
 
 /** A horizontal strip of pending image attachments, each removable. */
