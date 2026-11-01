@@ -18,7 +18,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,7 +95,7 @@ fun ServerEditorScreen(
                 is TestState.Success -> Text(
                     stringResource(R.string.server_connection_ok, test.version),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF85D18F),
+                    color = colors.success,
                     fontFamily = FontFamily.Monospace,
                 )
                 is TestState.Failure -> Text(
