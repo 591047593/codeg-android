@@ -82,7 +82,16 @@ fun ActivityScreen(
     onOpenRow: (serverId: String, conversationId: Int) -> Unit = { _, id -> onOpenConversation(id) },
     onHandoff: (serverId: String, folderId: Int, reference: String) -> Unit = { _, _, _ -> },
     onManageProjects: () -> Unit = {},
+    // 批v150 工作台：快捷入口 + 聚合会话一键直达 + 任务板跳转。onOpenAllChats
+    // 先置 chatsAll 再 push（聚合不变量在 push 面上认 chatsAll）。
+    onOpenChats: () -> Unit = {},
+    onOpenAllChats: () -> Unit = {},
+    onOpenFolders: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenNewSession: () -> Unit = {},
+    onOpenTasks: () -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
+    workbench: WorkbenchViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val sections by viewModel.sections.collectAsStateWithLifecycle()
@@ -90,6 +99,12 @@ fun ActivityScreen(
     val members by viewModel.projectMembers.collectAsStateWithLifecycle()
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
+    val stats by workbench.stats.collectAsStateWithLifecycle()
+    // Workbench poll only while this tab is composed (60s, foreground-gated).
+    DisposableEffect(workbench) {
+        workbench.setActive(true)
+        onDispose { workbench.setActive(false) }
+    }
     var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
@@ -177,7 +192,17 @@ fun ActivityScreen(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             // 批v150: the task board and the idea inbox are first-class bottom tabs
-            // now (new mandate §一.2) — this screen is the workbench feed only.
+            // now (new mandate §一.2). This screen is the WORKBENCH: fixed header
+            // (stats / quick entry / 需要处理 preview) over the live feed — the
+            // feed's scroll/highlight machinery below is untouched.
+            WorkbenchHeader(
+                stats = stats,
+                onOpenChats = onOpenChats,
+                onOpenFolders = onOpenFolders,
+                onOpenSearch = onOpenSearch,
+                onOpenNewSession = onOpenNewSession,
+                onOpenTasks = onOpenTasks,
+            )
             Box(Modifier.fillMaxSize()) {
             when {
                 ui.loading && !ui.hasLoaded ->
@@ -333,6 +358,14 @@ fun ActivityScreen(
                                         onToggle = {
                                             collapsed = if (item.section.id in collapsed) collapsed - item.section.id else collapsed + item.section.id
                                         },
+                                        // 批v150: the demoted Chats surface is one tap
+                                        // away from the running rows — set the aggregate
+                                        // flag first so the push lands on the 全部 list.
+                                        trailing = if (item.section.kind == ActivityKind.RUNNING) ({
+                                            TextButton(onClick = onOpenAllChats) {
+                                                Text(stringResource(R.string.workbench_view_all_sessions))
+                                            }
+                                        }) else null,
                                         modifier = Modifier.animateItem(),
                                     )
                                 }

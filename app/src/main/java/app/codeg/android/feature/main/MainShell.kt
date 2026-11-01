@@ -893,6 +893,18 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         ProjectSettingsBus.open()
                         onTab(HomeTab.SETTINGS)
                     },
+                    // 批v150 工作台接线：chats/folders/search 是 push 面；「查看
+                    // 全部」先置 chatsAll 再 push（聚合会话能力从工作台一键可达，
+                    // 审查修订①）；需要处理预览跳任务板 tab。
+                    onOpenChats = { pushSurface(ROUTE_CHATS) },
+                    onOpenAllChats = {
+                        appViewModel.setChatsAll(true)
+                        pushSurface(ROUTE_CHATS)
+                    },
+                    onOpenFolders = { pushSurface(ROUTE_FOLDERS) },
+                    onOpenSearch = { pushSurface(ROUTE_SEARCH) },
+                    onOpenNewSession = openNewTask,
+                    onOpenTasks = { onTab(HomeTab.TASKS) },
                 )
             }
             composable(ROUTE_SEARCH) {

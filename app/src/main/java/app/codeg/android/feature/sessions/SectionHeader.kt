@@ -55,6 +55,9 @@ fun CollapsibleSectionHeader(
     modifier: Modifier = Modifier,
     collapsible: Boolean = true,
     onLongClick: (() -> Unit)? = null,
+    /** Optional trailing slot (批v150 workbench: 正在运行's 查看全部) — sits
+     *  between the count badge and the collapse chevron, outside the ripple. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = CodegTheme.colors
     val rotation by animateFloatAsState(
@@ -99,6 +102,7 @@ fun CollapsibleSectionHeader(
             modifier = Modifier.weight(1f),
         )
         CountBadge(count)
+        trailing?.invoke()
         if (collapsible) {
             Icon(
                 Icons.Rounded.ExpandMore,

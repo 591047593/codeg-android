@@ -39,6 +39,16 @@
     <string name="tab_activity">Activity</string>
     <string name="tab_inbox">Inbox</string>
     <string name="tab_tasks">Tasks</string>
+    <string name="workbench_stat_running">Running</string>
+    <string name="workbench_stat_attention">Needs you</string>
+    <string name="workbench_stat_online">Online</string>
+    <string name="workbench_quick_chats">Chats</string>
+    <string name="workbench_quick_folders">Projects</string>
+    <string name="workbench_quick_search">Search</string>
+    <string name="workbench_new_session">New session</string>
+    <string name="workbench_view_all_sessions">View all</string>
+    <string name="workbench_open_task_board">Task board</string>
+    <string name="workbench_attention_more">%1$d more</string>
     <string name="tab_search">Search</string>
     <string name="tab_settings">Settings</string>
 
