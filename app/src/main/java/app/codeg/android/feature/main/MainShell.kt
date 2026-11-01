@@ -76,6 +76,9 @@ import app.codeg.android.feature.floatingball.floatBallSizeDp
 import app.codeg.android.feature.floatingball.stepFontScale
 import app.codeg.android.feature.inbox.InboxScreen
 import app.codeg.android.feature.projects.ProjectDetailScreen
+import app.codeg.android.feature.quick.QuickIdeaSheet
+import app.codeg.android.feature.quick.QuickTaskSheet
+import app.codeg.android.feature.quick.RecentSessionPickerSheet
 import app.codeg.android.feature.search.SearchScreen
 import app.codeg.android.feature.projects.ProjectListScreen
 import app.codeg.android.feature.server.ServerEditorScreen
@@ -249,6 +252,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val sessionProjectMembers by appViewModel.sessionProjectMembers.collectAsStateWithLifecycle()
     val activeProjectId by appViewModel.activeProjectId.collectAsStateWithLifecycle()
     var showProjectSheet by remember { mutableStateOf(false) }
+    // 批v150 quick-center sheets: the ball panel's 记录想法/创建任务/会话交接
+    // cards land here — the shell owns them because the ball's actions do.
+    var showQuickIdea by remember { mutableStateOf(false) }
+    var showQuickTask by remember { mutableStateOf(false) }
+    var showQuickHandoff by remember { mutableStateOf(false) }
     // Single-flight for the aggregate row tap (leave All → select device → push the
     // conversation). Double-taps would otherwise stack two detail pages resolved
     // against whichever selection landed last.
@@ -645,6 +653,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val onBallAction: (String) -> Unit = { id ->
         when (id) {
             "newSession" -> openNewTask()
+            // 批v150 quick-center actions (panel 2×2 cards): idea/task/handoff
+            // open shell-level sheets; search is the demoted push surface.
+            "quickIdea" -> showQuickIdea = true
+            "quickTask" -> showQuickTask = true
+            "quickHandoff" -> showQuickHandoff = true
+            "quickSearch" -> pushSurface(ROUTE_SEARCH)
             // 批v150: the demoted surfaces are pushes; the action ids are UNCHANGED
             // (persisted bindings reference them).
             "tabChats" -> pushSurface(ROUTE_CHATS)
@@ -1058,6 +1072,30 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onTab(HomeTab.SETTINGS)
                 },
                 onDismiss = { showProjectSheet = false },
+            )
+        }
+
+        // 批v150 quick-center sheets — shell-level like the project filter sheet,
+        // so the ball's cards work from ANY surface underneath.
+        if (showQuickIdea) {
+            QuickIdeaSheet(onDismiss = { showQuickIdea = false })
+        }
+        if (showQuickTask) {
+            QuickTaskSheet(onDismiss = { showQuickTask = false })
+        }
+        if (showQuickHandoff) {
+            RecentSessionPickerSheet(
+                onPick = { serverId, conversationId ->
+                    showQuickHandoff = false
+                    // Same owning-device dance as every aggregate open (single-
+                    // flight); when the detail lands, the bus auto-expands its
+                    // HandoffSheet — the handoff composer with real data (v141).
+                    handoffTo(serverId) {
+                        openConversationAndMark(serverId, conversationId, replaceTop = true)
+                        app.codeg.android.feature.handoff.HandoffAutoOpenBus.fire(serverId, conversationId)
+                    }
+                },
+                onDismiss = { showQuickHandoff = false },
             )
         }
 

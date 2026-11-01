@@ -170,6 +170,19 @@ fun SessionDetailScreen(
     var showHandoff by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var handoffSource: HandoffSource? by remember { mutableStateOf(null) }
     val noticeNoSource = stringResource(R.string.handoff_no_source)
+    // 批v150 quick handoff: the ball's 会话交接 picker fired the bus right after
+    // handing off to the owning device — if THIS session is the addressee, expand
+    // the same sheet the overflow menu opens. Consume-on-match: a stale pending
+    // (session closed before load) never haunts a later visit.
+    val pendingHandoff by app.codeg.android.feature.handoff.HandoffAutoOpenBus.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingHandoff, ui.loading) {
+        val key = pendingHandoff ?: return@LaunchedEffect
+        if (ui.loading) return@LaunchedEffect
+        if (key == viewModel.sessionKey) {
+            app.codeg.android.feature.handoff.HandoffAutoOpenBus.consume()
+            showHandoff = true
+        }
+    }
     // Rotation restores the open flag; re-resolve the source snapshot from the VM
     // (and bail with a notice when the session isn't server-linked).
     LaunchedEffect(showHandoff) {

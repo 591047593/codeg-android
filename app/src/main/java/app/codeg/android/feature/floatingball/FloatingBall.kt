@@ -10,23 +10,33 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,7 +73,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /** Margin the ball keeps from the screen edges (drag clamps inside it). */
 private val DOCK_MARGIN = 12.dp
-private val PANEL_WIDTH = 230.dp
+private val PANEL_WIDTH = 304.dp
+/** Panel gap below/above the ball when anchoring. */
+private val PANEL_LIFT = 10.dp
 /** Gesture-follow trail limit, as a fraction of the viewport's short side (web parity:
  *  a long swipe can't fling the visual ball off-screen; both reset on lift-off). */
 private const val FOLLOW_RATIO = 0.18f
@@ -234,29 +246,47 @@ fun FloatingBallHost(
         }
 
         if (showPanel) {
-            // Scrim eats the outside tap and closes; the panel itself is offset
-            // near the ball like the web version's anchored panel.
+            // Scrim eats the outside tap and closes; the panel itself is anchored
+            // near the ball like the web version's panel (clamped on-screen both
+            // axes — a wide quick panel must never clip at an edge-docked ball).
             Box(
                 Modifier
                     .fillMaxSize()
                     .clickable(onClick = { showPanel = false }),
             )
             val panelPx = with(density) { PANEL_WIDTH.roundToPx() }
-            val liftPx = with(density) { 90.dp.roundToPx() }
+            val liftPx = with(density) { PANEL_LIFT.roundToPx() }
+            var panelHpx by remember { mutableStateOf(0) }
             val ballPos = pos ?: defaultPos
-            val panelX = (ballPos.x - panelPx + ballPx).coerceAtLeast(marginPx)
-            val panelY = (ballPos.y - liftPx).coerceAtLeast(marginPx)
+            // Center the panel on the ball horizontally, then clamp inside the
+            // margins. Vertically: prefer BELOW the ball; if the panel would run
+            // off the bottom, flip ABOVE it (measured height, so it never clips).
+            val panelX = (ballPos.x + ballPx / 2 - panelPx / 2)
+                .coerceIn(marginPx, (wPx - panelPx - marginPx).coerceAtLeast(marginPx))
+            val belowY = ballPos.y + ballPx + liftPx
+            val aboveY = ballPos.y - liftPx - panelHpx
+            val maxY = (hPx - panelHpx - marginPx).coerceAtLeast(marginPx)
+            val panelY = when {
+                panelHpx == 0 -> (ballPos.y - liftPx).coerceAtLeast(marginPx)
+                belowY + panelHpx <= hPx - marginPx -> belowY.coerceAtMost(maxY)
+                else -> aboveY.coerceAtLeast(marginPx)
+            }
             Surface(
                 modifier = Modifier
                     .offset { IntOffset(panelX, panelY) }
                     .width(PANEL_WIDTH)
-                    .heightIn(max = 420.dp),
-                shape = RoundedCornerShape(14.dp),
+                    .heightIn(max = 460.dp)
+                    .onSizeChanged { panelHpx = it.height },
+                shape = RoundedCornerShape(16.dp),
                 color = colors.bgElevated.copy(alpha = 0.97f),
                 border = BorderStroke(1.dp, colors.surfaceStroke),
                 shadowElevation = 10.dp,
             ) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // 批v150 quick center (§1.4): the four core moves as a 2×2 card
+                    // grid, each with a one-line helper. Firing closes the panel and
+                    // routes through the SAME onAction registry as gestures — the
+                    // panel adds no execution path of its own.
                     Text(
                         stringResource(R.string.ball_panel_title),
                         style = MaterialTheme.typography.labelLarge,
@@ -264,21 +294,70 @@ fun FloatingBallHost(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     )
-                    FloatingBallCatalog.ACTIONS.forEach { (id, labelRes) ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (id != "panel") {
-                                        showPanel = false
-                                        onAction(id)
+                    val quickCards = listOf(
+                        Triple("newSession", R.string.ball_action_new_session, R.string.ball_quick_new_session_note),
+                        Triple("quickIdea", R.string.ball_action_quick_idea, R.string.ball_quick_idea_note),
+                        Triple("quickTask", R.string.ball_action_quick_task, R.string.ball_quick_task_note),
+                        Triple("quickHandoff", R.string.ball_action_quick_handoff, R.string.ball_quick_handoff_note),
+                    )
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickPanelCard(quickCards[0], Modifier.weight(1f), onAction) { showPanel = false }
+                        QuickPanelCard(quickCards[1], Modifier.weight(1f), onAction) { showPanel = false }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickPanelCard(quickCards[2], Modifier.weight(1f), onAction) { showPanel = false }
+                        QuickPanelCard(quickCards[3], Modifier.weight(1f), onAction) { showPanel = false }
+                    }
+                    // Global search row — the fifth core move, full-width.
+                    PanelActionRow(
+                        label = stringResource(R.string.ball_action_quick_search),
+                        note = stringResource(R.string.ball_quick_search_note),
+                        onClick = {
+                            showPanel = false
+                            onAction("quickSearch")
+                        },
+                    )
+                    HorizontalDivider(color = colors.hairline)
+                    // 全部动作 (review 修订⑧): the full 21-action catalog stays
+                    // reachable from the panel — one row expands it in place, so
+                    // custom bindings and the long tail never lose their entry.
+                    var showAll by remember { mutableStateOf(false) }
+                    PanelActionRow(
+                        label = stringResource(R.string.ball_panel_all_actions),
+                        note = null,
+                        trailing = {
+                            Icon(
+                                if (showAll) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                tint = colors.textTertiary,
+                            )
+                        },
+                        onClick = { showAll = !showAll },
+                    )
+                    if (showAll) {
+                        Text(
+                            stringResource(R.string.ball_panel_actions_title),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
+                        FloatingBallCatalog.ACTIONS.forEach { (id, labelRes) ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (id != "panel") {
+                                            showPanel = false
+                                            onAction(id)
+                                        }
                                     }
-                                }
-                                .padding(horizontal = 14.dp, vertical = 11.dp),
-                        ) {
-                            Text(stringResource(labelRes), color = colors.textPrimary, fontSize = 14.sp)
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                            ) {
+                                Text(stringResource(labelRes), color = colors.textPrimary, fontSize = 14.sp)
+                            }
+                            HorizontalDivider(color = colors.hairline)
                         }
-                        HorizontalDivider(color = colors.hairline)
                     }
                     Text(
                         stringResource(R.string.common_close),
@@ -306,6 +385,82 @@ private fun fireGesture(
         null, "" -> Unit
         "panel" -> openPanel()
         else -> onAction(action)
+    }
+}
+
+/**
+ * One 2×2 quick-center card: icon, label, one-line helper. Fires [onAction] with
+ * the action id (registry-owned semantics — the panel itself executes nothing).
+ */
+@Composable
+private fun QuickPanelCard(
+    card: Triple<String, Int, Int>,
+    modifier: Modifier = Modifier,
+    onAction: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val (id, labelRes, noteRes) = card
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.bg.copy(alpha = 0.6f))
+            .clickable {
+                onClose()
+                onAction(id)
+            }
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Icon(quickPanelIcon(id), contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
+        Text(
+            stringResource(labelRes),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.textPrimary,
+        )
+        Text(
+            stringResource(noteRes),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textTertiary,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Icon for a quick-center card id (falls back to the ball mark). */
+private fun quickPanelIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
+    "newSession" -> Icons.Rounded.Add
+    "quickIdea" -> Icons.Rounded.Lightbulb
+    "quickTask" -> Icons.Rounded.Assignment
+    "quickHandoff" -> Icons.Rounded.SwapHoriz
+    else -> Icons.Rounded.Bolt
+}
+
+/** Full-width panel row (search row / 全部动作 expander). */
+@Composable
+private fun PanelActionRow(
+    label: String,
+    note: String?,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = colors.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            if (note != null) {
+                Text(note, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+            }
+        }
+        trailing?.invoke()
     }
 }
 

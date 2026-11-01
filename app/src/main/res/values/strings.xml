@@ -1293,4 +1293,32 @@
     <string name="task_empty_no_devices">No devices yet — add one in Settings first.</string>
     <string name="task_empty_hint">Tasks you create (or dispatch from Ideas) will appear here.</string>
     <string name="dispatch_pending_note">Submitting — waiting for the server receipt.</string>
+    <string name="ball_action_quick_idea">Quick idea</string>
+    <string name="ball_action_quick_task">Quick task</string>
+    <string name="ball_action_quick_handoff">Quick handoff</string>
+    <string name="ball_action_quick_search">Global search</string>
+    <string name="ball_panel_all_actions">All actions</string>
+    <string name="ball_panel_actions_title">Actions</string>
+    <string name="ball_quick_new_session_note">Start a chat</string>
+    <string name="ball_quick_idea_note">Save a thought</string>
+    <string name="ball_quick_task_note">Dispatch without the inbox</string>
+    <string name="ball_quick_handoff_note">Move work along</string>
+    <string name="ball_quick_search_note">Find any session</string>
+    <string name="quick_idea_title">Quick idea</string>
+    <string name="quick_idea_title_hint">Title (optional)</string>
+    <string name="quick_idea_desc_hint">Idea…</string>
+    <string name="quick_idea_empty_hint">Write something to save.</string>
+    <string name="quick_idea_auto_title">Idea %1$s</string>
+    <string name="quick_task_title">New task</string>
+    <string name="dispatch_summary_title">Summary</string>
+    <string name="dispatch_button_session">Create session</string>
+    <string name="dispatch_button_task">Create task</string>
+    <string name="recent_pick_title">Hand off a session</string>
+    <string name="recent_pick_empty">No recent sessions on any device.</string>
+    <string name="recent_pick_failed">Couldn\'t load sessions — tap to retry.</string>
+    <string name="option_sheet_search">Search options</string>
+    <string name="picker_no_options">Nothing available</string>
+    <string name="dispatch_created_title">%1$s created</string>
+    <string name="dispatch_created_body">“%2$s” on %1$s is in. Check the task board (or the session) for its live status.</string>
+</resources>
 </resources>

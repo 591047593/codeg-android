@@ -162,6 +162,11 @@ class SessionDetailViewModel @Inject constructor(
     private var profile: ServerProfile? = null
     private var client: CodegClient? = null
     private var conversationId: Int? = conversationIdArg
+
+    /** "<serverId>:<conversationId>" once resolved — the key HandoffAutoOpenBus
+     *  addresses (批v150 quick handoff). Null until the profile + id are known. */
+    val sessionKey: String?
+        get() = profile?.id?.let { sid -> conversationId?.let { cid -> "$sid:$cid" } }
     private var connectionId: String? = null
     private var folder: FolderDetail? = null
     private var allFolders: List<FolderDetail> = emptyList()

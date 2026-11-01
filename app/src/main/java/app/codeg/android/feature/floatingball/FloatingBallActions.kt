@@ -25,6 +25,13 @@ object FloatingBallCatalog {
     val ACTIONS: List<Pair<String, Int>> = listOf(
         "panel" to R.string.ball_action_panel,
         "newSession" to R.string.ball_action_new_session,
+        // 批v150 quick-center actions: surfaced as the panel's 2×2 cards and
+        // bindable like any other gesture action. No default binding changes —
+        // defaults keep the web muscle memory (§1.4).
+        "quickIdea" to R.string.ball_action_quick_idea,
+        "quickTask" to R.string.ball_action_quick_task,
+        "quickHandoff" to R.string.ball_action_quick_handoff,
+        "quickSearch" to R.string.ball_action_quick_search,
         "tabChats" to R.string.ball_action_tab_chats,
         "tabFolders" to R.string.ball_action_tab_folders,
         "tabActivity" to R.string.ball_action_tab_activity,
