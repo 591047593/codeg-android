@@ -23,11 +23,11 @@ fun CodegBackground(
     content: @Composable () -> Unit,
 ) {
     val colors = CodegTheme.colors
-    // Stronger than a whisper: in light mode the base is near-white, so faint glows
-    // washed out to a flat-white screen. These alphas make the two-glow gradient
-    // clearly visible (the app's signature look) without becoming garish.
-    val accentGlow = colors.accent.copy(alpha = if (colors.isDark) 0.20f else 0.18f)
-    val coolGlow = CodegGlowCool.copy(alpha = if (colors.isDark) 0.18f else 0.15f)
+    // 任务书 §8 克制原则: the glows stay as the app's signature but at half
+    // strength — a faint canvas tint, not a decoration competing with content.
+    // (0.20/0.18 → 0.10/0.09 dark, proportionally in light mode.)
+    val accentGlow = colors.accent.copy(alpha = if (colors.isDark) 0.10f else 0.09f)
+    val coolGlow = CodegGlowCool.copy(alpha = if (colors.isDark) 0.09f else 0.08f)
 
     Box(
         modifier = modifier
