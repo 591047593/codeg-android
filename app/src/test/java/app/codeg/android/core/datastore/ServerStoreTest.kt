@@ -11,10 +11,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -27,6 +25,16 @@ import java.io.File
  * gate, the "recent searches" write that follows each successful query looked like
  * a device change and wiped the search screen's results (the "second search finds
  * nothing" report).
+ *
+ * 批v146 rewrite: the original version raced fixed 500ms "nothing must arrive"
+ * windows against real DataStore file I/O — vacuous on a loaded runner and the
+ * single recurring CI false-red across v142/v144/v146 (three batches ate reruns,
+ * one even at a 20s budget). Now every wait is "await a future state with a
+ * generous budget" and the negative assertion replays the RECORDED emission
+ * history: DataStore serializes writes through one actor, so once the post-`b`
+ * emission is observed, any emission the gated `recents` write would ever
+ * produce is already in the log — duplicates there mean a broken gate, without
+ * any wall-clock race.
  */
 class ServerStoreTest {
 
@@ -54,10 +62,9 @@ class ServerStoreTest {
     private fun profile(id: String) =
         ServerProfile(id = id, name = id.uppercase(), baseUrl = "https://$id.test")
 
-    /** Skips the flow's initial (pre-write) emission. 20s, not 5s: these waits
-     *  span REAL DataStore file I/O on Dispatchers.IO — under a loaded CI
-     *  runner 5s was flaky (v144 + v146 both ate one rerun); a genuine
-     *  regression still fails, just 20s later. */
+    /** Skips emissions the predicate rejects. 20s, not 5s: this spans REAL
+     *  DataStore file I/O on Dispatchers.IO; a genuine regression still fails,
+     *  just 20s later. */
     private suspend fun <T> Channel<T>.awaitMatching(predicate: (T) -> Boolean): T =
         withTimeout(20_000) {
             while (true) {
@@ -76,9 +83,24 @@ class ServerStoreTest {
 
         val profilesSeen = Channel<List<ServerProfile>>(Channel.UNLIMITED)
         val selectionSeen = Channel<String?>(Channel.UNLIMITED)
+        // Full emission history (every collector callback appends here); the
+        // gate assertion at the end replays it. Lock-guarded: two collectors.
+        val historyLock = Any()
+        val profilesHistory = mutableListOf<List<ServerProfile>>()
+        val selectionsHistory = mutableListOf<String?>()
         val collector = collectorScope()
-        collector.launch { store.profiles.collect { profilesSeen.send(it) } }
-        collector.launch { store.selectedId.collect { selectionSeen.send(it) } }
+        collector.launch {
+            store.profiles.collect { p ->
+                synchronized(historyLock) { profilesHistory += p }
+                profilesSeen.send(p)
+            }
+        }
+        collector.launch {
+            store.selectedId.collect { s ->
+                synchronized(historyLock) { selectionsHistory += s }
+                selectionSeen.send(s)
+            }
+        }
 
         store.upsert(profile("a"))
         assertEquals(listOf("a"), profilesSeen.awaitMatching { it.isNotEmpty() }.map { it.id })
@@ -87,20 +109,36 @@ class ServerStoreTest {
         // A sibling store's write goes through the SAME preferences file...
         recents.add("ai chat")
 
-        // ...and must not surface as a profile/selection emission.
-        assertNull(
-            "a recent-searches write must not look like a profile change",
-            withTimeoutOrNull(500) { profilesSeen.receive() },
-        )
-        assertNull(
-            "a recent-searches write must not look like a selection change",
-            withTimeoutOrNull(500) { selectionSeen.receive() },
+        // ...and must not surface as a profile/selection emission — asserted
+        // deterministically on the recorded history below, not by racing a
+        // fixed window.
+        store.upsert(profile("b"))
+        assertEquals(
+            listOf("a", "b"),
+            profilesSeen.awaitMatching { it.size == 2 }.map { it.id },
         )
 
-        // Genuine changes still flow.
-        store.upsert(profile("b"))
+        // The `recents` write was ordered before upsert(b) in DataStore's
+        // single write actor, so its (never-should-happen) emissions are
+        // already recorded once the [a,b] emission is observed: snapshot and
+        // assert the gate. History may lead with the flows' initial values
+        // (empty list / null) depending on collector start timing — filter
+        // those, then require EXACTLY the two genuine changes, no duplicates.
+        synchronized(historyLock) {
+            assertEquals(
+                "a recent-searches write must not look like a profile change",
+                listOf(listOf("a"), listOf("a", "b")),
+                profilesHistory.filter { it.isNotEmpty() }.map { row -> row.map { it.id } },
+            )
+            assertEquals(
+                "a recent-searches write must not look like a selection change",
+                listOf("a"),
+                selectionsHistory.filterNotNull(),
+            )
+        }
+
+        // Genuine changes keep flowing after the unrelated write.
         store.select("b")
-        assertEquals(listOf("a", "b"), profilesSeen.awaitMatching { it.size == 2 }.map { it.id })
         assertEquals("b", selectionSeen.awaitMatching { it == "b" })
     }
 }
