@@ -92,3 +92,11 @@
 - P3 生命周期：探针/重派按 ref.sessionMode 分流——探针域改 listConversations(search)+findCreatedConversations（任务列表会误判"未创建"诱发重复会话）；redispatch 强制保留原模式防跨模式重复创建；确认成功照旧删草稿。文案名词化（会话/任务共用三段探针话术）。
 - 门禁：本地零编译（主人纪律），CI Verify 绿（run 41341813802）+ 新增 SessionAutoStartTest 5 例 + DispatchPipelineTest 会话探针 6 断言。
 - 发版：tag v1.0.1-fengx.38（versionCode 40），Release 绿（run 41342480657），双 APK+sha256 挂 Release+TG 直链。
+
+## 批v149.1：会话模式派发详情页空白 + 滚轮行号错位双修（2026-11-02）
+- 背景：主人装 v38 报「派发选会话后切到对应设备，动态里正在运行中，点进去始终空白」，且详情页 Agent 芯片显示 Codex（派发单明明选了 ZCode）。
+- 根因①（空白）：服务端 conversation_service::create_inner 对每个新建会话行**无条件写 status=InProgress**（出生即"进行中"，零轮次也一样）——v149 的自动发送守卫 `liveTurn = inFlightUserTurnId != null || summary.status.isLive` 恒真，SessionAutoStart 的首条指令被永久跳过（take 先消费再丢弃），详情页永远空白；动态里的「正在运行中」同源（假状态，首轮跑完才会翻页）。修复：守卫只认 `inFlightUserTurnId`（服务端取自连接管理器 pending_user_message，UserMessage 置位、TurnComplete 清除，覆盖整个轮次＝"真有轮次在跑"的精确信号）；reattach 同源收窄，假 live 会话不再空转 4 次 findConnection 重试。
+- 根因②（Codex 芯片）：WheelPicker（v34 引入）LazyColumn 内垫了上下两个半视口 padding item（LazyColumn index 0 与 size+1），真实行在 1..size，但落定回调用 `nearest.index` 直接当显示行号上报并用显示列表下标范围过滤——滚动提交**整体错位一行**，且滚到最后一行时 `size in 0..size-1` 不成立**提交被静默吞掉**。用户把 Agent 轮滚到 ZCode（恰为最后一位）→ onSelect 根本没触发 → agent 仍为 null → 会话模式回落 929 目录默认 agent=Codex 建会话。修复：抽取纯函数 wheelDisplayIndex（lazyIndex−1 + 显示边界校验）上报显示行号；预选定位从「按 item 下标滚」改为「按内容偏移滚 itemHeight×行号」（半视口 pad 做跑道，任意行含首末行都能真正居中）；落定流 drop(1) 抑制组合期初始误上报防预选被清。组件级修复对派发单/交接单全部六轮生效，调用方映射约定未变（各处本就按显示行号直取）。单测 WheelPickerIndexTest 5 例锁几何契约。
+- 影响：v34→v38 期间任何**滚动**选过的设备/目录/Agent 都可能选中相邻行（预选默认未滚动的不受影响）；本批起滚动选择恢复所见即所得。
+- 门禁：本地零编译，CI Verify 绿（run 41349416217，含新单测）。
+- 发版：tag v1.0.1-fengx.39（versionCode 41），Release 绿（run 41349971443），双 APK+sha256 挂 Release+TG 直链。注：v38 已卡死的旧会话（指令已被消费）升级后不自动补发，重派或手输即可。
