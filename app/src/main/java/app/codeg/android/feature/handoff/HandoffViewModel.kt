@@ -106,14 +106,15 @@ class HandoffViewModel @Inject constructor(
             _ui.value = _ui.value.copy(targets = _ui.value.targets.copy(folders = emptyList(), agents = emptyList(), foldersLoading = true, error = null))
             val loaded = targetLoader.load(serverId)
             if (seq != targetSeq) return@launch
-            _ui.value = _ui.value.copy(
-                targets = _ui.value.targets.copy(
-                    folders = loaded.folders,
-                    agents = loaded.agents,
-                    foldersLoading = loaded.foldersLoading,
-                    error = loaded.error,
-                ),
-            )
+                _ui.value = _ui.value.copy(
+                    targets = _ui.value.targets.copy(
+                        folders = loaded.folders,
+                        agents = loaded.agents,
+                        foldersLoading = loaded.foldersLoading,
+                        error = loaded.error,
+                        agentsError = loaded.agentsError,
+                    ),
+                )
         }
     }
 

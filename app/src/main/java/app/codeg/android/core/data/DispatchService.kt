@@ -48,6 +48,10 @@ class DispatchService @Inject constructor(
         val title: String,
         val description: String,
         val agentTypeWire: String? = null,
+        /** Explicit base branch (ui重构 §6.2 分支选择) — null = the folder's
+         *  current branch, exactly the previous behavior. The server derives the
+         *  task work branch from it at start. */
+        val baseBranch: String? = null,
         val scheduleLocalMillis: Long? = null,
         /** Immediate (non-scheduled) dispatches start the task right after
          * create — the server parks new tasks in todo forever, so without this
@@ -161,6 +165,7 @@ class DispatchService @Inject constructor(
         val config = DispatchPipeline.taskConfig(
             description = req.description.trim(),
             agentTypeWire = req.agentTypeWire,
+            baseBranch = req.baseBranch,
         )
         val created = runCatching {
             client.workTaskCreate(req.folderId, request.title, config)

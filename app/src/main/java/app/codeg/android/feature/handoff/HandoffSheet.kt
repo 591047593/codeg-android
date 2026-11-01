@@ -197,6 +197,17 @@ fun HandoffSheet(
                     modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
                 )
             }
+            // §6.3: a dead agent list is a degraded state, not a dead panel —
+            // short inline hint + tappable retry, raw ACP error stays in the log.
+            if (targets.agentsError) {
+                Text(
+                    stringResource(R.string.dispatch_agents_failed) + " · " +
+                        stringResource(R.string.dispatch_retry),
+                    color = CodegTheme.colors.danger,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
+                )
+            }
             // 三列并排滚轮选择器（手机时钟风格），与派发 sheet 同款交互。
             Row(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {

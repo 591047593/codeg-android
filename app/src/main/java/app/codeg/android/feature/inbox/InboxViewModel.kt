@@ -67,6 +67,16 @@ class InboxViewModel @Inject constructor(
         val dispatchError: String? = null,
         /** requestIds with a probe (回查) in flight, for card busy feedback. */
         val probingIds: Set<String> = emptySet(),
+        /** requestIds whose LATEST probe came back "not created" — only these
+         *  may re-dispatch (任务书 §5.4 未核实不能再次创建). */
+        val probeClearedIds: Set<String> = emptySet(),
+        /** Branch options for the selected target folder (§6.2 分支选择). */
+        val branches: List<String> = emptyList(),
+        val branchesLoading: Boolean = false,
+        val branchesError: Boolean = false,
+        /** serverId:folderPath key the current branch list belongs to — a stale
+         *  list must never be offered for a different project. */
+        val branchFolderKey: String? = null,
         /** serverId:ideaId of the last created task, for the success line. */
         val lastCreated: String? = null,
     )
@@ -184,6 +194,48 @@ class InboxViewModel @Inject constructor(
 
     fun clearDispatchError() { _ui.value = _ui.value.copy(dispatchError = null) }
 
+    // region Branch loading (ui重构 §6.2 — 分支选择, real upstream capability:
+    // git_list_all_branches + WorkTaskConfig.base_branch. No list → no field.)
+
+    private var branchSeq = 0
+
+    /** Branches for [folder]'s repo path; failure keeps the form usable with
+     *  the project default (null base branch), never blocks dispatch. */
+    fun loadBranches(serverId: String, folder: app.codeg.android.core.model.FolderDetail) {
+        val seq = ++branchSeq
+        val key = "$serverId:${folder.path}"
+        _ui.value = _ui.value.copy(branchesLoading = true, branchesError = false, branchFolderKey = key)
+        viewModelScope.launch {
+            val profile = repository.profiles.first().firstOrNull { it.id == serverId }
+            val client = profile?.let { repository.client(it) }
+            val list = client?.let { c ->
+                runCatching { c.gitListAllBranches(folder.path) }
+                    .onFailure { e -> android.util.Log.w("InboxViewModel", "git_list_all_branches failed: ${e.message}") }
+                    .getOrNull()
+            }
+            if (seq != branchSeq) return@launch
+            _ui.value = if (list == null) {
+                _ui.value.copy(branchesLoading = false, branchesError = true, branches = emptyList())
+            } else {
+                // Local first (what the user usually means), remotes after,
+                // deduped. Worktree branches excluded: they are checked out in
+                // another worktree — a poor base-branch default.
+                _ui.value.copy(
+                    branchesLoading = false,
+                    branchesError = false,
+                    branches = (list.local + list.remote).distinct(),
+                )
+            }
+        }
+    }
+
+    fun clearBranches() {
+        branchSeq++
+        _ui.value = _ui.value.copy(branches = emptyList(), branchesLoading = false, branchesError = false, branchFolderKey = null)
+    }
+
+    // endregion
+
     // region Dispatch
 
 
@@ -216,6 +268,7 @@ class InboxViewModel @Inject constructor(
         agentType: AgentType?,
         title: String,
         description: String,
+        baseBranch: String? = null,
         scheduleLocalMillis: Long?,
         onDone: (ref: DispatchRef) -> Unit,
         /** Immediate dispatches start the task after create (idea path). */
@@ -275,6 +328,7 @@ class InboxViewModel @Inject constructor(
                         title = title,
                         description = description,
                         agentTypeWire = agentType?.wire,
+                        baseBranch = baseBranch,
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = autoStart,
                         restoreOnHardFail = restoreOnHardFail,
@@ -282,10 +336,28 @@ class InboxViewModel @Inject constructor(
                 )
                 when (outcome) {
                     is DispatchOutcome.Confirmed -> {
+                        // 任务书 §5.4 step 9: the server CONFIRMED the create —
+                        // only now may the local draft leave the inbox. A failed
+                        // local delete must NOT fail the dispatch (the task
+                        // exists); it surfaces as a note warning against
+                        // re-dispatching the same idea.
+                        var note = outcome.scheduleNote
+                        if (idea != null) {
+                            try {
+                                ideaStore.delete(idea.id)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                note = listOfNotNull(
+                                    note,
+                                    "任务已创建，但本地想法删除失败——请勿再次派发该想法，可手动删除",
+                                ).joinToString("；")
+                            }
+                        }
                         _ui.value = _ui.value.copy(
                             dispatching = false,
                             lastCreated = "${outcome.ref.serverId}:${outcome.ref.remoteTodoId}",
-                            dispatchError = outcome.scheduleNote,
+                            dispatchError = note,
                         )
                         onDone(outcome.ref)
                     }
@@ -331,6 +403,11 @@ class InboxViewModel @Inject constructor(
     fun probe(requestId: String) {
         synchronized(probing) { if (!probing.add(requestId)) return }
         _ui.value = _ui.value.copy(probingIds = _ui.value.probingIds + requestId)
+        // Only a completed probe that returned EXACTLY "not created" grants the
+        // re-dispatch right (§5.4); every other outcome — failure, ambiguity,
+        // confirmed-exists — revokes it, so a stale clearance can never outlive
+        // a failing check.
+        var verifiedNotCreated = false
         viewModelScope.launch {
             try {
                 val ref = dispatchStore.refs.first().firstOrNull { it.requestId == requestId } ?: return@launch
@@ -367,7 +444,12 @@ class InboxViewModel @Inject constructor(
                 if (matches.size == 1) {
                     val match = matches.single()
                     dispatchStore.put(ref.copy(remoteTodoId = match.id, state = DispatchState.CONFIRMED))
-                    _ui.value = _ui.value.copy(dispatchError = null, lastCreated = "${ref.serverId}:${match.id}")
+                    _ui.value = _ui.value.copy(
+                        dispatchError = null,
+                        lastCreated = "${ref.serverId}:${match.id}",
+                        // Resolved as created — definitely not clear to re-send.
+                        probeClearedIds = _ui.value.probeClearedIds - requestId,
+                    )
                 } else if (matches.size > 1) {
                     // Multiple same-titled candidates: claiming one risks binding
                     // the wrong id. Stay UNKNOWN — and do NOT say "not found",
@@ -377,7 +459,13 @@ class InboxViewModel @Inject constructor(
                         dispatchError = "服务端找到 ${matches.size} 个同名任务，无法确认归属；请到设备上人工核对后再处理，未确认前勿重新派发",
                     )
                 } else {
-                    _ui.value = _ui.value.copy(dispatchError = "服务端未找到该任务，可重新派发或放弃")
+                    // Exactly 0 matches: verified "not created" — this ref alone
+                    // earns the re-dispatch right (任务书 §5.4 未核实不能再次创建).
+                    verifiedNotCreated = true
+                    _ui.value = _ui.value.copy(
+                        dispatchError = "服务端未找到该任务，可重新派发或放弃",
+                        probeClearedIds = _ui.value.probeClearedIds + requestId,
+                    )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -388,7 +476,11 @@ class InboxViewModel @Inject constructor(
                 _ui.value = _ui.value.copy(dispatchError = "检查失败，请稍后重试（结果未知，勿直接重派）")
             } finally {
                 synchronized(probing) { probing.remove(requestId) }
-                _ui.value = _ui.value.copy(probingIds = _ui.value.probingIds - requestId)
+                _ui.value = _ui.value.copy(
+                    probingIds = _ui.value.probingIds - requestId,
+                    probeClearedIds = if (verifiedNotCreated) _ui.value.probeClearedIds + requestId
+                    else _ui.value.probeClearedIds - requestId,
+                )
             }
         }
     }
@@ -411,6 +503,13 @@ class InboxViewModel @Inject constructor(
     fun redispatch(ref: DispatchRef, scheduleLocalMillis: Long?) {
         if (_ui.value.dispatching) {
             _ui.value = _ui.value.copy(dispatchError = "正在派发，请稍候")
+            return
+        }
+        // Defense in depth beyond the UI gate: without a fresh "not found"
+        // probe this dispatch's fate is unverified — re-sending could
+        // double-create. The user must run 检查服务器 first (§5.4).
+        if (ref.requestId !in _ui.value.probeClearedIds) {
+            _ui.value = _ui.value.copy(dispatchError = "请先「检查服务器」确认任务未创建，再重新派发")
             return
         }
         viewModelScope.launch {

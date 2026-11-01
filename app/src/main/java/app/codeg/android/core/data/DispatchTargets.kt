@@ -18,6 +18,11 @@ data class DispatchTargets(
     val agents: List<AgentType> = emptyList(),
     val foldersLoading: Boolean = false,
     val error: String? = null,
+    /** Agent listing failed for this device (ui重构 §6.3): the sheet shows a
+     *  short line + retry; the raw protocol error stays in the log, never in
+     *  the form. Dispatch with 自动 stays possible — the agent field is optional
+     *  upstream, so a dead list must not dead-end the whole panel. */
+    val agentsError: Boolean = false,
 )
 
 /**
@@ -49,17 +54,24 @@ class DispatchTargetLoader @Inject constructor(
             )
         }
         val folders = runCatching { client.listFolders() }.getOrElse { emptyList() }
-        val agents = runCatching { client.acpListAgents() }
-            .getOrDefault(emptyList())
-            .filter { it.available && it.enabled && it.agentType != AgentType.UNKNOWN }
-            .map { it.agentType }
-            .distinct()
+        val agentsResult = runCatching { client.acpListAgents() }
+        // §6.3: the raw ACP error (e.g. "No models are available") is diagnostic
+        // detail — log it, tell the user only "agent list unavailable", and let
+        // the 自动 option keep the form usable.
+        val agents = agentsResult.getOrElse { e ->
+            android.util.Log.w("DispatchTargetLoader", "acp_list_agents failed: ${e.message}")
+            null
+        }?.filter { it.available && it.enabled && it.agentType != AgentType.UNKNOWN }
+            ?.map { it.agentType }
+            ?.distinct()
+            ?: emptyList()
         // profiles deliberately NOT set here: the owning VM collects
         // visibleProfiles itself, so a device failure can never blank the chips.
         return DispatchTargets(
             folders = folders,
             agents = agents,
             foldersLoading = foldersLoading,
+            agentsError = agentsResult.isFailure,
         )
     }
 }

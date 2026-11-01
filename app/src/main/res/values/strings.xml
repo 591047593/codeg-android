@@ -1216,6 +1216,19 @@
     <string name="dispatch_no_device">No devices</string>
     <string name="dispatch_agent_auto">Auto</string>
     <string name="dispatch_no_folder">No projects on this device</string>
+    <string name="dispatch_section_device_agent">① Device &amp; agent</string>
+    <string name="dispatch_section_description">② Task description</string>
+    <string name="dispatch_section_target">③ Target project</string>
+    <string name="dispatch_agents_failed">Couldn\'t load the agent list</string>
+    <string name="dispatch_retry">Retry</string>
+    <string name="dispatch_agent_auto_note">Auto = the project\'s default agent, applied to this task only.</string>
+    <string name="dispatch_branch">Branch</string>
+    <string name="dispatch_branch_follow">Follow project (%1$s)</string>
+    <string name="dispatch_branch_follow_unknown">Follow project default</string>
+    <string name="dispatch_branch_loading">Loading branches…</string>
+    <string name="dispatch_branch_failed">Branch list unavailable — dispatch still uses the project default. Tap the row to retry.</string>
+    <string name="dispatch_pick_branch">Pick branch</string>
+    <string name="dispatch_unknown_need_probe">Run "Check server" first — re-dispatch unlocks only after the server confirms the task was not created.</string>
     <!-- v141 handoff -->
     <string name="handoff_title">Cross-device session handoff</string>
     <string name="handoff_source_line">From: %1$s · %2$s · %3$s</string>

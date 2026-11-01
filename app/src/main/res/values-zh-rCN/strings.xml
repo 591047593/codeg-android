@@ -1202,6 +1202,19 @@
     <string name="dispatch_no_device">暂无设备</string>
     <string name="dispatch_agent_auto">自动</string>
     <string name="dispatch_no_folder">该设备暂无项目</string>
+    <string name="dispatch_section_device_agent">① 设备与 Agent</string>
+    <string name="dispatch_section_description">② 任务描述</string>
+    <string name="dispatch_section_target">③ 目标项目</string>
+    <string name="dispatch_agents_failed">Agent 列表获取失败</string>
+    <string name="dispatch_retry">重试</string>
+    <string name="dispatch_agent_auto_note">自动 = 使用项目默认 Agent，仅对本任务生效。</string>
+    <string name="dispatch_branch">分支</string>
+    <string name="dispatch_branch_follow">跟随项目（%1$s）</string>
+    <string name="dispatch_branch_follow_unknown">跟随项目默认分支</string>
+    <string name="dispatch_branch_loading">分支加载中…</string>
+    <string name="dispatch_branch_failed">分支列表获取失败——仍可按项目默认分支派发。点按分支行可重试。</string>
+    <string name="dispatch_pick_branch">选择分支</string>
+    <string name="dispatch_unknown_need_probe">请先「检查服务器」——确认任务未创建后才能重新派发。</string>
     <!-- v141 handoff -->
     <string name="handoff_title">跨设备会话交接</string>
     <string name="handoff_source_line">来源：%1$s · %2$s · %3$s</string>
