@@ -43,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -59,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,6 +77,7 @@ import app.codeg.android.core.data.TaskStatusTone
 import app.codeg.android.core.data.isEffectivelyDeferred
 import app.codeg.android.core.data.taskStatusUi
 import app.codeg.android.core.designsystem.component.EmptyState
+import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import java.time.Instant
 
@@ -287,8 +290,19 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     }
 
     if (folderSheet) {
-        ModalBottomSheet(onDismissRequest = { folderSheet = false }) {
-            Column(Modifier.padding(bottom = 24.dp)) {
+        ModalBottomSheet(
+            onDismissRequest = { folderSheet = false },
+            sheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { it != SheetValue.Hidden },
+            ),
+            dragHandle = null,
+        ) {
+            Column(
+                Modifier
+                    .nestedScroll(rememberSheetDragLock())
+                    .padding(top = 12.dp, bottom = 24.dp),
+            ) {
                 Text(
                     stringResource(R.string.task_folder_picker),
                     style = MaterialTheme.typography.titleMedium,
@@ -311,7 +325,11 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     detailEntry?.let { entry ->
         ModalBottomSheet(
             onDismissRequest = { detailKey = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { it != SheetValue.Hidden },
+            ),
+            dragHandle = null,
         ) {
             TaskDetailSheet(
                 entry = entry,
@@ -516,29 +534,27 @@ private fun FailedBanner(ui: TaskHubViewModel.UiState, onRetry: () -> Unit) {
     val names = ui.deviceStates
         .filter { it.status == DeviceLoadStatus.FAILED }
         .joinToString("、") { it.name }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .background(CodegTheme.colors.danger.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
-            .padding(12.dp),
-    ) {
-        Text(
-            stringResource(R.string.task_banner_failed, names),
-            style = MaterialTheme.typography.bodySmall,
-            color = CodegTheme.colors.danger,
-        )
+    // 批v147 视觉规范：加载失败只允许柔和文字行，严禁红底大卡片。
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.task_banner_failed, names),
+                style = MaterialTheme.typography.bodySmall,
+                color = CodegTheme.colors.danger,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(stringResource(R.string.task_retry_failed), style = MaterialTheme.typography.labelMedium)
+            }
+        }
         ui.deviceStates.firstOrNull { it.status == DeviceLoadStatus.FAILED }?.error?.let {
             Text(
                 it,
-                style = MaterialTheme.typography.bodySmall,
-                color = CodegTheme.colors.textSecondary,
-                maxLines = 3,
+                style = MaterialTheme.typography.labelSmall,
+                color = CodegTheme.colors.textTertiary,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-        TextButton(onClick = onRetry, contentPadding = PaddingValues(0.dp)) {
-            Text(stringResource(R.string.task_retry_failed))
         }
     }
 }
@@ -732,8 +748,9 @@ private fun TaskDetailSheet(
     Column(
         Modifier
             .fillMaxWidth()
+            .nestedScroll(rememberSheetDragLock())
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

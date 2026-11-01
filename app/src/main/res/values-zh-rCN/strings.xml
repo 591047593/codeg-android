@@ -1182,6 +1182,8 @@
     <string name="dispatch_schedule_none">立即执行</string>
     <string name="dispatch_schedule_set">选择时间</string>
     <string name="dispatch_schedule_note">按手机时区换算</string>
+    <string name="dispatch_schedule_pattern">yyyy年MM月dd日 HH:mm</string>
+    <string name="dispatch_pick_time">选择时间</string>
     <string name="dispatch_button">派发</string>
     <string name="dispatch_ok">已创建任务 #%1$d</string>
     <string name="dispatch_unknown">提交结果未知：请求可能已到达也可能未到达</string>

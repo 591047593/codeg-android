@@ -18,8 +18,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,11 +30,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.HandoffSource
+import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -65,7 +69,15 @@ fun HandoffSheet(
         if (device == null) device = source.serverId
     }
 
-    ModalBottomSheet(onDismissRequest = { viewModel.reset(); onClose() }) {
+    ModalBottomSheet(
+        onDismissRequest = { viewModel.reset(); onClose() },
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            // 批v147 手势修复：与派发表一致，拖拽关闭禁用、内容独立滚动。
+            confirmValueChange = { it != SheetValue.Hidden },
+        ),
+        dragHandle = null,
+    ) {
         val pkg = ui.pkg
         if (pkg == null) {
             Column(Modifier.padding(24.dp)) { CircularProgressIndicator(Modifier.size(20.dp)) }
@@ -74,9 +86,10 @@ fun HandoffSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                .nestedScroll(rememberSheetDragLock())
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
+                .padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(

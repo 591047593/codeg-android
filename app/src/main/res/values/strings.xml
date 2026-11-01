@@ -1196,6 +1196,8 @@
     <string name="dispatch_schedule_none">Run now</string>
     <string name="dispatch_schedule_set">Pick a time</string>
     <string name="dispatch_schedule_note">phone timezone</string>
+    <string name="dispatch_schedule_pattern">MMM d, yyyy HH:mm</string>
+    <string name="dispatch_pick_time">Pick time</string>
     <string name="dispatch_button">Dispatch</string>
     <string name="dispatch_ok">Task #%1$d created</string>
     <string name="dispatch_unknown">Dispatch result unknown — the request may or may not have reached the server</string>

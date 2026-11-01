@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +50,7 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,9 +70,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.feature.common.WheelColumn
 import app.codeg.android.R
 import app.codeg.android.core.datastore.DispatchRef
+import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.designsystem.component.EmptyState
+import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import java.time.Instant
@@ -109,6 +113,17 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
     // deletes the idea, which nulls [dispatching] and unmounts the whole
     // sheet — a dialog inside it would vanish before the user reads it.
     var dispatchResult by remember { mutableStateOf<DispatchRef?>(null) }
+    // 批v147 收件箱净化：列表只放本地草稿。派发回执（在途/已确认）不再独占
+    // 卡片刷屏；UNKNOWN 的恢复入口挪到对应草稿卡上，草稿已删的孤儿 UNKNOWN
+    // 保留一张紧凑恢复卡——去重闸门必须始终可解析，不能变成看不见的账。
+    val unresolvedRefs = remember(ui.inFlightRefs, ui.pendingRefs) { ui.inFlightRefs + ui.pendingRefs }
+    val ideaIds = remember(ui.ideas) { ui.ideas.map { it.id }.toSet() }
+    val refByIdeaId = remember(unresolvedRefs) {
+        unresolvedRefs.filter { it.ideaId != null }.associateBy { it.ideaId!! }
+    }
+    val orphanRefs = remember(unresolvedRefs, ideaIds) {
+        unresolvedRefs.filter { it.ideaId == null || it.ideaId !in ideaIds }
+    }
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -118,7 +133,7 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
             }
         },
     ) { padding ->
-        if (ui.ideas.isEmpty() && ui.pendingRefs.isEmpty() && ui.confirmedRefs.isEmpty()) {
+        if (ui.ideas.isEmpty() && orphanRefs.isEmpty()) {
             Column(Modifier.padding(padding).fillMaxSize()) {
                 EmptyState(
                     icon = Icons.Rounded.Add,
@@ -145,34 +160,10 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                         )
                     }
                 }
-                ui.inFlightRefs.forEach { ref ->
-                    item(key = "inflight-${ref.requestId}", contentType = { "pending-ref" }) {
-                        // Display only: the request may still be on the wire —
-                        // offering redispatch/discard here would invite a double
-                        // create. The age-gated sweep promotes it to UNKNOWN if
-                        // the receipt never lands.
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                Text(
-                                    stringResource(R.string.dispatch_pending_note),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = colors.textSecondary,
-                                )
-                                Text(
-                                    "${ref.title} · ${ref.serverName.ifBlank { ref.serverId }}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.textSecondary,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-                ui.pendingRefs.forEach { ref ->
-                    item(key = "pending-${ref.requestId}", contentType = { "unknown-ref" }) {
+                orphanRefs.forEach { ref ->
+                    item(key = "orphan-${ref.requestId}", contentType = { "unknown-ref" }) {
+                        // 草稿已删（或旧版本记录没挂 ideaId）的 UNKNOWN 只能自立卡片：
+                        // 去重闸门靠它保持可解析，绝不能无声消失。
                         UnknownRefCard(
                             ref = ref,
                             probing = ref.requestId in ui.probingIds,
@@ -183,27 +174,13 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                         )
                     }
                 }
-                ui.confirmedRefs.forEach { ref ->
-                    item(key = "done-${ref.requestId}", contentType = { "ref" }) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        ) {
-                            Text(
-                                stringResource(R.string.dispatch_ok, ref.remoteTodoId ?: 0) +
-                                    " · ${ref.serverName} · ${ref.title}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth().padding(10.dp),
-                            )
-                        }
-                    }
-                }
                 items(ui.ideas, key = { it.id }, contentType = { "idea" }) { idea ->
+                    val ref = refByIdeaId[idea.id]
                     IdeaCard(
                         idea = idea,
+                        unresolved = ref,
+                        probing = ref != null && ref.requestId in ui.probingIds,
+                        canRedispatch = ref != null && ref.requestId in ui.probeClearedIds,
                         onDispatch = { dispatchingId = idea.id },
                         onEdit = { editingId = idea.id },
                         onCopy = { context ->
@@ -211,6 +188,9 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
                             cm.setPrimaryClip(ClipData.newPlainText("idea", "${idea.title}\n${idea.description}"))
                         },
                         onDelete = { pendingDelete = idea },
+                        onProbe = { ref?.let { viewModel.probe(it.requestId) } },
+                        onDiscard = { ref?.let { confirmRef = it; confirmRedispatch = false } },
+                        onRedispatch = { ref?.let { confirmRef = it; confirmRedispatch = true } },
                     )
                 }
             }
@@ -309,15 +289,25 @@ fun InboxScreen(viewModel: InboxViewModel = hiltViewModel(key = "inbox")) {
  * Memo-style idea card (任务书 §5.2): time top-left, ⋯ menu top-right
  * (编辑/复制/删除, delete confirmed by the caller), one prominent 派发 action
  * at the bottom. Description truncates at 3 lines.
+ *
+ * 批v147：派发回执不再独占列表卡片——本卡未决时（[unresolved] 非空）在
+ * 描述与派发钮之间内联一行状态：PENDING 显示"提交中"，UNKNOWN 给出
+ * 检查/重派/放弃入口；未决期间主派发钮禁用（去重闸门本来也会拦）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IdeaCard(
     idea: IdeaEntry,
+    unresolved: DispatchRef?,
+    probing: Boolean,
+    canRedispatch: Boolean,
     onDispatch: () -> Unit,
     onEdit: () -> Unit,
     onCopy: (Context) -> Unit,
     onDelete: () -> Unit,
+    onProbe: () -> Unit,
+    onDiscard: () -> Unit,
+    onRedispatch: () -> Unit,
 ) {
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
@@ -376,21 +366,71 @@ private fun IdeaCard(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
+            if (unresolved != null) {
+                val inFlight = unresolved.state == DispatchState.PENDING
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    if (probing) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(6.dp))
+                    }
+                    Text(
+                        stringResource(if (inFlight) R.string.dispatch_pending_note else R.string.dispatch_unknown),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (inFlight) colors.textSecondary else colors.danger,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (!inFlight) {
+                        TextButton(onClick = onProbe, enabled = !probing, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                            Text(stringResource(R.string.dispatch_unknown_check), style = MaterialTheme.typography.labelMedium)
+                        }
+                        TextButton(
+                            onClick = onRedispatch,
+                            enabled = !probing && canRedispatch,
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.dispatch_redispatch),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (!probing && canRedispatch) colors.textPrimary else colors.textTertiary,
+                            )
+                        }
+                        TextButton(onClick = onDiscard, enabled = !probing, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                            Text(stringResource(R.string.dispatch_unknown_discard), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                if (!inFlight && !canRedispatch) {
+                    Text(
+                        stringResource(R.string.dispatch_unknown_need_probe),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
             androidx.compose.foundation.layout.Box(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
                     .heightIn(min = 36.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(colors.accent.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-                    .clickable(onClick = onDispatch)
+                    .background(
+                        colors.accent.copy(alpha = if (unresolved == null) 0.14f else 0.06f),
+                        RoundedCornerShape(8.dp),
+                    )
+                    .clickable(enabled = unresolved == null, onClick = onDispatch)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     stringResource(R.string.inbox_dispatch),
                     style = MaterialTheme.typography.labelLarge,
-                    color = colors.accent,
+                    color = if (unresolved == null) colors.accent else colors.textTertiary,
                 )
             }
         }
@@ -411,8 +451,9 @@ private fun UnknownRefCard(
     onRedispatch: () -> Unit,
 ) {
     val colors = CodegTheme.colors
+    // 批v147 视觉规范：拒绝红底大卡，孤儿 UNKNOWN 也只允许柔和底色 + 红字标题。
     Card(
-        colors = CardDefaults.cardColors(containerColor = colors.danger.copy(alpha = 0.10f)),
+        colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -583,14 +624,21 @@ private fun DispatchSheet(
 
     ModalBottomSheet(
         onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            // 批v147 手势修复：拖拽关闭整体禁用（关闭只走点遮罩/返回键），
+            // 内容滚动由下面的 drag lock 垫层接管，卡片不再跟着手指走。
+            confirmValueChange = { it != SheetValue.Hidden },
+        ),
+        dragHandle = null,
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .nestedScroll(rememberSheetDragLock())
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
+                .padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // 派发默认预选：settings 里存好的设备/项目/Agent（设置→通用→派发
@@ -829,10 +877,12 @@ private fun DispatchSheet(
                         .clickable(enabled = scheduled) { showDatePicker = true },
                 )
                 if (scheduled && scheduleMillis > 0) {
+                    // 批v147 定时回显必须完整到年月日时分（如 2026年11月01日 14:30）。
+                    val pattern = stringResource(R.string.dispatch_schedule_pattern)
                     Text(
-                        remember(scheduleMillis) {
+                        remember(scheduleMillis, pattern) {
                             Instant.ofEpochMilli(scheduleMillis).atZone(ZoneId.systemDefault())
-                                .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+                                .format(DateTimeFormatter.ofPattern(pattern))
                         } + " (" + stringResource(R.string.dispatch_schedule_note) + ")",
                         style = MaterialTheme.typography.labelSmall,
                         color = CodegTheme.colors.textPrimary,
@@ -901,9 +951,20 @@ private fun DispatchSheet(
     }
 
     if (branchSheet) {
-        ModalBottomSheet(onDismissRequest = { branchSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { branchSheet = false },
+            sheetState = rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { it != SheetValue.Hidden },
+            ),
+            dragHandle = null,
+        ) {
             val listState = rememberLazyListState()
-            Column(Modifier.padding(bottom = 24.dp)) {
+            Column(
+                Modifier
+                    .nestedScroll(rememberSheetDragLock())
+                    .padding(top = 12.dp, bottom = 24.dp),
+            ) {
                 Text(
                     stringResource(R.string.dispatch_pick_branch),
                     style = MaterialTheme.typography.titleMedium,
@@ -954,7 +1015,7 @@ private fun DispatchSheet(
         val state = rememberTimePickerState(initialHour = now.hour, initialMinute = now.minute, is24Hour = true)
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
-            title = { Text(stringResource(R.string.dispatch_schedule)) },
+            title = { Text(stringResource(R.string.dispatch_pick_time)) },
             text = { TimePicker(state = state) },
             confirmButton = {
                 TextButton(onClick = {
