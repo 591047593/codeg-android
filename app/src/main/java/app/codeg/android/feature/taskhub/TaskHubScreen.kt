@@ -43,7 +43,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -292,10 +291,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     if (folderSheet) {
         ModalBottomSheet(
             onDismissRequest = { folderSheet = false },
-            sheetState = rememberModalBottomSheetState(
-                skipPartiallyExpanded = true,
-                confirmValueChange = { it != SheetValue.Hidden },
-            ),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = null,
         ) {
             Column(
@@ -325,10 +321,7 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
     detailEntry?.let { entry ->
         ModalBottomSheet(
             onDismissRequest = { detailKey = null },
-            sheetState = rememberModalBottomSheetState(
-                skipPartiallyExpanded = true,
-                confirmValueChange = { it != SheetValue.Hidden },
-            ),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = null,
         ) {
             TaskDetailSheet(

@@ -42,7 +42,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -624,12 +623,9 @@ private fun DispatchSheet(
 
     ModalBottomSheet(
         onDismissRequest = onClose,
-        sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-            // 批v147 手势修复：拖拽关闭整体禁用（关闭只走点遮罩/返回键），
-            // 内容滚动由下面的 drag lock 垫层接管，卡片不再跟着手指走。
-            confirmValueChange = { it != SheetValue.Hidden },
-        ),
+        // 批v148：拖拽关闭恢复（v147 一刀切禁用被真机否决）。卡片不被内容
+        // 拽走由内容上的 drag lock 单向闸保证，关闭保留标准下拉手势。
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = null,
     ) {
         Column(
@@ -953,10 +949,7 @@ private fun DispatchSheet(
     if (branchSheet) {
         ModalBottomSheet(
             onDismissRequest = { branchSheet = false },
-            sheetState = rememberModalBottomSheetState(
-                skipPartiallyExpanded = true,
-                confirmValueChange = { it != SheetValue.Hidden },
-            ),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = null,
         ) {
             val listState = rememberLazyListState()

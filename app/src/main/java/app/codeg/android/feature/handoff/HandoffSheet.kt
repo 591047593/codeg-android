@@ -18,7 +18,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -71,11 +70,8 @@ fun HandoffSheet(
 
     ModalBottomSheet(
         onDismissRequest = { viewModel.reset(); onClose() },
-        sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-            // 批v147 手势修复：与派发表一致，拖拽关闭禁用、内容独立滚动。
-            confirmValueChange = { it != SheetValue.Hidden },
-        ),
+        // 批v148：拖拽关闭恢复，手势由内容上的 drag lock 单向闸约束。
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = null,
     ) {
         val pkg = ui.pkg
