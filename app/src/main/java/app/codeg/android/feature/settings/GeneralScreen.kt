@@ -83,6 +83,39 @@ fun GeneralContent(
                 appSettings.activityDeviceSwipe,
                 viewModel::setActivityDeviceSwipe,
             )
+            // 批v151: inbox "new idea" button placement (corner FAB vs bottom-center
+            // half-width pill) — same chip idiom as the ball-size row above.
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.inbox_idea_style_title)) },
+                supportingContent = { Text(stringResource(R.string.inbox_idea_style_subtitle)) },
+                trailingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            "corner" to R.string.inbox_idea_style_corner,
+                            "centerWide" to R.string.inbox_idea_style_center,
+                        ).forEach { (id, labelRes) ->
+                            val selected = appSettings.inboxNewIdeaStyle == id
+                            Text(
+                                stringResource(labelRes),
+                                fontSize = 13.sp,
+                                color = if (selected) colors.onAccent else colors.textSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (selected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
+                                    )
+                                    .clickable { viewModel.setInboxNewIdeaStyle(id) }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                            )
+                        }
+                    }
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                    headlineColor = colors.textPrimary,
+                    supportingColor = colors.textTertiary,
+                ),
+            )
         }
         Section(stringResource(R.string.general_floating_ball_section)) {
             ToggleRow(

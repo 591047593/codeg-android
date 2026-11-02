@@ -14,9 +14,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,8 +59,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
@@ -120,11 +125,26 @@ fun InboxScreen(
         unresolvedRefs.filter { it.ideaId == null || it.ideaId !in ideaIds }
     }
 
+    // 批v151: "new idea" button placement (设置→通用→外壳). "corner" = classic M3
+    // FAB bottom-right; "centerWide" = half-screen-width pill bottom-center so
+    // either thumb reaches it. Both open the same IdeaEditorDialog.
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val ideaStyle = settings.inboxNewIdeaStyle
+
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         floatingActionButton = {
-            FloatingActionButton(onClick = { creating = true }) {
-                Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.inbox_new))
+            if (ideaStyle != "centerWide") {
+                FloatingActionButton(onClick = { creating = true }) {
+                    Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.inbox_new))
+                }
+            }
+        },
+        bottomBar = {
+            // Wide placement rides the bottomBar slot: Scaffold pads the list
+            // content above it automatically, in both placements.
+            if (ideaStyle == "centerWide") {
+                NewIdeaWideButton(onClick = { creating = true })
             }
         },
     ) { padding ->
@@ -596,3 +616,41 @@ private fun DispatchSheet(
 private fun formatStamp(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+
+/** 批v151 "底部居中" new-idea placement: half the screen wide, the FAB's 56dp
+ *  height, accent pill — an alternative to the corner FAB for either-thumb reach. */
+@Composable
+private fun NewIdeaWideButton(onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(top = 8.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(0.5f)
+                .height(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.accent)
+                .clickable(onClick = onClick),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.Add,
+                contentDescription = null,
+                tint = colors.onAccent,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                stringResource(R.string.inbox_new),
+                color = colors.onAccent,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}

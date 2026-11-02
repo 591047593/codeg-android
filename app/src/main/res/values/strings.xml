@@ -1196,6 +1196,10 @@
     <string name="task_empty_board">No tasks on any device</string>
     <string name="inbox_title">Ideas</string>
     <string name="inbox_new">New idea</string>
+    <string name="inbox_idea_style_title">"New idea" button</string>
+    <string name="inbox_idea_style_subtitle">Bottom-right corner or bottom-center</string>
+    <string name="inbox_idea_style_corner">Corner</string>
+    <string name="inbox_idea_style_center">Bottom center</string>
     <string name="inbox_edit">Edit</string>
     <string name="inbox_copy">Copy</string>
     <string name="inbox_delete">Delete</string>

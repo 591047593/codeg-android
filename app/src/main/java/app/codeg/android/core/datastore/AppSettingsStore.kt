@@ -41,6 +41,10 @@ data class AppSettings(
     val floatBallEnabled: Boolean = true,
     /** Floating ball size tier: "small" | "medium" | "large" (unknown → medium). */
     val floatBallSize: String = DEFAULT_FLOAT_BALL_SIZE,
+    /** Inbox "new idea" button placement (批v151): "corner" = classic M3 FAB
+     *  bottom-right (default) | "centerWide" = bottom-center pill half the
+     *  screen wide (either thumb reaches it). */
+    val inboxNewIdeaStyle: String = DEFAULT_INBOX_IDEA_STYLE,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
     /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
@@ -60,6 +64,7 @@ data class AppSettings(
         // startTab from the five-tab era ("chats") falls back here via HomeTab.byRoute.
         const val DEFAULT_START_TAB = "activity"
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
+        const val DEFAULT_INBOX_IDEA_STYLE = "corner"
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
         val INITIAL = AppSettings()
@@ -86,6 +91,8 @@ class AppSettingsStore @Inject constructor(
             activityDeviceSwipe = prefs[ACTIVITY_DEVICE_SWIPE] ?: false,
             floatBallEnabled = prefs[FLOAT_BALL_ENABLED] ?: true,
             floatBallSize = prefs[FLOAT_BALL_SIZE]?.takeIf { it in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE,
+            inboxNewIdeaStyle = prefs[INBOX_NEW_IDEA_STYLE]?.takeIf { it in INBOX_IDEA_STYLES }
+                ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
             dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
@@ -150,6 +157,11 @@ class AppSettingsStore @Inject constructor(
     /** Persist the floating-ball size tier; unknown tiers coerce to the default. */
     suspend fun setFloatBallSize(size: String) {
         dataStore.edit { it[FLOAT_BALL_SIZE] = size.takeIf { s -> s in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE }
+    }
+
+    /** Persist the inbox "new idea" button placement; unknown values coerce back. */
+    suspend fun setInboxNewIdeaStyle(style: String) {
+        dataStore.edit { it[INBOX_NEW_IDEA_STYLE] = style.takeIf { s -> s in INBOX_IDEA_STYLES } ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE }
     }
 
     /** Persist the font-scale multiplier (coerced to the usable band on read too). */
@@ -233,11 +245,15 @@ class AppSettingsStore @Inject constructor(
         val DISPATCH_DEFAULT_FOLDER_ID = intPreferencesKey("dispatch_default_folder_id")
         val DISPATCH_DEFAULT_FOLDER_NAME = stringPreferencesKey("dispatch_default_folder_name")
         val DISPATCH_DEFAULT_AGENT = stringPreferencesKey("dispatch_default_agent")
+        val INBOX_NEW_IDEA_STYLE = stringPreferencesKey("inbox_new_idea_style")
     }
 }
 
 /** Legal floating-ball size tiers (mirrors the feature layer's dp ladder). */
 val FLOAT_BALL_SIZES = setOf("small", "medium", "large")
+
+/** Legal inbox "new idea" button placements (批v151). */
+val INBOX_IDEA_STYLES = setOf("corner", "centerWide")
 
 /** JSON envelope for the read-marks map (DataStore carries one string). */
 @Serializable

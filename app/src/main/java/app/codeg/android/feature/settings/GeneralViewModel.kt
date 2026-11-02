@@ -209,6 +209,10 @@ class GeneralViewModel @Inject constructor(
         viewModelScope.launch { appSettingsStore.setFloatBallSize(size) }
     }
 
+    fun setInboxNewIdeaStyle(style: String) {
+        viewModelScope.launch { appSettingsStore.setInboxNewIdeaStyle(style) }
+    }
+
     fun setFontScale(scale: Float) {
         viewModelScope.launch { appSettingsStore.setFontScale(scale) }
     }
