@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -123,11 +124,11 @@ fun QuickIdeaSheet(
     var description by rememberSaveable { mutableStateOf("") }
     val emptyHint = stringResource(R.string.quick_idea_empty_hint)
 
-    // 打开基线：只对「本次打开之后」发生的保存关 sheet。上次关闭前后台完成的
-    // 保存（seq 已进位）不会把这次刚打开的 sheet 立刻关掉。
-    val savedBaseline = remember { savedSeq }
+    // 只有「本 sheet 里点了保存」才允许自动关闭：关闭后重开的新 sheet 不会被
+    // 上一次在途保存的完成事件误关（保存是本次交互的事件，不是 VM 的常驻状态）。
+    var pendingSaveAt by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(savedSeq) {
-        if (savedSeq > savedBaseline) onDismiss()
+        pendingSaveAt?.let { at -> if (savedSeq > at) onDismiss() }
     }
     // VM 比 sheet 长寿（activity 作用域）——清掉上次打开残留的错误行。
     LaunchedEffect(Unit) { viewModel.clearError() }
@@ -174,7 +175,10 @@ fun QuickIdeaSheet(
                 }
                 PrimaryButton(
                     text = stringResource(R.string.common_save),
-                    onClick = { viewModel.save(title, description) },
+                    onClick = {
+                        pendingSaveAt = savedSeq
+                        viewModel.save(title, description)
+                    },
                     enabled = title.isNotBlank() || description.isNotBlank(),
                     modifier = Modifier.weight(1f),
                 )

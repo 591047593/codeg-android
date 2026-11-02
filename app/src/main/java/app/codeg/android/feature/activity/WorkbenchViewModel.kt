@@ -57,6 +57,15 @@ data class WorkbenchStats(
     val hasLoaded: Boolean = false,
 )
 
+/** One combine emission of the poll loop. */
+private data class RoundSignal(
+    val tick: Int,
+    val active: Boolean,
+    val foreground: Boolean,
+    val selectedId: String?,
+    val allMode: Boolean,
+)
+
 /**
  * The 动态 workbench's task-side counterweight to [ActivityViewModel] (批v150):
  * a LIGHT, read-only poll of every in-scope device's task list, projected through
@@ -71,16 +80,6 @@ data class WorkbenchStats(
  * cross-fade may briefly hold both composed; each gate only allows one-shot
  * rounds then, never a second running loop).
  */
-
-/** One combine emission of the poll loop. */
-private data class RoundSignal(
-    val tick: Int,
-    val active: Boolean,
-    val foreground: Boolean,
-    val selectedId: String?,
-    val allMode: Boolean,
-)
-
 @HiltViewModel
 class WorkbenchViewModel @Inject constructor(
     private val repository: ServerRepository,
@@ -140,6 +139,7 @@ class WorkbenchViewModel @Inject constructor(
     private var generation = 0
     private var lastSeenTick = -1
     private var lastSeenScope: Pair<String?, Boolean>? = null
+    private var wasVisible = false
 
     init {
         viewModelScope.launch { pollLoop() }
@@ -178,11 +178,14 @@ class WorkbenchViewModel @Inject constructor(
                     if (active && fg) {
                         // Scope is only tracked while the workbench is actually
                         // visible: leaving the tab must not consume the change,
-                        // or returning would serve stale data for a full minute.
+                        // and re-entering always runs one fresh round, so the
+                        // user never sees minute-old counters after a tab switch.
+                        val reentered = !wasVisible
+                        wasVisible = true
                         val scope = selectedId to allMode
                         val scopeChanged = scope != lastSeenScope
                         lastSeenScope = scope
-                        if (tick == 0 || tick != lastSeenTick || scopeChanged) {
+                        if (reentered || tick == 0 || tick != lastSeenTick || scopeChanged) {
                             lastSeenTick = tick
                             fetchRound()
                         }
@@ -190,9 +193,10 @@ class WorkbenchViewModel @Inject constructor(
                             delay(POLL_INTERVAL_MS)
                             fetchRound()
                         }
-                    } else if (tick == 0) {
+                    } else {
+                        wasVisible = false
                         // First-ever round runs even off-tab so the tab opens warm.
-                        fetchRound()
+                        if (tick == 0) fetchRound()
                     }
                 }
         }
