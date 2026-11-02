@@ -131,6 +131,7 @@ data class DispatchFormSubmit(
  * dispatch check and the UNKNOWN triple gate live in the HOSTS (both re-check
  * against real state at send time).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun DispatchForm(
     host: DispatchFormHost,

@@ -175,7 +175,7 @@ fun QuickIdeaSheet(
                     Text(stringResource(R.string.common_cancel))
                 }
                 PrimaryButton(
-                    text = stringResource(R.string.quick_idea_title),
+                    text = stringResource(R.string.common_save),
                     onClick = { viewModel.save(title, description) },
                     enabled = title.isNotBlank() || description.isNotBlank(),
                     modifier = Modifier.weight(1f),

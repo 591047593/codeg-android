@@ -280,11 +280,13 @@ private fun ChipRowBase(
         options.forEach { option ->
             val selected = option.id == selectedId
             Surface(
+                // onClick 形态：Material 的最小可点面积强制生效（审查轮6——
+                // Modifier.clickable 会绕过 48dp 触达保障）。
+                onClick = { onSelect(option.id) },
                 shape = RoundedCornerShape(999.dp),
                 color = if (selected) colors.accent else colors.bgElevated,
                 contentColor = if (selected) colors.onAccent else colors.textPrimary,
                 border = BorderStroke(1.dp, if (selected) colors.accent else colors.surfaceStroke),
-                modifier = Modifier.clickable { onSelect(option.id) },
             ) {
                 Row(
                     Modifier.padding(horizontal = 12.dp, vertical = 7.dp),

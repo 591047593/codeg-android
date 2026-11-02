@@ -1,9 +1,12 @@
 package app.codeg.android.feature.floatingball
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -247,7 +250,11 @@ fun FloatingBallHost(
             Text("◆", color = colors.onAccent, fontSize = (sizeDp.value * 0.4f).sp)
         }
 
-        if (showPanel) {
+        AnimatedVisibility(
+            visible = showPanel,
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(120)),
+        ) {
             // Scrim eats the outside tap and closes; the panel itself is anchored
             // near the ball like the web version's panel (clamped on-screen both
             // axes — a wide quick panel must never clip at an edge-docked ball).

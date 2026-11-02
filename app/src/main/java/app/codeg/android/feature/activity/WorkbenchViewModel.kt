@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -70,6 +71,15 @@ data class WorkbenchStats(
  * cross-fade may briefly hold both composed; each gate only allows one-shot
  * rounds then, never a second running loop).
  */
+/** One combine emission of the poll loop. */
+private data class RoundSignal(
+    val tick: Int,
+    val active: Boolean,
+    val foreground: Boolean,
+    val selectedId: String?,
+    val allMode: Boolean,
+)
+
 @HiltViewModel
 class WorkbenchViewModel @Inject constructor(
     private val repository: ServerRepository,
@@ -128,6 +138,7 @@ class WorkbenchViewModel @Inject constructor(
 
     private var generation = 0
     private var lastSeenTick = -1
+    private var lastSeenScope: Pair<String?, Boolean>? = null
 
     init {
         viewModelScope.launch { pollLoop() }
@@ -159,9 +170,17 @@ class WorkbenchViewModel @Inject constructor(
                 foreground,
                 repository.selectedId,
                 repository.activityAll,
-            ) { tick, active, fg, _, _ -> Triple(tick, active, fg) }
-                .collectLatest { (tick, active, fg) ->
-                    if (tick > 0 && tick != lastSeenTick) {
+            ) { tick, active, fg, selectedId, allMode ->
+                    RoundSignal(tick, active, fg, selectedId, allMode) }
+                .collectLatest { signal ->
+                    val (tick, active, fg, selectedId, allMode) = signal
+                    // Scope change (device chip / 全部 switch) must produce a fresh
+                    // round even when the tick counter is unchanged — otherwise a
+                    // newly scoped device shows stale "0/0" for up to a minute.
+                    val scope = selectedId to allMode
+                    val scopeChanged = scope != lastSeenScope
+                    if (scopeChanged) lastSeenScope = scope
+                    if (tick > 0 && (tick != lastSeenTick || scopeChanged)) {
                         lastSeenTick = tick
                         fetchRound()
                     }
@@ -207,17 +226,21 @@ class WorkbenchViewModel @Inject constructor(
         }
         generation += 1
         val gen = generation
-        round.value = round.value.copy(
-            deviceStates = round.value.deviceStates.participating(ids).let { kept ->
-                devices.map { d ->
-                    kept.firstOrNull { it.serverId == d.id }
-                        ?: DeviceLoad(d.id, d.name, DeviceLoadStatus.LOADING)
-                }
-            },
-        )
+        round.update { r ->
+            r.copy(
+                deviceStates = r.deviceStates.participating(ids).let { kept ->
+                    devices.map { d ->
+                        kept.firstOrNull { it.serverId == d.id }
+                            ?: DeviceLoad(d.id, d.name, DeviceLoadStatus.LOADING)
+                    }
+                },
+            )
+        }
         // A device that left the aggregate must not keep feeding its stale slice
-        // into the stats (same ghost rule as TaskHubViewModel).
-        tasks.value = tasks.value.filter { it.serverId in ids }
+        // into the stats (same ghost rule as TaskHubViewModel). Per-device
+        // completions below use atomic update{} too — two devices landing in
+        // the same instant must not lose a slice to a read-modify-write race.
+        tasks.update { it.filter { e -> e.serverId in ids } }
         coroutineScope {
             devices.forEach { profile ->
                 launch {
@@ -231,33 +254,39 @@ class WorkbenchViewModel @Inject constructor(
                     if (gen != generation) return@launch
                     result.fold(
                         onSuccess = { list ->
-                            round.value = round.value.copy(
-                                deviceStates = round.value.deviceStates.map {
-                                    if (it.serverId == profile.id) it.copy(status = DeviceLoadStatus.OK, error = null) else it
-                                },
-                            )
-                            tasks.value = tasks.value.filter { e -> e.serverId != profile.id } +
-                                (list.orEmpty().map { t -> TaskBoardEntry(profile.id, profile.name, t) })
+                            round.update { r ->
+                                r.copy(
+                                    deviceStates = r.deviceStates.map {
+                                        if (it.serverId == profile.id) it.copy(status = DeviceLoadStatus.OK, error = null) else it
+                                    },
+                                )
+                            }
+                            tasks.update { cur ->
+                                cur.filter { e -> e.serverId != profile.id } +
+                                    (list.orEmpty().map { t -> TaskBoardEntry(profile.id, profile.name, t) })
+                            }
                         },
                         onFailure = { e ->
                             if (e is CancellationException) throw e
-                            round.value = round.value.copy(
-                                deviceStates = round.value.deviceStates.map {
-                                    if (it.serverId == profile.id) {
-                                        it.copy(
-                                            status = DeviceLoadStatus.FAILED,
-                                            error = (e as? ApiError)?.displayMessage()
-                                                ?: e.message ?: "加载失败",
-                                        )
-                                    } else it
-                                },
-                            )
+                            round.update { r ->
+                                r.copy(
+                                    deviceStates = r.deviceStates.map {
+                                        if (it.serverId == profile.id) {
+                                            it.copy(
+                                                status = DeviceLoadStatus.FAILED,
+                                                error = (e as? ApiError)?.displayMessage()
+                                                    ?: e.message ?: "加载失败",
+                                            )
+                                        } else it
+                                    },
+                                )
+                            }
                         },
                     )
                 }
             }
         }
-        if (gen == generation) round.value = round.value.copy(hasLoaded = true)
+        if (gen == generation) round.update { it.copy(hasLoaded = true) }
     }
 
     companion object {

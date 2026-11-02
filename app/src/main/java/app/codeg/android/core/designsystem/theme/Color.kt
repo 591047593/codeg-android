@@ -6,7 +6,9 @@ import androidx.compose.ui.graphics.luminance
 
 /**
  * User-selectable accent palettes, ported from the iOS `AccentPalette`. Each has
- * a dark-mode and light-mode fill. The default is [ORANGE], matching iOS.
+ * a dark-mode and light-mode fill. The default is [TEAL] (批v150: 任务书 §2.1
+ * 「克制的青蓝色强调」— the rebuild's mandated visual direction; users who
+ * already picked a palette keep theirs).
  */
 enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
     MINT("mint", Color(0xFF66E0B3), Color(0xFF0F946B)),
@@ -21,7 +23,7 @@ enum class AccentPalette(val id: String, val dark: Color, val light: Color) {
     fun resolve(isDark: Boolean): Color = if (isDark) dark else light
 
     companion object {
-        val DEFAULT = ORANGE
+        val DEFAULT = TEAL
         val all: List<AccentPalette> = entries
         fun from(id: String?): AccentPalette = entries.firstOrNull { it.id == id } ?: DEFAULT
     }
