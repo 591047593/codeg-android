@@ -109,7 +109,8 @@ class QuickIdeaViewModel @Inject constructor(
 
 /**
  * Quick idea editor. ≤2-tap acceptance path: ball tap → panel card → this sheet;
- * 保存 lands the idea in the inbox. Drag-lock per the v148 sheet contract.
+ * 保存 lands the idea in the inbox. Fixed-title + inner-scroll per the v151
+ * sheet contract (drag-to-close on the title; content scrolls both ways).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

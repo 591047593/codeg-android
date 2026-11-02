@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Search
@@ -155,10 +156,25 @@ fun SearchScreen(
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             InlineError(Icons.Rounded.ErrorOutline, stringResource(R.string.search_failed), ui.error!!, onRetry = viewModel::retry, retryLabel = stringResource(R.string.common_retry))
                         }
-                    ui.results.isEmpty() && !ui.searching ->
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            EmptyState(Icons.Rounded.Search, stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_for, ui.query))
+                    // 批v151 审查修正：空态门控必须读当前模式自己的结果列表——All
+                    // 模式从不写 `results`，单模式的门控会把合并命中藏进"无结果"。
+                    ((!allMode && ui.results.isEmpty()) || (allMode && ui.allResults.isEmpty())) && !ui.searching -> {
+                        if (allMode && ui.deviceStates.isEmpty()) {
+                            // 所有可见设备都退出了聚合（includeInAll=false）——明说，
+                            // 而不是冒充"无匹配"（同 Chats 聚合 v137 的 allSkipped 文案）。
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                EmptyState(
+                                    icon = Icons.Rounded.Dns,
+                                    title = stringResource(R.string.all_devices_skipped_title),
+                                    message = stringResource(R.string.all_devices_skipped_message),
+                                )
+                            }
+                        } else {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                EmptyState(Icons.Rounded.Search, stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_for, ui.query))
+                            }
                         }
+                    }
                     else -> if (allMode) {
                         // 批v151 All mode: merged hits + a device-failure banner (same
                         // "devices unreachable" language as the Activity aggregate).

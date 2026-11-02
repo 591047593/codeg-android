@@ -52,6 +52,8 @@
     <string name="workbench_overview_summary">%1$d 运行中 · %2$d 需要处理 · %3$s 在线</string>
     <string name="workbench_overview_collapse">收起总览</string>
     <string name="workbench_overview_expand">展开总览</string>
+    <string name="workbench_attention_collapse">收起预览</string>
+    <string name="workbench_attention_expand">展开预览</string>
     <string name="tab_search">搜索</string>
     <string name="tab_settings">设置</string>
 

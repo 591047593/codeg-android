@@ -95,22 +95,40 @@ class WorkbenchViewModel @Inject constructor(
     private val _display = MutableStateFlow(WorkbenchDisplay())
     val display: StateFlow<WorkbenchDisplay> = _display.asStateFlow()
 
+    /** 在途落盘写计数（审查修正）：collector 跳过这些窗口期的 store 回放，防止
+     *  "写 A 落盘 → 回放旧快照 → 盖掉点击 B 的乐观态"的一闪回退。写本身 FIFO
+     *  串行，终值不丢；回放窗口一过，collector 恢复跟读。 */
+    private val pendingWrites = java.util.concurrent.atomic.AtomicInteger(0)
+
     init {
         viewModelScope.launch {
             // catch 不拦 CancellationException（结构化取消照常）；DataStore 读取失败
             // 保持展开态即可，与 stats 的 retryWhen 同一策略取向。
-            displayStore.display.catch { }.collect { _display.value = it }
+            displayStore.display.catch { }.collect { snapshot ->
+                if (pendingWrites.get() == 0) _display.value = snapshot
+            }
         }
     }
 
     fun setOverviewCollapsed(collapsed: Boolean) {
         _display.value = _display.value.copy(overviewCollapsed = collapsed)
-        viewModelScope.launch { displayStore.setOverviewCollapsed(collapsed) }
+        persist { displayStore.setOverviewCollapsed(collapsed) }
     }
 
     fun setAttentionCollapsed(collapsed: Boolean) {
         _display.value = _display.value.copy(attentionCollapsed = collapsed)
-        viewModelScope.launch { displayStore.setAttentionCollapsed(collapsed) }
+        persist { displayStore.setAttentionCollapsed(collapsed) }
+    }
+
+    private fun persist(write: suspend () -> Unit) {
+        viewModelScope.launch {
+            pendingWrites.incrementAndGet()
+            try {
+                write()
+            } finally {
+                pendingWrites.decrementAndGet()
+            }
+        }
     }
 
     /** Raw per-device slices (ids are per-server) — every device ever fetched in

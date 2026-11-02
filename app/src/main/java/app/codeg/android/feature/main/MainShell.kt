@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -436,7 +437,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             val aggregateOn = (currentRoute == HomeTab.ACTIVITY.route && activityAll) ||
                 (currentRoute == ROUTE_CHATS && chatsAll) ||
                 (currentRoute == ROUTE_SEARCH && searchAll)
-            if (!aggregateOn) appViewModel.setActiveProject(null)
+            // The project filter only narrows the Activity/Chats aggregates (Search
+            // and Folders never read it) — clearing it on THEIR landings would strip
+            // a live filter from an aggregate still parked in the back stack (审查
+            // 修正：v134 的"Back 回到来时视图"承诺同样约束这个不变量).
+            val filterNarrowsHere = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS
+            if (filterNarrowsHere && !aggregateOn) appViewModel.setActiveProject(null)
         }
     }
 
@@ -834,7 +840,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // to switch). It owns the status-bar inset; each tab's TopAppBar is told
         // to stop applying it too (windowInsets zeroed) so the height isn't doubled.
         androidx.compose.foundation.layout.Column(
-            Modifier.padding(padding).fillMaxSize().then(contentModifier),
+            // consumeWindowInsets (批v151 审查修正)：shell 底栏已吃掉底部系统
+            // inset——不消费的话，内容里的 navigationBarsPadding（如收件箱底部
+            // 胶囊按钮）会在底栏之上再垫一层死区；底栏滚动收起时 padding 归零，
+            // inset 自然归还。全屏推入路由 shell 底 padding 为 0，不受影响。
+            Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize().then(contentModifier),
         ) {
             // 批v150: bar-bearing surfaces are the four tabs PLUS the demoted list
             // pushes (review 修订①) — those three screens have no in-screen device
@@ -1204,8 +1214,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             val openToken = remember { quickNewSessionSeq.incrementAndGet() }
             QuickNewSessionSheet(
                 onConfirmedSession = { serverId, conversationId ->
-                    if (quickNewSessionSeq.get() == openToken) showQuickNewSession = false
-                    handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                    // 迟到回调整支拦下（审查修正）：token 不匹配时连跳转一起放弃——
+                    // 跳转是副作用，quickIdea/quickTask 的"过期只留回执"哲学同样适用。
+                    if (quickNewSessionSeq.get() == openToken) {
+                        showQuickNewSession = false
+                        handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                    }
                 },
                 onDismiss = { if (quickNewSessionSeq.get() == openToken) showQuickNewSession = false },
             )

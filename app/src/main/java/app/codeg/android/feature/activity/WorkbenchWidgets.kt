@@ -329,8 +329,10 @@ internal fun WorkbenchAttentionCard(
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(
+                        // 需要处理卡自己的标签（审查修正）：复用总览的 expand/collapse
+                        // 文案会让读屏用户以为在操作总览区。
                         onClickLabel = stringResource(
-                            if (collapsed) R.string.workbench_overview_expand else R.string.workbench_overview_collapse
+                            if (collapsed) R.string.workbench_attention_expand else R.string.workbench_attention_collapse
                         ),
                         role = Role.Button,
                         onClick = onToggleCollapse,
@@ -399,14 +401,17 @@ internal fun WorkbenchHeader(
     onOpenTasks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    // 间距不靠 spacedBy 撑（审查修正：折叠后 AnimatedVisibility 仍是零高子项，
+    // 两侧 spacing 会让 轨→卡 间距翻倍）：展开态间距放动画内容里，注意力卡的
+    // 10dp 顶距恒定，两种折叠状态都是单倍间距。
+    Column(modifier = modifier.fillMaxWidth()) {
         WorkbenchOverviewRail(stats, overviewCollapsed, onToggleOverview, modifier = Modifier.padding(top = 6.dp))
         AnimatedVisibility(visible = !overviewCollapsed, enter = headerExpand(), exit = headerCollapse()) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 WorkbenchStatsRow(stats)
                 WorkbenchQuickRow(onOpenChats, onOpenFolders, onOpenSearch, onOpenNewSession)
             }
         }
-        WorkbenchAttentionCard(stats, attentionCollapsed, onToggleAttention, onOpenTasks)
+        WorkbenchAttentionCard(stats, attentionCollapsed, onToggleAttention, onOpenTasks, modifier = Modifier.padding(top = 10.dp))
     }
 }

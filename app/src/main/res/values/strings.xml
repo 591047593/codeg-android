@@ -52,6 +52,8 @@
     <string name="workbench_overview_summary">%1$d running · %2$d need attention · %3$s online</string>
     <string name="workbench_overview_collapse">Collapse overview</string>
     <string name="workbench_overview_expand">Expand overview</string>
+    <string name="workbench_attention_collapse">Collapse preview</string>
+    <string name="workbench_attention_expand">Expand preview</string>
     <string name="tab_search">Search</string>
     <string name="tab_settings">Settings</string>
 

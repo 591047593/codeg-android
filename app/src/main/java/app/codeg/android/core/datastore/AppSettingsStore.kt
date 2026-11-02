@@ -64,7 +64,7 @@ data class AppSettings(
         // startTab from the five-tab era ("chats") falls back here via HomeTab.byRoute.
         const val DEFAULT_START_TAB = "activity"
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
-        const val DEFAULT_INBOX_IDEA_STYLE = "corner"
+        const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
         val INITIAL = AppSettings()
@@ -252,8 +252,11 @@ class AppSettingsStore @Inject constructor(
 /** Legal floating-ball size tiers (mirrors the feature layer's dp ladder). */
 val FLOAT_BALL_SIZES = setOf("small", "medium", "large")
 
-/** Legal inbox "new idea" button placements (批v151). */
-val INBOX_IDEA_STYLES = setOf("corner", "centerWide")
+/** Legal inbox "new idea" button placements (批v151) — screens branch on the
+ *  constants, not raw literals, so a future style can't silently fall back. */
+const val INBOX_IDEA_STYLE_CORNER = "corner"
+const val INBOX_IDEA_STYLE_CENTER_WIDE = "centerWide"
+val INBOX_IDEA_STYLES = setOf(INBOX_IDEA_STYLE_CORNER, INBOX_IDEA_STYLE_CENTER_WIDE)
 
 /** JSON envelope for the read-marks map (DataStore carries one string). */
 @Serializable

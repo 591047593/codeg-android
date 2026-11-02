@@ -51,8 +51,9 @@ fun QuickNewSessionSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                // v148 sheet contract: the form scrolls internally (it has its
-                // own scroll column); drag-to-close stays on the handle area.
+                // v151 sheet contract: the form scrolls internally; the lock eats
+                // all bidirectional content leftover, so drag-to-close lives on
+                // the fixed title above (the sheet itself sets dragHandle = null).
                 .nestedScroll(rememberSheetDragLock()),
         ) {
             Text(

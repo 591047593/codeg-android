@@ -138,8 +138,9 @@ fun OptionListSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                // v148 sheet contract: content drag-lock keeps the list from being
-                // yanked away by the close gesture; the handle area still closes.
+                // v151 sheet contract: content drag-lock eats all bidirectional
+                // scroll leftover; drag-to-close lives on the fixed title above
+                // (the sheet itself sets dragHandle = null).
                 .nestedScroll(rememberSheetDragLock())
                 .padding(horizontal = 16.dp)
                 .padding(top = 12.dp, bottom = 20.dp),

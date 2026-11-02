@@ -69,6 +69,7 @@ import app.codeg.android.R
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.IdeaEntry
+import app.codeg.android.core.datastore.INBOX_IDEA_STYLE_CENTER_WIDE
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -134,7 +135,7 @@ fun InboxScreen(
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         floatingActionButton = {
-            if (ideaStyle != "centerWide") {
+            if (ideaStyle != INBOX_IDEA_STYLE_CENTER_WIDE) {
                 FloatingActionButton(onClick = { creating = true }) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.inbox_new))
                 }
@@ -143,7 +144,7 @@ fun InboxScreen(
         bottomBar = {
             // Wide placement rides the bottomBar slot: Scaffold pads the list
             // content above it automatically, in both placements.
-            if (ideaStyle == "centerWide") {
+            if (ideaStyle == INBOX_IDEA_STYLE_CENTER_WIDE) {
                 NewIdeaWideButton(onClick = { creating = true })
             }
         },
@@ -571,7 +572,8 @@ private fun IdeaEditorDialog(
  * (执行方式 → 设备/Agent chips → 项目/分支 → 标题/描述 → 定时 → 摘要 → 主按钮,
  * selectors = chips + BottomSheet) and reads its state through this screen's
  * [InboxViewModel] (the v146 ledger invariants live there, unchanged). The
- * sheet contributes only the v148 drag-lock contract and the idea prefill.
+ * sheet contributes the fixed title (drag-to-close area, v151 contract) and
+ * the idea prefill.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -583,8 +585,8 @@ private fun DispatchSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onClose,
-        // 批v148：拖拽关闭恢复（v147 一刀切禁用被真机否决）。卡片不被内容
-        // 拽走由内容上的 drag lock 单向闸保证，关闭保留标准下拉手势。
+        // 批v151 弹层契约：内容双向剩余全被锁吃掉，上下滚动两向都不再误触收起；
+        // 拖拽关闭只走固定标题区（DispatchForm 自带内部滚动，标题在其外）。
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = null,
     ) {
@@ -635,7 +637,7 @@ private fun NewIdeaWideButton(onClick: () -> Unit) {
                 .height(56.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(colors.accent)
-                .clickable(onClick = onClick),
+                .clickable(onClickLabel = stringResource(R.string.inbox_new), onClick = onClick),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {

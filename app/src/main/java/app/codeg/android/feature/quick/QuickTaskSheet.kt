@@ -47,10 +47,10 @@ fun QuickTaskSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                // v148 sheet contract: the form scrolls internally (it has its
-                // own scroll column); drag-to-close stays on the handle area.
-                // No outer scroll wrapper — same-direction nested scroll would
-                // muddy the drag-lock (round-3 review W3).
+                // v151 sheet contract: the form scrolls internally (it has its
+                // own scroll column); the lock eats all bidirectional content
+                // leftover, so drag-to-close lives on the fixed title above —
+                // the sheet itself sets dragHandle = null.
                 .nestedScroll(rememberSheetDragLock()),
         ) {
             Text(

@@ -6,6 +6,7 @@ import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.aggregateDeviceSignature
 import app.codeg.android.core.datastore.RecentSearchesStore
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
@@ -23,8 +24,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -161,16 +165,26 @@ class SearchViewModel @Inject constructor(
         // 批v151 All-mode toggle: entering leaves the current rows on screen until the
         // fan-out replaces them (no wipe → no flash); leaving clears the aggregate
         // rows and re-runs single-device search on the visible query.
+        // 重启条件还带聚合范围签名（审查修正）：停在 All 时"跳过全部/改名"要立即
+        // 重新扇出，同 Chats/Activity 聚合的 deviceSig 规则；单模式下签名变化不
+        // 重跑（单设备搜索不读 includeInAll）。
         viewModelScope.launch {
-            repository.searchAll.collectLatest { all ->
-                _ui.update {
-                    // Leaving All also drops the aggregate slices — they must never
-                    // resurface if All is re-entered before a fresh round lands.
-                    if (all) it.copy(allMode = true)
-                    else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
+            var lastSig: String? = null
+            combine(
+                repository.searchAll,
+                repository.visibleProfiles.map { it.aggregateDeviceSignature() }.distinctUntilChanged(),
+            ) { all, sig -> all to sig }
+                .collectLatest { (all, sig) ->
+                    val sigChanged = lastSig != null && sig != lastSig
+                    lastSig = sig
+                    _ui.update {
+                        // Leaving All also drops the aggregate slices — they must never
+                        // resurface if All is re-entered before a fresh round lands.
+                        if (all) it.copy(allMode = true)
+                        else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
+                    }
+                    if (!sigChanged || all) startSearch(_query.value, ++searchEpoch)
                 }
-                startSearch(_query.value, ++searchEpoch)
-            }
         }
         viewModelScope.launch {
             _query.debounce(300).collectLatest { q -> runSearch(q, ++searchEpoch) }
@@ -438,12 +452,16 @@ class SearchViewModel @Inject constructor(
             },
         )
         _ui.update { it.copy(allResults = merged, searching = false) }
-        try {
-            recentStore.add(q)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // ignored
+        // 与单模式同规：只有真实拿到过响应的轮次才记入搜索历史——全军覆没的
+        // 词不记（再次输入或 retry 自然补记）。
+        if (perDevice.any { it.second.isSuccess }) {
+            try {
+                recentStore.add(q)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // ignored
+            }
         }
     }
 }

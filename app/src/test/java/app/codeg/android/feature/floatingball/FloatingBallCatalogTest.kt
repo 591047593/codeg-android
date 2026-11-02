@@ -7,9 +7,9 @@ import org.junit.Test
 /**
  * Catalog invariants for the floating ball (batch v126; v129 dropped the
  * longPress gesture — the 1s hold now moves the ball): the 16-gesture /
- * 25-action tables (v150 added the four quick-center actions) and the binding
- * sanitize semantics (web loadBindings port), plus the font ladder the ball's
- * font actions step through.
+ * 30-action tables (v150 added the four quick-center actions; v151 the five
+ * quick-shell ones) and the binding sanitize semantics (web loadBindings port),
+ * plus the font ladder the ball's font actions step through.
  */
 class FloatingBallCatalogTest {
 
