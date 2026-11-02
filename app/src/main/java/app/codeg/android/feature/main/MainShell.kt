@@ -274,6 +274,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     var showQuickIdea by remember { mutableStateOf(false) }
     var showQuickTask by remember { mutableStateOf(false) }
     var showQuickHandoff by remember { mutableStateOf(false) }
+    // 批v151: ball "quickNewSession" — the global new-session sheet (P6).
+    var showQuickNewSession by remember { mutableStateOf(false) }
     // 每次打开快照一个 token：派发/保存的完成回调可能在 sheet 被关掉、又被重新
     // 打开之后才迟到（VM 协程持有旧闭包）。旧 token 与当前不一致时只弹回执，
     // 不关掉用户刚打开的新 sheet。两个 sheet 分开计数——共用计数器时后开的会
@@ -702,6 +704,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             "quickTask" -> showQuickTask = true
             "quickHandoff" -> showQuickHandoff = true
             "quickSearch" -> pushSurface(ROUTE_SEARCH)
+            // 批v151: global new-session sheet — pick device, then folder, then jump.
+            "quickNewSession" -> showQuickNewSession = true
             // 批v150: the demoted surfaces are pushes; the action ids are UNCHANGED
             // (persisted bindings reference them).
             "tabChats" -> pushSurface(ROUTE_CHATS)
@@ -709,6 +713,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             "tabActivity" -> onTab(HomeTab.ACTIVITY)
             "tabSearch" -> pushSurface(ROUTE_SEARCH)
             "tabSettings" -> onTab(HomeTab.SETTINGS)
+            // 批v151: the two remaining quick-entry tabs join the ball catalog.
+            "tabInbox" -> onTab(HomeTab.INBOX)
+            "tabTasks" -> onTab(HomeTab.TASKS)
             "toggleThemeMode" -> appViewModel.toggleThemeMode()
             "nextAccent" -> appViewModel.cycleAccent()
             "fontScaleUp", "fontScaleDown", "fontScaleReset" -> {
@@ -764,6 +771,19 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     ?: hub.resolveHighlightedRef(owner = null, validServers = valid)
                 ref?.let { openRef(it) }
             }
+            // 批v151: flip the CURRENT list surface's aggregate mode (the "全部"
+            // chip equivalent, bindable to a gesture). Folders has no aggregate
+            // (DEVICE_ONLY swipe scope); >1 device only — a single-device
+            // aggregate has no visible exit (same restraint as cycleProject, R1-4).
+            "toggleAllDevices" -> if (servers.size >= 2) when (currentRoute) {
+                HomeTab.ACTIVITY.route -> appViewModel.setActivityAll(!activityAll)
+                ROUTE_CHATS -> appViewModel.setChatsAll(!chatsAll)
+                ROUTE_SEARCH -> appViewModel.setSearchAll(!searchAll)
+                else -> {}
+            }
+            // Bumps the repository tick the Activity tab's combine already rides —
+            // same channel the workbench's manual refresh uses, no new bus.
+            "refreshActivity" -> appViewModel.refreshActivityAll()
             "ballSettings" -> {
                 onTab(HomeTab.SETTINGS)
                 FloatingBallSettingsBus.open()

@@ -1081,6 +1081,11 @@
     <string name="ball_action_server_next">下一台设备</string>
     <string name="ball_action_server_prev">上一台设备</string>
     <string name="ball_action_ball_settings">球设置</string>
+    <string name="ball_action_quick_new_session">新建会话（选设备目录）</string>
+    <string name="ball_action_tab_inbox">切到收件箱</string>
+    <string name="ball_action_tab_tasks">切到任务板</string>
+    <string name="ball_action_toggle_all">切换全部/单设备</string>
+    <string name="ball_action_refresh_activity">刷新动态</string>
     <string name="ball_action_cycle_project">循环切换项目</string>
     <string name="ball_action_cycle_session">循环切换会话</string>
     <string name="ball_action_open_highlighted">打开高亮会话</string>

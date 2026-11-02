@@ -1095,6 +1095,11 @@
     <string name="ball_action_server_next">Next device</string>
     <string name="ball_action_server_prev">Previous device</string>
     <string name="ball_action_ball_settings">Ball settings</string>
+    <string name="ball_action_quick_new_session">New session (pick device &amp; folder)</string>
+    <string name="ball_action_tab_inbox">Go to Inbox</string>
+    <string name="ball_action_tab_tasks">Go to Tasks</string>
+    <string name="ball_action_toggle_all">Toggle All / single device</string>
+    <string name="ball_action_refresh_activity">Refresh Activity feed</string>
     <string name="ball_action_cycle_project">Cycle project filter</string>
     <string name="ball_action_cycle_session">Cycle sessions</string>
     <string name="ball_action_open_highlighted">Open highlighted session</string>

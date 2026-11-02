@@ -41,9 +41,10 @@ class FloatingBallCatalogTest {
         for (id in listOf("recentSession1", "recentSession2", "recentSession3")) {
             assertTrue("missing action $id", id in FloatingBallCatalog.ACTION_IDS)
         }
-        // v150 appended the four quick-center actions; the count guard stays
-        // so an accidental catalog change is caught in CI.
-        assertEquals(25, FloatingBallCatalog.ACTIONS.size)
+        // v150 appended the four quick-center actions; v151 the five quick-shell
+        // ones (tabInbox/tabTasks/quickNewSession/toggleAllDevices/refreshActivity);
+        // the count guard stays so an accidental catalog change is caught in CI.
+        assertEquals(30, FloatingBallCatalog.ACTIONS.size)
         assertEquals("recentSession1", FloatingBallCatalog.DEFAULT_BINDINGS["upThenRight"])
         assertEquals("recentSession2", FloatingBallCatalog.DEFAULT_BINDINGS["upRightThenDown"])
         assertEquals("recentSession3", FloatingBallCatalog.DEFAULT_BINDINGS["upLeftThenRight"])
@@ -52,6 +53,19 @@ class FloatingBallCatalogTest {
     @Test
     fun `default bindings cover exactly the gesture set`() {
         assertEquals(FloatingBallCatalog.GESTURES.toSet(), FloatingBallCatalog.DEFAULT_BINDINGS.keys)
+    }
+
+    @Test
+    fun `batch v151 adds the five quick-shell actions without touching defaults`() {
+        for (id in listOf("tabInbox", "tabTasks", "quickNewSession", "toggleAllDevices", "refreshActivity")) {
+            assertTrue("missing action $id", id in FloatingBallCatalog.ACTION_IDS)
+        }
+        // v150 policy: catalog growth never rebinds an existing gesture.
+        assertTrue(
+            FloatingBallCatalog.DEFAULT_BINDINGS.values.none {
+                it in setOf("tabInbox", "tabTasks", "quickNewSession", "toggleAllDevices", "refreshActivity")
+            },
+        )
     }
 
     @Test

@@ -32,11 +32,15 @@ object FloatingBallCatalog {
         "quickTask" to R.string.ball_action_quick_task,
         "quickHandoff" to R.string.ball_action_quick_handoff,
         "quickSearch" to R.string.ball_action_quick_search,
+        // 批v151: the global new-session sheet (device → folder, then jump).
+        "quickNewSession" to R.string.ball_action_quick_new_session,
         "tabChats" to R.string.ball_action_tab_chats,
         "tabFolders" to R.string.ball_action_tab_folders,
         "tabActivity" to R.string.ball_action_tab_activity,
         "tabSearch" to R.string.ball_action_tab_search,
         "tabSettings" to R.string.ball_action_tab_settings,
+        "tabInbox" to R.string.ball_action_tab_inbox,
+        "tabTasks" to R.string.ball_action_tab_tasks,
         "toggleThemeMode" to R.string.ball_action_toggle_theme,
         "nextAccent" to R.string.ball_action_next_accent,
         "fontScaleUp" to R.string.ball_action_font_up,
@@ -50,6 +54,9 @@ object FloatingBallCatalog {
         "cycleProject" to R.string.ball_action_cycle_project,
         "cycleSession" to R.string.ball_action_cycle_session,
         "openHighlighted" to R.string.ball_action_open_highlighted,
+        // 批v151: aggregate-mode flip for the current list surface + feed refresh.
+        "toggleAllDevices" to R.string.ball_action_toggle_all,
+        "refreshActivity" to R.string.ball_action_refresh_activity,
         "ballSettings" to R.string.ball_action_ball_settings,
     )
 
