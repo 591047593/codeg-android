@@ -49,3 +49,4 @@
 - 风险①：MainShell 层 sheet 内 hiltViewModel() 解析到 Activity 作用域——QuickActionViewModel 全 app 单例属预期设计（targets 缓存跨次打开复用），但若未来加"每次打开重置表单"需求需改为逐次清 state。
 - 风险②：QuickIdeaSheet/QuickTaskSheet 在 sheet dispose 后 rememberSaveable 丢失 = 每次打开全新表单（与旧收件箱 sheet 行为一致，非回归；未完成内容不落草稿，与旧版同）。
 - 风险③：WorkbenchViewModel 60s 轮询在低端机上属新增常驻协程（gated by tab+foreground，离开即停），首轮数据依赖各设备 health/loader，弱网下统计行显示"加载中/失败"为真实状态非假在线。
+- 风险④（审查副产物，未修）：QuickIdea 若在「上一次保存在途的几毫秒内」关闭并重开、立刻再点保存，新点击会被防抖丢弃，且旧保存完成会让新 sheet 自动关闭（窗口=本地 DataStore upsert 的毫秒级）；另 `pendingSaveAt` 用 remember 而非 rememberSaveable，保存途中旋转屏幕会失去自动关闭。两者均不影响正常路径，留待后续批按 token 绑定处理。
