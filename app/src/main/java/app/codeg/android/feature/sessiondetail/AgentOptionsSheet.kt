@@ -67,6 +67,7 @@ import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.OptionListSheet
 import app.codeg.android.core.designsystem.component.PickerOption
 import app.codeg.android.core.designsystem.component.CodegTextField
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.FolderDetail
@@ -205,19 +206,25 @@ fun AgentOptionsSheet(
                 // a failed pick on a row further down produced a warning the user never
                 // saw. Two lines fit "…please check the network and retry" without
                 // ellipsizing it (one line cut the message off mid-sentence).
-                Box(Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = if (noteText != null) 48.dp else 28.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
+                // 批v151 全锁 + 固定头：锁挂在 Box（盖住滚动区与 notice），标题行
+                // 挪出滚动区作拖拽关闭把手；滚动体吃掉双向剩余拖拽。
+                Box(Modifier.fillMaxWidth().heightIn(max = 560.dp).sheetContentScrollLock()) {
+                    Column(Modifier.fillMaxWidth()) {
                         Text(
                             stringResource(if (ui.isDraftEditable) R.string.agentopts_new_session_title else R.string.agentopts_title),
                             fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary,
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 14.dp),
                         )
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = if (noteText != null) 48.dp else 28.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
 
                         if (ui.isDraftEditable) AgentPickerSection(ui.availableAgents, ui.agent) { viewModel.selectAgent(it) }
 
@@ -338,6 +345,7 @@ fun AgentOptionsSheet(
                             else -> Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) {
                                 Text(stringResource(R.string.agentopts_no_options), fontSize = 13.sp, color = colors.textTertiary)
                             }
+                        }
                         }
                     }
                     noteText?.let { message ->
@@ -537,64 +545,72 @@ private fun BranchPickerContent(
     val locals = list?.local.orEmpty().filter { it.matches(query) }
     val remotes = list?.remote.orEmpty().filterNot { it.endsWith("/HEAD") }.filter { it.matches(query) }
 
-    LazyColumn(
-        Modifier.fillMaxWidth().heightIn(max = 600.dp).padding(horizontal = 16.dp).padding(bottom = 28.dp),
+    // 批v151 全锁 + 固定头：返回+标题行固定作拖拽关闭把手，分支列表进滚动体。
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .sheetContentScrollLock()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item("header") {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = colors.textPrimary)
-                }
-                Text(stringResource(R.string.agentopts_branch), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = colors.textPrimary)
             }
+            Text(stringResource(R.string.agentopts_branch), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
         }
-        ui.notice?.let { msg -> item("err") { Text(msg, fontSize = 12.sp, color = colors.danger) } }
-        item("search") {
-            CodegTextField(query, { query = it }, label = stringResource(R.string.branch_filter), mono = true)
-        }
-        item("new") {
-            NewBranchInline(
-                show = showNew, name = newName, current = current, creating = creating,
-                onShow = { showNew = true }, onName = { newName = it },
-                onCancel = { showNew = false; newName = "" },
-                onCreate = {
-                    creating = true
-                    scope.launch {
-                        val ok = viewModel.createBranch(newName, current)
-                        creating = false
-                        if (ok) onBack()
-                    }
-                },
-            )
-        }
+        LazyColumn(
+            Modifier.fillMaxWidth().heightIn(max = 600.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ui.notice?.let { msg -> item("err") { Text(msg, fontSize = 12.sp, color = colors.danger) } }
+            item("search") {
+                CodegTextField(query, { query = it }, label = stringResource(R.string.branch_filter), mono = true)
+            }
+            item("new") {
+                NewBranchInline(
+                    show = showNew, name = newName, current = current, creating = creating,
+                    onShow = { showNew = true }, onName = { newName = it },
+                    onCancel = { showNew = false; newName = "" },
+                    onCreate = {
+                        creating = true
+                        scope.launch {
+                            val ok = viewModel.createBranch(newName, current)
+                            creating = false
+                            if (ok) onBack()
+                        }
+                    },
+                )
+            }
 
-        if (loading) {
-            item("loading") {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(18.dp))
-                    Text(stringResource(R.string.branch_loading), fontSize = 12.sp, color = colors.textSecondary)
-                }
-            }
-        } else if (locals.isEmpty() && remotes.isEmpty()) {
-            item("empty") { Text(stringResource(R.string.branch_none), fontSize = 12.sp, color = colors.textSecondary, modifier = Modifier.padding(start = 4.dp)) }
-        } else {
-            if (locals.isNotEmpty()) {
-                item("lh") { BranchSectionLabel(stringResource(R.string.branch_local)) }
-                items(locals, key = { "l-$it" }) { name ->
-                    val occupied = worktree.contains(name) && name != current
-                    BranchRowItem(display = name, target = name, isRemote = false, occupied = occupied, isCurrent = name == current, switching = switching == name, enabled = switching == null) {
-                        pick(name, name, false)
+            if (loading) {
+                item("loading") {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(color = colors.accent, modifier = Modifier.size(18.dp))
+                        Text(stringResource(R.string.branch_loading), fontSize = 12.sp, color = colors.textSecondary)
                     }
                 }
-            }
-            if (remotes.isNotEmpty()) {
-                item("rh") { BranchSectionLabel(stringResource(R.string.branch_remote)) }
-                items(remotes, key = { "r-$it" }) { name ->
-                    val target = name.substringAfter('/', name)
-                    val occupied = worktree.contains(target) && target != current
-                    BranchRowItem(display = name, target = target, isRemote = true, occupied = occupied, isCurrent = target == current, switching = switching == name, enabled = switching == null) {
-                        pick(name, target, true)
+            } else if (locals.isEmpty() && remotes.isEmpty()) {
+                item("empty") { Text(stringResource(R.string.branch_none), fontSize = 12.sp, color = colors.textSecondary, modifier = Modifier.padding(start = 4.dp)) }
+            } else {
+                if (locals.isNotEmpty()) {
+                    item("lh") { BranchSectionLabel(stringResource(R.string.branch_local)) }
+                    items(locals, key = { "l-$it" }) { name ->
+                        val occupied = worktree.contains(name) && name != current
+                        BranchRowItem(display = name, target = name, isRemote = false, occupied = occupied, isCurrent = name == current, switching = switching == name, enabled = switching == null) {
+                            pick(name, name, false)
+                        }
+                    }
+                }
+                if (remotes.isNotEmpty()) {
+                    item("rh") { BranchSectionLabel(stringResource(R.string.branch_remote)) }
+                    items(remotes, key = { "r-$it" }) { name ->
+                        val target = name.substringAfter('/', name)
+                        val occupied = worktree.contains(target) && target != current
+                        BranchRowItem(display = name, target = target, isRemote = true, occupied = occupied, isCurrent = target == current, switching = switching == name, enabled = switching == null) {
+                            pick(name, target, true)
+                        }
                     }
                 }
             }

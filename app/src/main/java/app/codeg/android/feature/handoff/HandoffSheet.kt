@@ -31,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
@@ -42,7 +41,7 @@ import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.OptionListSheet
 import app.codeg.android.core.designsystem.component.PickerField
 import app.codeg.android.core.designsystem.component.PickerOption
-import app.codeg.android.core.designsystem.component.rememberSheetDragLock
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,7 +75,8 @@ fun HandoffSheet(
 
     ModalBottomSheet(
         onDismissRequest = { viewModel.reset(); onClose() },
-        // 批v148：拖拽关闭恢复，手势由内容上的 drag lock 单向闸约束。
+        // 批v151：拖拽关闭只认固定头（标题+来源行），滚动区全锁——列表顶下拉
+        // 不再误关（根修见 SheetGestures）。
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = null,
     ) {
@@ -88,8 +88,7 @@ fun HandoffSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .nestedScroll(rememberSheetDragLock())
-                .verticalScroll(rememberScrollState())
+                .sheetContentScrollLock()
                 .padding(horizontal = 16.dp)
                 .padding(top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -106,198 +105,204 @@ fun HandoffSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = CodegTheme.colors.textSecondary,
             )
-
-            HandoffField(
-                label = stringResource(R.string.handoff_goal),
-                value = pkg.goal,
-                onChange = { v -> viewModel.update { it.copy(goal = v) } },
-            )
-            HandoffField(
-                label = stringResource(R.string.handoff_completed),
-                value = pkg.completed,
-                onChange = { v -> viewModel.update { it.copy(completed = v) } },
-            )
-            HandoffField(
-                label = stringResource(R.string.handoff_progress),
-                value = pkg.progress,
-                onChange = { v -> viewModel.update { it.copy(progress = v) } },
-            )
-            HandoffField(
-                label = stringResource(R.string.handoff_decisions),
-                value = pkg.decisions,
-                onChange = { v -> viewModel.update { it.copy(decisions = v) } },
-            )
-            HandoffField(
-                label = stringResource(R.string.handoff_known_issues),
-                value = pkg.knownIssues,
-                onChange = { v -> viewModel.update { it.copy(knownIssues = v) } },
-            )
-            HandoffField(
-                label = stringResource(R.string.handoff_next_steps),
-                value = pkg.nextSteps,
-                onChange = { v -> viewModel.update { it.copy(nextSteps = v) } },
-            )
-
-            // Relay mode: A = context only; B = same + a git precheck note. The
-            // package never carries code — B only attaches an honest status line.
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                FilterChip(
-                    selected = !ui.modeB,
-                    onClick = { viewModel.setModeB(false) },
-                    label = { Text(stringResource(R.string.handoff_mode_a)) },
+                HandoffField(
+                    label = stringResource(R.string.handoff_goal),
+                    value = pkg.goal,
+                    onChange = { v -> viewModel.update { it.copy(goal = v) } },
                 )
-                FilterChip(
-                    selected = ui.modeB,
-                    onClick = { viewModel.setModeB(true) },
-                    label = { Text(stringResource(R.string.handoff_mode_b)) },
+                HandoffField(
+                    label = stringResource(R.string.handoff_completed),
+                    value = pkg.completed,
+                    onChange = { v -> viewModel.update { it.copy(completed = v) } },
                 )
-                if (ui.gitChecking) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                }
-            }
-            if (ui.modeB) {
-                val pc = ui.gitPrecheck
-                Text(
-                    when {
-                        pc == null -> stringResource(R.string.handoff_git_checking)
-                        pc.error != null -> pc.error
-                        else -> stringResource(R.string.handoff_git_result, pc.branch ?: "?", pc.dirtyCount) +
-                            (pc.dirtyPreview.takeIf { it.isNotEmpty() }?.let { " ${it.joinToString("、")}" } ?: "")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = CodegTheme.colors.textSecondary,
+                HandoffField(
+                    label = stringResource(R.string.handoff_progress),
+                    value = pkg.progress,
+                    onChange = { v -> viewModel.update { it.copy(progress = v) } },
                 )
-            }
+                HandoffField(
+                    label = stringResource(R.string.handoff_decisions),
+                    value = pkg.decisions,
+                    onChange = { v -> viewModel.update { it.copy(decisions = v) } },
+                )
+                HandoffField(
+                    label = stringResource(R.string.handoff_known_issues),
+                    value = pkg.knownIssues,
+                    onChange = { v -> viewModel.update { it.copy(knownIssues = v) } },
+                )
+                HandoffField(
+                    label = stringResource(R.string.handoff_next_steps),
+                    value = pkg.nextSteps,
+                    onChange = { v -> viewModel.update { it.copy(nextSteps = v) } },
+                )
 
-            val targets: DispatchTargets = ui.targets
-            // 派发默认预选（设置→通用→派发默认选项）：sheet 打开时若未选设备，
-            // 自动落到默认设备/项目/Agent。
-            val settings by viewModel.settings.collectAsStateWithLifecycle()
-            LaunchedEffect(targets.profiles) {
-                if (device == null && settings.dispatchDefaultDevice.isNotBlank() &&
-                    targets.profiles.any { it.id == settings.dispatchDefaultDevice }
+                // Relay mode: A = context only; B = same + a git precheck note. The
+                // package never carries code — B only attaches an honest status line.
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    device = settings.dispatchDefaultDevice
-                    folderId = null
-                    agent = null
-                    viewModel.loadTarget(settings.dispatchDefaultDevice)
-                }
-            }
-            LaunchedEffect(targets.folders, targets.agents) {
-                if (device == null) return@LaunchedEffect
-                if (folderId == null && settings.dispatchDefaultFolderId > 0 &&
-                    targets.folders.any { it.id == settings.dispatchDefaultFolderId }
-                ) {
-                    folderId = settings.dispatchDefaultFolderId
-                }
-                if (agent == null && settings.dispatchDefaultAgent.isNotBlank()) {
-                    val wire = AgentType.fromWire(settings.dispatchDefaultAgent)
-                    if (wire != AgentType.UNKNOWN && (targets.agents.isEmpty() || wire in targets.agents)) {
-                        agent = wire
+                    FilterChip(
+                        selected = !ui.modeB,
+                        onClick = { viewModel.setModeB(false) },
+                        label = { Text(stringResource(R.string.handoff_mode_a)) },
+                    )
+                    FilterChip(
+                        selected = ui.modeB,
+                        onClick = { viewModel.setModeB(true) },
+                        label = { Text(stringResource(R.string.handoff_mode_b)) },
+                    )
+                    if (ui.gitChecking) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     }
                 }
-            }
-            targets.error?.let {
-                Text(
-                    it,
-                    color = CodegTheme.colors.danger,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
-                )
-            }
-            // §6.3: a dead agent list is a degraded state, not a dead panel —
-            // short inline hint + tappable retry, raw ACP error stays in the log.
-            if (targets.agentsError) {
-                Text(
-                    stringResource(R.string.dispatch_agents_failed) + " · " +
-                        stringResource(R.string.dispatch_retry),
-                    color = CodegTheme.colors.danger,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
-                )
-            }
-            // 统一选择器（批v150）：设备 chips + 项目 PickerField→OptionListSheet
-            // + Agent chips，与共享派发表单同款交互；三列滚轮在此退役。
-            DeviceChipRow(
-                devices = targets.profiles.map { PickerOption(id = it.id, label = it.name) },
-                selectedId = device,
-                loadingDeviceId = if (targets.foldersLoading) device else null,
-                errorDeviceIds = if (targets.error != null || targets.agentsError || targets.foldersError) {
-                    setOfNotNull(device)
-                } else emptySet(),
-                onSelect = { id ->
-                    if (id != device) {
-                        device = id
+                if (ui.modeB) {
+                    val pc = ui.gitPrecheck
+                    Text(
+                        when {
+                            pc == null -> stringResource(R.string.handoff_git_checking)
+                            pc.error != null -> pc.error
+                            else -> stringResource(R.string.handoff_git_result, pc.branch ?: "?", pc.dirtyCount) +
+                                (pc.dirtyPreview.takeIf { it.isNotEmpty() }?.let { " ${it.joinToString("、")}" } ?: "")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CodegTheme.colors.textSecondary,
+                    )
+                }
+
+                val targets: DispatchTargets = ui.targets
+                // 派发默认预选（设置→通用→派发默认选项）：sheet 打开时若未选设备，
+                // 自动落到默认设备/项目/Agent。
+                val settings by viewModel.settings.collectAsStateWithLifecycle()
+                LaunchedEffect(targets.profiles) {
+                    if (device == null && settings.dispatchDefaultDevice.isNotBlank() &&
+                        targets.profiles.any { it.id == settings.dispatchDefaultDevice }
+                    ) {
+                        device = settings.dispatchDefaultDevice
                         folderId = null
                         agent = null
-                        viewModel.loadTarget(id)
+                        viewModel.loadTarget(settings.dispatchDefaultDevice)
                     }
-                },
-            )
-            if (targets.profiles.isEmpty()) {
-                Text(
-                    stringResource(R.string.dispatch_no_device),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = CodegTheme.colors.textTertiary,
-                )
-            }
-            val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
-            AgentChipRow(
-                autoLabel = autoAgentLabel,
-                agents = targets.agents.map { PickerOption(id = it.name, label = it.displayName) },
-                selectedId = agent?.name,
-                onSelect = { name -> agent = AgentType.entries.firstOrNull { it.name == name } },
-            )
-            PickerField(
-                icon = Icons.Rounded.Folder,
-                label = stringResource(R.string.dispatch_project),
-                value = targets.folders.firstOrNull { it.id == folderId }?.name,
-                placeholder = stringResource(
-                    when {
-                        targets.foldersLoading -> R.string.dispatch_defaults_loading
-                        targets.foldersError -> R.string.dispatch_folders_failed
-                        else -> R.string.dispatch_no_folder
-                    },
-                ),
-                onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
-            )
-            ui.error?.let {
-                Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
-            }
-            TextButton(
-                onClick = {
-                    val dev = device ?: return@TextButton
-                    val fid = folderId ?: return@TextButton
-                    viewModel.dispatch(source, dev, fid, targets.folders.firstOrNull { it.id == fid }?.name.orEmpty(), agent)
-                },
-                enabled = device != null && folderId != null && !ui.dispatching && ui.unknownRef == null &&
-                    (pkg.goal.isNotBlank() || pkg.nextSteps.isNotBlank()),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                if (ui.dispatching) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.size(8.dp))
                 }
-                Text(stringResource(R.string.handoff_dispatch))
-            }
-            Text(
-                stringResource(R.string.handoff_no_code_note),
-                style = MaterialTheme.typography.labelSmall,
-                color = CodegTheme.colors.textSecondary,
-            )
-
-            if (folderSheet) {
-                OptionListSheet(
-                    title = stringResource(R.string.dispatch_project),
-                    options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
-                    selectedId = folderId?.toString(),
-                    onSelect = { opt -> folderId = opt.id.toIntOrNull() },
-                    onDismiss = { folderSheet = false },
+                LaunchedEffect(targets.folders, targets.agents) {
+                    if (device == null) return@LaunchedEffect
+                    if (folderId == null && settings.dispatchDefaultFolderId > 0 &&
+                        targets.folders.any { it.id == settings.dispatchDefaultFolderId }
+                    ) {
+                        folderId = settings.dispatchDefaultFolderId
+                    }
+                    if (agent == null && settings.dispatchDefaultAgent.isNotBlank()) {
+                        val wire = AgentType.fromWire(settings.dispatchDefaultAgent)
+                        if (wire != AgentType.UNKNOWN && (targets.agents.isEmpty() || wire in targets.agents)) {
+                            agent = wire
+                        }
+                    }
+                }
+                targets.error?.let {
+                    Text(
+                        it,
+                        color = CodegTheme.colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
+                    )
+                }
+                // §6.3: a dead agent list is a degraded state, not a dead panel —
+                // short inline hint + tappable retry, raw ACP error stays in the log.
+                if (targets.agentsError) {
+                    Text(
+                        stringResource(R.string.dispatch_agents_failed) + " · " +
+                            stringResource(R.string.dispatch_retry),
+                        color = CodegTheme.colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.clickable { device?.let { d -> viewModel.loadTarget(d) } },
+                    )
+                }
+                // 统一选择器（批v150）：设备 chips + 项目 PickerField→OptionListSheet
+                // + Agent chips，与共享派发表单同款交互；三列滚轮在此退役。
+                DeviceChipRow(
+                    devices = targets.profiles.map { PickerOption(id = it.id, label = it.name) },
+                    selectedId = device,
+                    loadingDeviceId = if (targets.foldersLoading) device else null,
+                    errorDeviceIds = if (targets.error != null || targets.agentsError || targets.foldersError) {
+                        setOfNotNull(device)
+                    } else emptySet(),
+                    onSelect = { id ->
+                        if (id != device) {
+                            device = id
+                            folderId = null
+                            agent = null
+                            viewModel.loadTarget(id)
+                        }
+                    },
                 )
+                if (targets.profiles.isEmpty()) {
+                    Text(
+                        stringResource(R.string.dispatch_no_device),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CodegTheme.colors.textTertiary,
+                    )
+                }
+                val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
+                AgentChipRow(
+                    autoLabel = autoAgentLabel,
+                    agents = targets.agents.map { PickerOption(id = it.name, label = it.displayName) },
+                    selectedId = agent?.name,
+                    onSelect = { name -> agent = AgentType.entries.firstOrNull { it.name == name } },
+                )
+                PickerField(
+                    icon = Icons.Rounded.Folder,
+                    label = stringResource(R.string.dispatch_project),
+                    value = targets.folders.firstOrNull { it.id == folderId }?.name,
+                    placeholder = stringResource(
+                        when {
+                            targets.foldersLoading -> R.string.dispatch_defaults_loading
+                            targets.foldersError -> R.string.dispatch_folders_failed
+                            else -> R.string.dispatch_no_folder
+                        },
+                    ),
+                    onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
+                )
+                ui.error?.let {
+                    Text(it, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(
+                    onClick = {
+                        val dev = device ?: return@TextButton
+                        val fid = folderId ?: return@TextButton
+                        viewModel.dispatch(source, dev, fid, targets.folders.firstOrNull { it.id == fid }?.name.orEmpty(), agent)
+                    },
+                    enabled = device != null && folderId != null && !ui.dispatching && ui.unknownRef == null &&
+                        (pkg.goal.isNotBlank() || pkg.nextSteps.isNotBlank()),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (ui.dispatching) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    Text(stringResource(R.string.handoff_dispatch))
+                }
+                Text(
+                    stringResource(R.string.handoff_no_code_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CodegTheme.colors.textSecondary,
+                )
+
+                if (folderSheet) {
+                    OptionListSheet(
+                        title = stringResource(R.string.dispatch_project),
+                        options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
+                        selectedId = folderId?.toString(),
+                        onSelect = { opt -> folderId = opt.id.toIntOrNull() },
+                        onDismiss = { folderSheet = false },
+                    )
+                }
             }
         }
     }

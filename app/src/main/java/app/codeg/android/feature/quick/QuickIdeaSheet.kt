@@ -24,7 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -34,7 +33,7 @@ import app.codeg.android.R
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.datastore.IdeaStore
 import app.codeg.android.core.designsystem.component.PrimaryButton
-import app.codeg.android.core.designsystem.component.rememberSheetDragLock
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -138,53 +137,64 @@ fun QuickIdeaSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         dragHandle = null,
     ) {
+        // 批v151 全锁 + 固定头：标题在滚动区外（拖拽关闭只认它），滚动区吃掉
+        // 双向剩余拖拽——列表顶下拉不再误关这张卡（根修见 SheetGestures）。
         Column(
             Modifier
                 .fillMaxWidth()
-                .nestedScroll(rememberSheetDragLock())
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 12.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .sheetContentScrollLock(),
         ) {
             Text(
                 stringResource(R.string.quick_idea_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = CodegTheme.colors.textPrimary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 12.dp),
             )
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text(stringResource(R.string.quick_idea_title_hint)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text(stringResource(R.string.quick_idea_desc_hint)) },
-                minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (error != null) {
-                Text(error!!, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-                PrimaryButton(
-                    text = stringResource(R.string.common_save),
-                    onClick = {
-                        pendingSaveAt = savedSeq
-                        viewModel.save(title, description)
-                    },
-                    enabled = title.isNotBlank() || description.isNotBlank(),
-                    modifier = Modifier.weight(1f),
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 10.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text(stringResource(R.string.quick_idea_title_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            }
-            if (title.isBlank() && description.isBlank()) {
-                Text(emptyHint, style = MaterialTheme.typography.labelSmall, color = CodegTheme.colors.textTertiary)
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text(stringResource(R.string.quick_idea_desc_hint)) },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (error != null) {
+                    Text(error!!, color = CodegTheme.colors.danger, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                    PrimaryButton(
+                        text = stringResource(R.string.common_save),
+                        onClick = {
+                            pendingSaveAt = savedSeq
+                            viewModel.save(title, description)
+                        },
+                        enabled = title.isNotBlank() || description.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (title.isBlank() && description.isBlank()) {
+                    Text(emptyHint, style = MaterialTheme.typography.labelSmall, color = CodegTheme.colors.textTertiary)
+                }
             }
         }
     }

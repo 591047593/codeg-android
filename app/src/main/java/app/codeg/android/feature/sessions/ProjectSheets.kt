@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
 import app.codeg.android.core.datastore.SessionProject
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 
 /**
@@ -80,7 +81,7 @@ fun AddToProjectSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .sheetContentScrollLock()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
         ) {
@@ -99,105 +100,111 @@ fun AddToProjectSheet(
                 modifier = Modifier.padding(top = 2.dp),
             )
 
-            if (projects.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.add_project_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textTertiary,
-                    modifier = Modifier.padding(top = 16.dp),
-                )
-            } else {
-                Column(Modifier.padding(top = 8.dp)) {
-                    projects.forEach { project ->
-                        val member = project.id in memberOf
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onToggle(project.id, !member) }
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(checked = member, onCheckedChange = { onToggle(project.id, it) })
-                            Icon(
-                                Icons.Rounded.Bookmark,
-                                contentDescription = null,
-                                tint = colors.textTertiary,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                text = project.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = colors.textPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 6.dp),
-                            )
-                            Text(
-                                text = memberCount(project).toString(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textTertiary,
-                            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                if (projects.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.add_project_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textTertiary,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                } else {
+                    Column(Modifier.padding(top = 8.dp)) {
+                        projects.forEach { project ->
+                            val member = project.id in memberOf
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onToggle(project.id, !member) }
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = member, onCheckedChange = { onToggle(project.id, it) })
+                                Icon(
+                                    Icons.Rounded.Bookmark,
+                                    contentDescription = null,
+                                    tint = colors.textTertiary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    text = project.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = colors.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 6.dp),
+                                )
+                                Text(
+                                    text = memberCount(project).toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = colors.textTertiary,
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    placeholder = { Text(stringResource(R.string.add_project_new_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(
-                    onClick = {
-                        val name = newName.trim()
-                        if (name.isNotEmpty()) {
-                            onCreate(name) { created ->
-                                onToggle(created.id, true)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        placeholder = { Text(stringResource(R.string.add_project_new_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isNotEmpty()) {
+                                onCreate(name) { created ->
+                                    onToggle(created.id, true)
+                                }
+                                newName = ""
                             }
-                            newName = ""
-                        }
-                    },
-                    enabled = newName.isNotBlank(),
+                        },
+                        enabled = newName.isNotBlank(),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.add_project_new),
+                            tint = if (newName.isNotBlank()) colors.accent else colors.textTertiary,
+                        )
+                    }
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onManage)
+                        .padding(top = 10.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = stringResource(R.string.add_project_new),
-                        tint = if (newName.isNotBlank()) colors.accent else colors.textTertiary,
+                        Icons.Rounded.Settings,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.project_filter_manage),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.textSecondary,
                     )
                 }
-            }
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onManage)
-                    .padding(top = 10.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.Settings,
-                    contentDescription = null,
-                    tint = colors.textTertiary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    text = stringResource(R.string.project_filter_manage),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.textSecondary,
-                )
             }
         }
     }
@@ -223,7 +230,7 @@ fun ProjectFilterSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .sheetContentScrollLock()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
         ) {
@@ -234,121 +241,127 @@ fun ProjectFilterSheet(
                 color = colors.textPrimary,
             )
 
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { onSelect(null) }
-                    .padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    .verticalScroll(rememberScrollState()),
             ) {
-                Icon(
-                    Icons.Rounded.Dns,
-                    contentDescription = null,
-                    tint = if (activeId == null) colors.accent else colors.textTertiary,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = stringResource(R.string.project_filter_all),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (activeId == null) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (activeId == null) colors.accent else colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                if (activeId == null) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            projects.forEach { project ->
-                val active = project.id == activeId
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onSelect(project.id) }
+                        .clickable { onSelect(null) }
                         .padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Icon(
-                        Icons.Rounded.Bookmark,
+                        Icons.Rounded.Dns,
                         contentDescription = null,
-                        tint = if (active) colors.accent else colors.textTertiary,
+                        tint = if (activeId == null) colors.accent else colors.textTertiary,
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
-                        text = project.name,
+                        text = stringResource(R.string.project_filter_all),
                         style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (active) colors.accent else colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (activeId == null) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (activeId == null) colors.accent else colors.textPrimary,
                         modifier = Modifier.weight(1f),
                     )
-                    Text(
-                        text = (counts[project.id] ?: 0).toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textTertiary,
-                    )
-                    if (active) {
+                    if (activeId == null) {
                         Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
                     }
                 }
-            }
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    placeholder = { Text(stringResource(R.string.add_project_new_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(
-                    onClick = {
-                        val name = newName.trim()
-                        if (name.isNotEmpty()) {
-                            onCreateActivate(name)
-                            newName = ""
+                projects.forEach { project ->
+                    val active = project.id == activeId
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onSelect(project.id) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Bookmark,
+                            contentDescription = null,
+                            tint = if (active) colors.accent else colors.textTertiary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = project.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (active) colors.accent else colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = (counts[project.id] ?: 0).toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                        )
+                        if (active) {
+                            Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
                         }
-                    },
-                    enabled = newName.isNotBlank(),
+                    }
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        placeholder = { Text(stringResource(R.string.add_project_new_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isNotEmpty()) {
+                                onCreateActivate(name)
+                                newName = ""
+                            }
+                        },
+                        enabled = newName.isNotBlank(),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.project_filter_create),
+                            tint = if (newName.isNotBlank()) colors.accent else colors.textTertiary,
+                        )
+                    }
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onManage)
+                        .padding(top = 10.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(
-                        Icons.Rounded.Add,
-                        contentDescription = stringResource(R.string.project_filter_create),
-                        tint = if (newName.isNotBlank()) colors.accent else colors.textTertiary,
+                        Icons.Rounded.Settings,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.project_filter_manage),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.textSecondary,
                     )
                 }
-            }
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onManage)
-                    .padding(top = 10.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Rounded.Settings,
-                    contentDescription = null,
-                    tint = colors.textTertiary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    text = stringResource(R.string.project_filter_manage),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.textSecondary,
-                )
             }
         }
     }

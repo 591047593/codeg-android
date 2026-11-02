@@ -573,6 +573,14 @@ private fun DispatchSheet(
                 .fillMaxWidth()
                 .nestedScroll(rememberSheetDragLock()),
         ) {
+            // Fixed header outside DispatchForm's own scroll: the title row stays
+            // the drag-to-close area (v151 sheet contract), same as QuickTaskSheet.
+            Text(
+                stringResource(R.string.inbox_dispatch),
+                style = MaterialTheme.typography.titleMedium,
+                color = CodegTheme.colors.textPrimary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
             app.codeg.android.feature.dispatch.DispatchForm(
                 host = viewModel,
                 defaultSessionMode = true,

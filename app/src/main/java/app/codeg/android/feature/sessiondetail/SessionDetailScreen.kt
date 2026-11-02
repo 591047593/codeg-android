@@ -120,6 +120,7 @@ import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.OptionListSheet
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.component.PickerOption
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.LoadingView
@@ -689,7 +690,7 @@ private fun MessageTocSheet(
         )
         LazyColumn(
             // Content-bound height: a 2-entry TOC shouldn't stretch into a full-height sheet.
-            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).sheetContentScrollLock(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             itemsIndexed(entries, key = { _, e -> e.node.id }) { ordinal, entry ->

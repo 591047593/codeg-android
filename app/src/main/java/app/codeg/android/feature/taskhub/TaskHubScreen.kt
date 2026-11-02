@@ -77,6 +77,7 @@ import app.codeg.android.core.data.isEffectivelyDeferred
 import app.codeg.android.core.data.taskStatusUi
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import java.time.Instant
 
@@ -738,11 +739,11 @@ private fun TaskDetailSheet(
     val task = entry.task
     val colors = CodegTheme.colors
     LaunchedEffect(entry.serverId, task.id) { onOpen() }
+    // 批v151 全锁 + 固定头：标题行在滚动区外（拖拽关闭只认它），其余进滚动体。
     Column(
         Modifier
             .fillMaxWidth()
-            .nestedScroll(rememberSheetDragLock())
-            .verticalScroll(rememberScrollState())
+            .sheetContentScrollLock()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -764,61 +765,67 @@ private fun TaskDetailSheet(
                 Tag(stringResource(R.string.task_deferred_tag), colors.warning)
             }
         }
-        task.resultSummary?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-        }
-        InfoGrid(entry, folderName)
-        // All native actions, confirm-gated (任务书 §4.4 — 以实际 API 能力为准).
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
         ) {
-            when (task.status) {
-                "todo", "queued" -> {
-                    SheetAction(R.string.task_action_start, busy) { onAction(ConfirmAction.START(entry)) }
-                    SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
-                }
-                "preparing", "running", "awaiting_input" ->
-                    SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
-                "review" -> {
-                    SheetAction(R.string.task_action_merge, busy) { onAction(ConfirmAction.MERGE(entry)) }
-                    SheetAction(R.string.task_action_complete, busy) { onAction(ConfirmAction.COMPLETE(entry)) }
-                    SheetAction(R.string.task_action_return, busy) { onAction(ConfirmAction.RETURN(entry)) }
-                    SheetAction(R.string.task_action_deliver_pr, busy) { onAction(ConfirmAction.DELIVER_PR(entry)) }
-                }
-                "failed" -> {
-                    SheetAction(R.string.task_action_retry, busy) { onAction(ConfirmAction.RETRY(entry)) }
-                    SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
-                }
-                "canceled", "cancelled" ->
-                    SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
+            task.resultSummary?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
-            when {
-                // 搁置 only where the server accepts it (set_deferred filters to
-                // DEFERRABLE = review/failed elsewhere — the button would always
-                // no-op with a 4xx); unshelve shows whenever the flag is set.
-                isEffectivelyDeferred(task) ->
-                    SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
-                task.status in DEFERRABLE_STATUSES ->
-                    SheetAction(R.string.task_action_defer, busy) { onAction(ConfirmAction.DEFER(entry)) }
+            InfoGrid(entry, folderName)
+            // All native actions, confirm-gated (任务书 §4.4 — 以实际 API 能力为准).
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+            ) {
+                when (task.status) {
+                    "todo", "queued" -> {
+                        SheetAction(R.string.task_action_start, busy) { onAction(ConfirmAction.START(entry)) }
+                        SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
+                    }
+                    "preparing", "running", "awaiting_input" ->
+                        SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
+                    "review" -> {
+                        SheetAction(R.string.task_action_merge, busy) { onAction(ConfirmAction.MERGE(entry)) }
+                        SheetAction(R.string.task_action_complete, busy) { onAction(ConfirmAction.COMPLETE(entry)) }
+                        SheetAction(R.string.task_action_return, busy) { onAction(ConfirmAction.RETURN(entry)) }
+                        SheetAction(R.string.task_action_deliver_pr, busy) { onAction(ConfirmAction.DELIVER_PR(entry)) }
+                    }
+                    "failed" -> {
+                        SheetAction(R.string.task_action_retry, busy) { onAction(ConfirmAction.RETRY(entry)) }
+                        SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
+                    }
+                    "canceled", "cancelled" ->
+                        SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
+                }
+                when {
+                    // 搁置 only where the server accepts it (set_deferred filters to
+                    // DEFERRABLE = review/failed elsewhere — the button would always
+                    // no-op with a 4xx); unshelve shows whenever the flag is set.
+                    isEffectivelyDeferred(task) ->
+                        SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
+                    task.status in DEFERRABLE_STATUSES ->
+                        SheetAction(R.string.task_action_defer, busy) { onAction(ConfirmAction.DEFER(entry)) }
+                }
+                when {
+                    // status-only archived rows (old server builds) get an exit too:
+                    // unarchive clears archived_at; the row then shows by its status.
+                    task.archivedAt != null || task.status == "archived" ->
+                        SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
+                    task.status == "done" || task.status == "canceled" || task.status == "cancelled" ->
+                        SheetAction(R.string.task_action_archive, busy) { onAction(ConfirmAction.ARCHIVE(entry)) }
+                }
+                SheetAction(R.string.task_action_delete, busy, danger = true) { onAction(ConfirmAction.DELETE(entry)) }
             }
-            when {
-                // status-only archived rows (old server builds) get an exit too:
-                // unarchive clears archived_at; the row then shows by its status.
-                task.archivedAt != null || task.status == "archived" ->
-                    SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
-                task.status == "done" || task.status == "canceled" || task.status == "cancelled" ->
-                    SheetAction(R.string.task_action_archive, busy) { onAction(ConfirmAction.ARCHIVE(entry)) }
-            }
-            SheetAction(R.string.task_action_delete, busy, danger = true) { onAction(ConfirmAction.DELETE(entry)) }
+            TaskDetailBody(detail, onLoadDiff, onRetry = onOpen)
+            Spacer(Modifier.padding(bottom = 24.dp))
         }
-        TaskDetailBody(detail, onLoadDiff, onRetry = onOpen)
-        Spacer(Modifier.padding(bottom = 24.dp))
     }
 }
 

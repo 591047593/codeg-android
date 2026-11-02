@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.PlanEntry
 import app.codeg.android.feature.sessiondetail.rendering.LivePlanView
@@ -52,6 +53,7 @@ fun PlanProgressSheet(live: LiveTurnState, onDismiss: () -> Unit) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .sheetContentScrollLock()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
         ) {

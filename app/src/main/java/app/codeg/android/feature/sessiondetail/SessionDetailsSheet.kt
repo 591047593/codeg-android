@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
 import app.codeg.android.core.designsystem.component.AgentAvatar
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.component.statusColor
 import app.codeg.android.core.designsystem.component.statusLabel
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -68,10 +69,11 @@ fun SessionDetailsSheet(
         sheetState = sheetState,
         containerColor = colors.bgElevated,
     ) {
+        // 批v151 全锁 + 固定头：头像+标题行固定（拖拽关闭只认它），明细进滚动体。
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .sheetContentScrollLock()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -87,92 +89,99 @@ fun SessionDetailsSheet(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (summary != null) {
-                DetailRow(stringResource(R.string.sessionactions_detail_status), statusLabel(summary.status), statusColor(summary.status))
-                ui.folderName?.let { DetailRow(stringResource(R.string.sessionactions_detail_folder), it) }
-                DetailRow(stringResource(R.string.sessionactions_detail_messages), summary.messageCount.toString())
-                summary.model?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_model), it) }
-                summary.gitBranch?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_branch), it) }
-                DetailRow(stringResource(R.string.sessionactions_detail_created), RelativeTime.compact(summary.createdAt))
-                DetailRow(stringResource(R.string.sessionactions_detail_updated), RelativeTime.compact(summary.updatedAt))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                if (summary != null) {
+                    DetailRow(stringResource(R.string.sessionactions_detail_status), statusLabel(summary.status), statusColor(summary.status))
+                    ui.folderName?.let { DetailRow(stringResource(R.string.sessionactions_detail_folder), it) }
+                    DetailRow(stringResource(R.string.sessionactions_detail_messages), summary.messageCount.toString())
+                    summary.model?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_model), it) }
+                    summary.gitBranch?.takeIf { it.isNotBlank() }?.let { DetailRow(stringResource(R.string.sessionactions_detail_branch), it) }
+                    DetailRow(stringResource(R.string.sessionactions_detail_created), RelativeTime.compact(summary.createdAt))
+                    DetailRow(stringResource(R.string.sessionactions_detail_updated), RelativeTime.compact(summary.updatedAt))
+                }
+
+                HorizontalDivider(thickness = 0.5.dp, color = colors.hairline)
+
+                CopyRow(
+                    label = stringResource(R.string.session_info_working_dir),
+                    value = workingDir ?: stringResource(R.string.session_info_unavailable),
+                    enabled = !workingDir.isNullOrBlank(),
+                    onCopy = viewModel::copyWorkingDir,
+                )
+                CopyRow(
+                    label = stringResource(R.string.session_info_cli_id),
+                    value = cliId ?: stringResource(R.string.session_info_no_id),
+                    enabled = !cliId.isNullOrBlank(),
+                    onCopy = viewModel::copySessionId,
+                )
+                val codegId = ui.summary?.id?.toString()
+                CopyRow(
+                    label = stringResource(R.string.session_info_codeg_id),
+                    value = codegId ?: "—",
+                    enabled = codegId != null,
+                    onCopy = { codegId?.let(viewModel::copyText) },
+                )
+
+                Text(
+                    stringResource(R.string.session_info_note),
+                    fontSize = 12.sp,
+                    color = colors.textTertiary,
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // One-tap copy of the alignment block (batch v123) — the primary
+                    // action; the JSON export moves to the secondary slot.
+                    ActionTile(
+                        icon = Icons.Rounded.ContentCopy,
+                        label = stringResource(R.string.session_info_action_handoff),
+                        emphasized = true,
+                        enabled = !workingDir.isNullOrBlank() || cliId != null,
+                        onClick = {
+                            onDismiss()
+                            viewModel.copySessionSummary()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ActionTile(
+                        icon = Icons.Rounded.FileDownload,
+                        label = stringResource(
+                            if (ui.isExporting) R.string.session_info_exporting else R.string.session_info_action_export,
+                        ),
+                        emphasized = false,
+                        enabled = !ui.isExporting && !workingDir.isNullOrBlank(),
+                        onClick = {
+                            // Dismiss first: both actions surface their result via the
+                            // snackbar, which the open sheet would otherwise cover.
+                            onDismiss()
+                            viewModel.exportSessionJson()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ActionTile(
+                        icon = Icons.Rounded.Refresh,
+                        label = stringResource(
+                            if (ui.isReconnecting) R.string.session_info_reconnecting else R.string.session_info_action_reconnect,
+                        ),
+                        emphasized = false,
+                        enabled = !ui.isReconnecting && !workingDir.isNullOrBlank() && !cliId.isNullOrBlank(),
+                        onClick = {
+                            onDismiss()
+                            viewModel.reconnectSession()
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    stringResource(R.string.session_info_copy_all_hint),
+                    fontSize = 12.sp,
+                    color = colors.textTertiary,
+                )
             }
-
-            HorizontalDivider(thickness = 0.5.dp, color = colors.hairline)
-
-            CopyRow(
-                label = stringResource(R.string.session_info_working_dir),
-                value = workingDir ?: stringResource(R.string.session_info_unavailable),
-                enabled = !workingDir.isNullOrBlank(),
-                onCopy = viewModel::copyWorkingDir,
-            )
-            CopyRow(
-                label = stringResource(R.string.session_info_cli_id),
-                value = cliId ?: stringResource(R.string.session_info_no_id),
-                enabled = !cliId.isNullOrBlank(),
-                onCopy = viewModel::copySessionId,
-            )
-            val codegId = ui.summary?.id?.toString()
-            CopyRow(
-                label = stringResource(R.string.session_info_codeg_id),
-                value = codegId ?: "—",
-                enabled = codegId != null,
-                onCopy = { codegId?.let(viewModel::copyText) },
-            )
-
-            Text(
-                stringResource(R.string.session_info_note),
-                fontSize = 12.sp,
-                color = colors.textTertiary,
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // One-tap copy of the alignment block (batch v123) — the primary
-                // action; the JSON export moves to the secondary slot.
-                ActionTile(
-                    icon = Icons.Rounded.ContentCopy,
-                    label = stringResource(R.string.session_info_action_handoff),
-                    emphasized = true,
-                    enabled = !workingDir.isNullOrBlank() || cliId != null,
-                    onClick = {
-                        onDismiss()
-                        viewModel.copySessionSummary()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                ActionTile(
-                    icon = Icons.Rounded.FileDownload,
-                    label = stringResource(
-                        if (ui.isExporting) R.string.session_info_exporting else R.string.session_info_action_export,
-                    ),
-                    emphasized = false,
-                    enabled = !ui.isExporting && !workingDir.isNullOrBlank(),
-                    onClick = {
-                        // Dismiss first: both actions surface their result via the
-                        // snackbar, which the open sheet would otherwise cover.
-                        onDismiss()
-                        viewModel.exportSessionJson()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                ActionTile(
-                    icon = Icons.Rounded.Refresh,
-                    label = stringResource(
-                        if (ui.isReconnecting) R.string.session_info_reconnecting else R.string.session_info_action_reconnect,
-                    ),
-                    emphasized = false,
-                    enabled = !ui.isReconnecting && !workingDir.isNullOrBlank() && !cliId.isNullOrBlank(),
-                    onClick = {
-                        onDismiss()
-                        viewModel.reconnectSession()
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Text(
-                stringResource(R.string.session_info_copy_all_hint),
-                fontSize = 12.sp,
-                color = colors.textTertiary,
-            )
         }
     }
 }
