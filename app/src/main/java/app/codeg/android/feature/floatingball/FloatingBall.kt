@@ -250,19 +250,24 @@ fun FloatingBallHost(
             Text("◆", color = colors.onAccent, fontSize = (sizeDp.value * 0.4f).sp)
         }
 
-        AnimatedVisibility(
-            visible = showPanel,
-            enter = fadeIn(tween(140)),
-            exit = fadeOut(tween(120)),
-        ) {
-            // Scrim eats the outside tap and closes; the panel itself is anchored
-            // near the ball like the web version's panel (clamped on-screen both
-            // axes — a wide quick panel must never clip at an edge-docked ball).
+        // Scrim eats the outside tap and closes. It lives OUTSIDE the fade:
+        // during the 120ms exit it would otherwise keep a full-screen hit
+        // target over the ball and swallow the next tap.
+        if (showPanel) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .clickable(onClick = { showPanel = false }),
             )
+        }
+        AnimatedVisibility(
+            visible = showPanel,
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(120)),
+        ) {
+            // The panel itself is anchored near the ball like the web version's
+            // panel (clamped on-screen both axes — a wide quick panel must never
+            // clip at an edge-docked ball).
             val panelPx = with(density) { PANEL_WIDTH.roundToPx() }
             val liftPx = with(density) { PANEL_LIFT.roundToPx() }
             var panelHpx by remember { mutableStateOf(0) }

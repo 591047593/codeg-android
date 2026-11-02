@@ -57,9 +57,11 @@ class QuickIdeaViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
-    /** One-shot "saved" event the sheet closes on. */
-    private val _saved = MutableStateFlow(false)
-    val saved: StateFlow<Boolean> = _saved.asStateFlow()
+    /** 保存成功计数器（单调递增、永不清零）。sheet 用「打开时的基线」判断本次
+     *  会话内是否发生了新保存：布尔位会在保存完成于 sheet 关闭之后残留 true，
+     *  下次打开瞬间就把新 sheet 关掉（VM 是 activity 作用域，比 sheet 长寿）。 */
+    private val _savedSeq = MutableStateFlow(0)
+    val savedSeq: StateFlow<Int> = _savedSeq.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
@@ -86,7 +88,7 @@ class QuickIdeaViewModel @Inject constructor(
                 )
                 try {
                     ideaStore.upsert(entry)
-                    _saved.value = true
+                    _savedSeq.value += 1
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -96,10 +98,6 @@ class QuickIdeaViewModel @Inject constructor(
                 saving.set(false)
             }
         }
-    }
-
-    fun consumeSaved() {
-        _saved.value = false
     }
 
     /** The VM is activity-scoped and outlives the sheet — clear last open's
@@ -119,17 +117,17 @@ fun QuickIdeaSheet(
     onDismiss: () -> Unit,
     viewModel: QuickIdeaViewModel = hiltViewModel(),
 ) {
-    val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val savedSeq by viewModel.savedSeq.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     var title by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
     val emptyHint = stringResource(R.string.quick_idea_empty_hint)
 
-    LaunchedEffect(saved) {
-        if (saved) {
-            viewModel.consumeSaved()
-            onDismiss()
-        }
+    // 打开基线：只对「本次打开之后」发生的保存关 sheet。上次关闭前后台完成的
+    // 保存（seq 已进位）不会把这次刚打开的 sheet 立刻关掉。
+    val savedBaseline = remember { savedSeq }
+    LaunchedEffect(savedSeq) {
+        if (savedSeq > savedBaseline) onDismiss()
     }
     // VM 比 sheet 长寿（activity 作用域）——清掉上次打开残留的错误行。
     LaunchedEffect(Unit) { viewModel.clearError() }

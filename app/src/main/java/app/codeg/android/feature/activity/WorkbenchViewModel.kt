@@ -71,6 +71,7 @@ data class WorkbenchStats(
  * cross-fade may briefly hold both composed; each gate only allows one-shot
  * rounds then, never a second running loop).
  */
+
 /** One combine emission of the poll loop. */
 private data class RoundSignal(
     val tick: Int,
@@ -174,25 +175,24 @@ class WorkbenchViewModel @Inject constructor(
                     RoundSignal(tick, active, fg, selectedId, allMode) }
                 .collectLatest { signal ->
                     val (tick, active, fg, selectedId, allMode) = signal
-                    // Scope change (device chip / 全部 switch) must produce a fresh
-                    // round even when the tick counter is unchanged — otherwise a
-                    // newly scoped device shows stale "0/0" for up to a minute.
-                    val scope = selectedId to allMode
-                    val scopeChanged = scope != lastSeenScope
-                    if (scopeChanged) lastSeenScope = scope
-                    if (tick > 0 && (tick != lastSeenTick || scopeChanged)) {
-                        lastSeenTick = tick
-                        fetchRound()
-                    }
-                    when {
-                        active && fg -> {
-                            if (tick == 0) fetchRound()
-                            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
-                                delay(POLL_INTERVAL_MS)
-                                fetchRound()
-                            }
+                    if (active && fg) {
+                        // Scope is only tracked while the workbench is actually
+                        // visible: leaving the tab must not consume the change,
+                        // or returning would serve stale data for a full minute.
+                        val scope = selectedId to allMode
+                        val scopeChanged = scope != lastSeenScope
+                        lastSeenScope = scope
+                        if (tick == 0 || tick != lastSeenTick || scopeChanged) {
+                            lastSeenTick = tick
+                            fetchRound()
                         }
-                        tick == 0 -> fetchRound()
+                        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                            delay(POLL_INTERVAL_MS)
+                            fetchRound()
+                        }
+                    } else if (tick == 0) {
+                        // First-ever round runs even off-tab so the tab opens warm.
+                        fetchRound()
                     }
                 }
         }
@@ -211,6 +211,10 @@ class WorkbenchViewModel @Inject constructor(
     }
 
     private suspend fun fetchRoundInner() {
+        // Bump first: even an empty or cancelled round must invalidate older
+        // in-flight per-device writes (a profile may vanish mid-round).
+        generation += 1
+        val gen = generation
         val profiles = repository.profiles.first()
         val devices = profiles.filter {
             it.id in scopeIds(profiles, repository.activityAll.value, repository.selectedId.first())
@@ -224,8 +228,6 @@ class WorkbenchViewModel @Inject constructor(
             tasks.value = tasks.value.filter { it.serverId in known }
             return
         }
-        generation += 1
-        val gen = generation
         round.update { r ->
             r.copy(
                 deviceStates = r.deviceStates.participating(ids).let { kept ->

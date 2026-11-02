@@ -261,6 +261,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     var showQuickIdea by remember { mutableStateOf(false) }
     var showQuickTask by remember { mutableStateOf(false) }
     var showQuickHandoff by remember { mutableStateOf(false) }
+    // 每次打开快照一个 token：派发/保存的完成回调可能在 sheet 被关掉、又被重新
+    // 打开之后才迟到（VM 协程持有旧闭包）。旧 token 与当前不一致时只弹回执，
+    // 不关掉用户刚打开的新 sheet。两个 sheet 分开计数——共用计数器时后开的会
+    // 顶掉前一个的 token，理论上能让先开的 sheet 永远关不掉。
+    val quickIdeaSeq = remember { java.util.concurrent.atomic.AtomicInteger(0) }
+    val quickTaskSeq = remember { java.util.concurrent.atomic.AtomicInteger(0) }
     // Single-flight for the aggregate row tap (leave All → select device → push the
     // conversation). Double-taps would otherwise stack two detail pages resolved
     // against whichever selection landed last.
@@ -1085,10 +1091,16 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         val quickActionViewModel: QuickActionViewModel = hiltViewModel()
         val quickConfirmed by quickActionViewModel.confirmedRef.collectAsStateWithLifecycle()
         if (showQuickIdea) {
-            QuickIdeaSheet(onDismiss = { showQuickIdea = false })
+            val openToken = remember { quickIdeaSeq.incrementAndGet() }
+            QuickIdeaSheet(
+                onDismiss = { if (quickIdeaSeq.get() == openToken) showQuickIdea = false },
+            )
         }
         if (showQuickTask) {
-            QuickTaskSheet(onDismiss = { showQuickTask = false })
+            val openToken = remember { quickTaskSeq.incrementAndGet() }
+            QuickTaskSheet(
+                onDismiss = { if (quickTaskSeq.get() == openToken) showQuickTask = false },
+            )
         }
         if (showQuickHandoff) {
             RecentSessionPickerSheet(

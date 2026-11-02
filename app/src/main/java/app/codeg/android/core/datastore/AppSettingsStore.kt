@@ -52,7 +52,10 @@ data class AppSettings(
     val dispatchDefaultAgent: String = "",
 ) {
     companion object {
-        const val DEFAULT_ACCENT = "orange"
+        // 批v150 §2.1 克制的青蓝：持久化层默认值必须与 AccentPalette.DEFAULT 的
+        // id 一致（那边只兜「未知 id」，新用户拿到的是这里的值）。显式选过
+        // 配色的用户存的是自己的 id，不受影响。
+        const val DEFAULT_ACCENT = "teal"
         // 批v150 four-tab workbench: the app opens on the workbench. A stored
         // startTab from the five-tab era ("chats") falls back here via HomeTab.byRoute.
         const val DEFAULT_START_TAB = "activity"
