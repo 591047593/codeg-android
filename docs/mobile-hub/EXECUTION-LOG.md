@@ -95,7 +95,8 @@
 - 审查轮 10（848251f）：QuickIdeaSheet 补 remember import（最后一个硬编译错）、想法保存改「本 sheet 点击才自动关闭」、工作台重新激活立即补一轮（wasVisible 边沿）、RoundSignal 归位。
 - 偏差（规划内）：DispatchForm 提前至 C 提交（快捷任务卡必须开真实表单）；工作台统计为固定头部；需要处理预览置顶；WheelColumn 组件保留（几何单测仍锁行为）。审查期新增记录：默认强调色两处同步改 teal（从未选色用户外观变化）；想法卡沿用 updatedAt；设备 chips 预检失败仅有装饰性红点（可及性缺口，记入后续批）。
 - 测试限制：dell 无模拟器/真机+本地编译纪律禁止 → 静态审查+ui1/ui2 对照+CI 云端闸，无截图不做假图；真机验收清单（10 项+八张截图）移交主人，回填 UIUX-TEST-REPORT.md。
-- 发版（计划）：push fork/main → Verify 绿 → 打 tag v1.0.1-fengx.41（versionCode 43）→ Release（双 APK+sha256+TG）。
+- 发版：tag v1.0.1-fengx.41（versionCode 43）→ Verify 41434887156 绿 → Release 41436030362 绿（双 APK+sha256+TG）。
+- 推送后回执：首跑 Verify 41434217560 红——FloatingBallCatalogTest 仍断言 21 个动作，本批新增 4 个快捷中心动作未同步（8d54671 改为 25）；复跑 41434887156 全绿（491 tests）。
 
 ## 批v148：二级卡片拖拽关闭恢复（v147 手势锁真机回归修复）（2026-11-02）
 - 背景：主人装 v36 反馈——二级卡片（派发单/任务详情/项目选择）支持拖动下滑但「瞬间弹回，无法触发手动隐藏」。根因=批v147 一刀切：confirmValueChange 拒绝 Hidden 让所有拖拽关闭失效（原意防手势穿透，结果把标准关闭手势也禁了）。

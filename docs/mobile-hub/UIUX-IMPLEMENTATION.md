@@ -1,6 +1,6 @@
 # UIUX-IMPLEMENTATION — Mobile Hub V2 实施记录（批v150 · ui重构任务书 交付物 2）
 
-> 日期：2026-11-02 · 版本：v1.0.1-fengx.41（versionCode 43）· 基线 tag v1.0.1-fengx.40（commit 67a9610）→ 12 提交（77a22b7^…848251f，含阶段 A），42 文件 +3570/−960（另有文档提交仅改 docs/）。
+> 日期：2026-11-02 · 版本：v1.0.1-fengx.41（versionCode 43）· 基线 tag v1.0.1-fengx.40（commit 67a9610）→ 15 提交（77a22b7^…8d54671，含阶段 A、推送后单测修正与文档订正），43 文件 +3592/−963。
 > 任务书：`/mnt/Projects/codeg/docs/writing-block (1).md`；验收清单：`writing-block (2).md`。
 
 ## 1. 新的信息架构

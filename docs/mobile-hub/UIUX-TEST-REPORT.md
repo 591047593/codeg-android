@@ -1,6 +1,6 @@
 # UIUX-TEST-REPORT — Mobile Hub V2 测试报告（批v150 · ui重构任务书 交付物 3）
 
-> 日期：2026-11-02 · 版本 v1.0.1-fengx.41（versionCode 43）· 提交范围 77a22b7^…848251f（含阶段 A 共 12 提交）。
+> 日期：2026-11-02 · 版本 v1.0.1-fengx.41（versionCode 43）· 提交范围 77a22b7^…8d54671（含阶段 A 共 15 提交）。
 > **测试环境限制（如实声明）**：dell 无 Android 模拟器/真机，且本地编译/打包属主人 deny-by-default 资源纪律（重活一律走云端 CI）。本批验证 = 本地静态审查 + ui1/ui2 对照 + CI 云端闸；**不含真机截图与自动化 UI 测试，也不制作任何假截图**。真机行为验收清单见 §4，移交主人装包后逐项打勾，结果回填本文件。
 
 ## 1. 本地静态验证（全部通过）
@@ -14,8 +14,8 @@
 
 | 关卡 | 状态 | 说明 |
 |---|---|---|
-| Verify（push main） | 待推送后记录 run id | 编译+单测唯一门禁；ServerStoreTest 超时为既有抖动，假红时 `gh run rerun --failed` |
-| Release（tag v1.0.1-fengx.41） | 待打 tag 后记录 run id | 签名校验 + 双 APK + sha256 + Telegram 直链 |
+| Verify（push main） | ✅ run 41434887156 | 编译+单测唯一门禁；首跑 41434217560 红：FloatingBallCatalogTest 仍断言 21 个动作（本批新增 4 个），修正为 25 后复跑绿（491 tests）；ServerStoreTest 超时为既有抖动，假红时 `gh run rerun --failed` |
+| Release（tag v1.0.1-fengx.41） | ✅ run 41436030362 | 签名校验 + 双 APK（现代版 51,724,640 B / 兼容版 52,183,600 B）+ sha256 + Telegram 直链（step success） |
 
 ## 3. 对抗性审查（推送前，10 轮 + 修复复审）
 
