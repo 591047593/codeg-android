@@ -1308,6 +1308,7 @@
     <string name="quick_idea_empty_hint">写点内容再保存。</string>
     <string name="quick_idea_auto_title">想法 %1$s</string>
     <string name="quick_task_title">创建任务</string>
+    <string name="quick_new_session_title">新建会话</string>
     <string name="dispatch_summary_title">派发摘要</string>
     <string name="dispatch_button_session">创建会话</string>
     <string name="dispatch_button_task">创建任务</string>

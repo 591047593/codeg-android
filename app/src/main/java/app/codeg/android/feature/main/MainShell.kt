@@ -81,6 +81,7 @@ import app.codeg.android.feature.inbox.InboxScreen
 import app.codeg.android.feature.projects.ProjectDetailScreen
 import app.codeg.android.feature.quick.QuickActionViewModel
 import app.codeg.android.feature.quick.QuickIdeaSheet
+import app.codeg.android.feature.quick.QuickNewSessionSheet
 import app.codeg.android.feature.quick.QuickTaskSheet
 import app.codeg.android.feature.quick.RecentSessionPickerSheet
 import app.codeg.android.feature.search.SearchScreen
@@ -282,6 +283,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // 顶掉前一个的 token，理论上能让先开的 sheet 永远关不掉。
     val quickIdeaSeq = remember { java.util.concurrent.atomic.AtomicInteger(0) }
     val quickTaskSeq = remember { java.util.concurrent.atomic.AtomicInteger(0) }
+    val quickNewSessionSeq = remember { java.util.concurrent.atomic.AtomicInteger(0) }
     // Single-flight for the aggregate row tap (leave All → select device → push the
     // conversation). Double-taps would otherwise stack two detail pages resolved
     // against whichever selection landed last.
@@ -1193,6 +1195,19 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     }
                 },
                 onDismiss = { showQuickHandoff = false },
+            )
+        }
+        // 批v151: the ball's 全局新建会话 sheet — session CONFIRMED closes the
+        // sheet and jumps to the created conversation (no receipt dialog), via
+        // the same owning-device dance as the inbox's v149 session dispatch.
+        if (showQuickNewSession) {
+            val openToken = remember { quickNewSessionSeq.incrementAndGet() }
+            QuickNewSessionSheet(
+                onConfirmedSession = { serverId, conversationId ->
+                    if (quickNewSessionSeq.get() == openToken) showQuickNewSession = false
+                    handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                },
+                onDismiss = { if (quickNewSessionSeq.get() == openToken) showQuickNewSession = false },
             )
         }
 

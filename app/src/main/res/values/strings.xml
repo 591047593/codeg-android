@@ -1322,6 +1322,7 @@
     <string name="quick_idea_empty_hint">Write something to save.</string>
     <string name="quick_idea_auto_title">Idea %1$s</string>
     <string name="quick_task_title">New task</string>
+    <string name="quick_new_session_title">New session</string>
     <string name="dispatch_summary_title">Summary</string>
     <string name="dispatch_button_session">Create session</string>
     <string name="dispatch_button_task">Create task</string>
