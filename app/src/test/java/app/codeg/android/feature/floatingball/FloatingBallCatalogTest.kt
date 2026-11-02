@@ -7,8 +7,9 @@ import org.junit.Test
 /**
  * Catalog invariants for the floating ball (batch v126; v129 dropped the
  * longPress gesture — the 1s hold now moves the ball): the 16-gesture /
- * 21-action tables and the binding sanitize semantics (web loadBindings port),
- * plus the font ladder the ball's font actions step through.
+ * 25-action tables (v150 added the four quick-center actions) and the binding
+ * sanitize semantics (web loadBindings port), plus the font ladder the ball's
+ * font actions step through.
  */
 class FloatingBallCatalogTest {
 
@@ -40,7 +41,9 @@ class FloatingBallCatalogTest {
         for (id in listOf("recentSession1", "recentSession2", "recentSession3")) {
             assertTrue("missing action $id", id in FloatingBallCatalog.ACTION_IDS)
         }
-        assertEquals(21, FloatingBallCatalog.ACTIONS.size)
+        // v150 appended the four quick-center actions; the count guard stays
+        // so an accidental catalog change is caught in CI.
+        assertEquals(25, FloatingBallCatalog.ACTIONS.size)
         assertEquals("recentSession1", FloatingBallCatalog.DEFAULT_BINDINGS["upThenRight"])
         assertEquals("recentSession2", FloatingBallCatalog.DEFAULT_BINDINGS["upRightThenDown"])
         assertEquals("recentSession3", FloatingBallCatalog.DEFAULT_BINDINGS["upLeftThenRight"])
