@@ -581,6 +581,7 @@ private fun DispatchSheet(
             app.codeg.android.feature.dispatch.DispatchForm(
                 host = viewModel,
                 defaultSessionMode = true,
+                ideaId = idea.id,
                 initialTitle = idea.title,
                 initialDescription = idea.description,
                 onResult = onResult,

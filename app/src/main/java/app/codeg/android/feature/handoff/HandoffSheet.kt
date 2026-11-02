@@ -293,7 +293,7 @@ fun HandoffSheet(
             if (folderSheet) {
                 OptionListSheet(
                     title = stringResource(R.string.dispatch_project),
-                    options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name) },
+                    options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
                     selectedId = folderId?.toString(),
                     onSelect = { opt -> folderId = opt.id.toIntOrNull() },
                     onDismiss = { folderSheet = false },

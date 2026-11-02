@@ -1,5 +1,6 @@
 package app.codeg.android.feature.quick
 
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
@@ -35,6 +36,7 @@ import app.codeg.android.core.designsystem.component.PrimaryButton
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -52,6 +54,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class QuickIdeaViewModel @Inject constructor(
     private val ideaStore: IdeaStore,
+    @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     /** One-shot "saved" event the sheet closes on. */
@@ -61,31 +64,48 @@ class QuickIdeaViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    // 双击防抖：一次保存只落一条草稿（UUID 各异、内容相同的两条只会添乱）。
+    private val saving = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun save(title: String, description: String) {
         if (title.isBlank() && description.isBlank()) return
+        if (!saving.compareAndSet(false, true)) return
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            val autoTitle = "想法 " + DateTimeFormatter.ofPattern("MM-dd HH:mm").format(LocalDateTime.now())
-            val entry = IdeaEntry(
-                id = UUID.randomUUID().toString(),
-                title = title.trim().ifBlank { autoTitle },
-                description = description.trim(),
-                createdAt = now,
-                updatedAt = now,
-            )
             try {
-                ideaStore.upsert(entry)
-                _saved.value = true
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                _error.value = "想法保存失败（本地存储异常）"
+                val now = System.currentTimeMillis()
+                val autoTitle = appContext.getString(
+                    R.string.quick_idea_auto_title,
+                    DateTimeFormatter.ofPattern("MM-dd HH:mm").format(LocalDateTime.now()),
+                )
+                val entry = IdeaEntry(
+                    id = UUID.randomUUID().toString(),
+                    title = title.trim().ifBlank { autoTitle },
+                    description = description.trim(),
+                    createdAt = now,
+                    updatedAt = now,
+                )
+                try {
+                    ideaStore.upsert(entry)
+                    _saved.value = true
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    _error.value = "想法保存失败（本地存储异常）"
+                }
+            } finally {
+                saving.set(false)
             }
         }
     }
 
     fun consumeSaved() {
         _saved.value = false
+    }
+
+    /** The VM is activity-scoped and outlives the sheet — clear last open's
+     *  error so a fresh sheet doesn't greet the user with old news. */
+    fun clearError() {
+        _error.value = null
     }
 }
 
@@ -111,6 +131,8 @@ fun QuickIdeaSheet(
             onDismiss()
         }
     }
+    // VM 比 sheet 长寿（activity 作用域）——清掉上次打开残留的错误行。
+    LaunchedEffect(Unit) { viewModel.clearError() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

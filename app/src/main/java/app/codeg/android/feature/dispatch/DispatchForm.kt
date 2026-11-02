@@ -137,6 +137,8 @@ fun DispatchForm(
     modifier: Modifier = Modifier,
     /** Host A (inbox) opens in session mode; host B (ball) opens in task mode. */
     defaultSessionMode: Boolean = true,
+    /** 收件箱宿主传入草稿 id——CONFIRMED 后删草稿、UNKNOWN 卡片绑定都靠它（v140 契约）。 */
+    ideaId: String? = null,
     /** Seed values for the title/description fields (host A prefills from the
      *  idea being dispatched; host B starts blank). Sheet-lifetime state — the
      *  sheet is disposed between opens, so a plain init matches the old sheet. */
@@ -487,6 +489,7 @@ fun DispatchForm(
                 } else agent
                 host.dispatch(
                     DispatchFormSubmit(
+                        ideaId = ideaId,
                         serverId = dev,
                         folderId = fid,
                         folderName = targets.folders.firstOrNull { it.id == fid }?.name.orEmpty(),
@@ -519,7 +522,8 @@ fun DispatchForm(
     if (branchSheet) {
         // First row is the project default (跟随分支); picked branches only
         // count while branchFresh — a stale list can never be submitted.
-        val defaultId = "__default__"
+        // \u0000 不可能出现在 git 分支名里——防止真实同名分支把 LazyColumn key 撞重复。
+        val defaultId = "\u0000default"
         OptionListSheet(
             title = stringResource(R.string.dispatch_pick_branch),
             options = listOf(

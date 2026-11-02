@@ -65,8 +65,10 @@ data class WorkbenchStats(
  * Deliberately separate from [TaskHubViewModel] (which lives behind the 任务板
  * tab and carries detail caches / action machinery): the workbench only feeds
  * counters, so its poll runs at 60s (vs the board's 25s), holds no details, and
- * takes no actions. The two never poll at once — tabs are mutually exclusive and
- * each VM gates on its own active flag.
+ * takes no actions. Steady-state polling never overlaps — tabs are mutually
+ * exclusive and each VM gates on its own active flag (a tab switch's short
+ * cross-fade may briefly hold both composed; each gate only allows one-shot
+ * rounds then, never a second running loop).
  */
 @HiltViewModel
 class WorkbenchViewModel @Inject constructor(

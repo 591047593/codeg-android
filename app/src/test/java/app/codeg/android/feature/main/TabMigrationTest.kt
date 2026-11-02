@@ -26,7 +26,8 @@ class TabMigrationTest {
     @Test
     fun `unknown routes never resurrect demoted tabs`() {
         val migrated = HomeTab.orderedBy(listOf("chats", "search", "bogus", "inbox"))
-        assertEquals(listOf(HomeTab.INBOX, HomeTab.ACTIVITY, HomeTab.TASKS), migrated)
+        // known=[INBOX] first, then every remaining tab in enum order (4 tabs total).
+        assertEquals(listOf(HomeTab.INBOX, HomeTab.ACTIVITY, HomeTab.TASKS, HomeTab.SETTINGS), migrated)
     }
 
     @Test

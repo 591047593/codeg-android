@@ -57,7 +57,24 @@ class QuickActionViewModel @Inject constructor(
     private val _targets = MutableStateFlow(DispatchTargets())
     override val targets: StateFlow<DispatchTargets> = _targets.asStateFlow()
 
+    /** B-7 hoisted (round-3 review): the CONFIRMED receipt renders at SHELL
+     *  level (MainShell), so a sheet dismissed mid-dispatch can't swallow it. */
+    val confirmedRef = MutableStateFlow<DispatchRef?>(null)
+    fun confirmCreated(ref: DispatchRef) { confirmedRef.value = ref }
+    fun clearConfirmed() { confirmedRef.value = null }
+
+    /** The VM is activity-scoped and outlives the sheet — a stale error line
+     *  must not greet the next open. */
+    fun clearError() {
+        if (!_formUi.value.dispatching) {
+            _formUi.value = _formUi.value.copy(error = null)
+        }
+    }
+
     init {
+        // Same crash-recovery sweep as every dispatch surface (DispatchService
+        // contract): a PENDING corpse must not depend on visiting the inbox tab.
+        viewModelScope.launch { dispatchService.sweepPendingToUnknown() }
         // Device chips come from the live visible profiles; the loader owns
         // folders/agents per selection. Resubscribe loop: a DataStore failure
         // degrades to a stale list, never a dead VM (v130 class guard).

@@ -1321,4 +1321,3 @@
     <string name="dispatch_created_title">%1$s created</string>
     <string name="dispatch_created_body">“%2$s” on %1$s is in. Check the task board (or the session) for its live status.</string>
 </resources>
-</resources>

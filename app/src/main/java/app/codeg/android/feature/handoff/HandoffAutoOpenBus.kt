@@ -14,11 +14,21 @@ object HandoffAutoOpenBus {
     /** "serverId:conversationId" awaiting auto-open, or null. */
     val pending = MutableStateFlow<String?>(null)
 
+    /** When [fire] last ran — an unclaimed intent EXPIRES (SessionAutoStart
+     *  同款 staleness 家族): a pending that outlives [FRESH_MS] must never
+     *  ambush the user by auto-opening a sheet minutes/hours later. */
+    val firedAtEpochMs = MutableStateFlow(0L)
+
     fun fire(serverId: String, conversationId: Int) {
+        firedAtEpochMs.value = System.currentTimeMillis()
         pending.value = "$serverId:$conversationId"
     }
 
     fun consume() {
         pending.value = null
     }
+
+    fun isFresh(): Boolean = System.currentTimeMillis() - firedAtEpochMs.value < FRESH_MS
+
+    private const val FRESH_MS = 60_000L
 }

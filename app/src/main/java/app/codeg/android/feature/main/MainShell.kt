@@ -22,10 +22,12 @@ import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
@@ -54,6 +56,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -76,6 +79,7 @@ import app.codeg.android.feature.floatingball.floatBallSizeDp
 import app.codeg.android.feature.floatingball.stepFontScale
 import app.codeg.android.feature.inbox.InboxScreen
 import app.codeg.android.feature.projects.ProjectDetailScreen
+import app.codeg.android.feature.quick.QuickActionViewModel
 import app.codeg.android.feature.quick.QuickIdeaSheet
 import app.codeg.android.feature.quick.QuickTaskSheet
 import app.codeg.android.feature.quick.RecentSessionPickerSheet
@@ -1076,7 +1080,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         }
 
         // 批v150 quick-center sheets — shell-level like the project filter sheet,
-        // so the ball's cards work from ANY surface underneath.
+        // so the ball's cards work from ANY surface underneath. The VM below is
+        // the SAME activity-scoped instance the sheets resolve (host B).
+        val quickActionViewModel: QuickActionViewModel = hiltViewModel()
+        val quickConfirmed by quickActionViewModel.confirmedRef.collectAsStateWithLifecycle()
         if (showQuickIdea) {
             QuickIdeaSheet(onDismiss = { showQuickIdea = false })
         }
@@ -1096,6 +1103,32 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     }
                 },
                 onDismiss = { showQuickHandoff = false },
+            )
+        }
+
+        // B-7 屏级回执（审查轮1 W2 上移）：快捷创建的 CONFIRMED 结果在这里渲染，
+        // sheet 中途被关也不吞回执。
+        quickConfirmed?.let { ref ->
+            val noun = stringResource(
+                if (ref.sessionMode) R.string.dispatch_mode_session else R.string.dispatch_mode_task,
+            )
+            AlertDialog(
+                onDismissRequest = { quickActionViewModel.clearConfirmed() },
+                title = { Text(stringResource(R.string.dispatch_created_title, noun)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.dispatch_created_body,
+                            ref.serverName.ifBlank { ref.serverId },
+                            ref.title,
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { quickActionViewModel.clearConfirmed() }) {
+                        Text(stringResource(R.string.common_ok))
+                    }
+                },
             )
         }
 

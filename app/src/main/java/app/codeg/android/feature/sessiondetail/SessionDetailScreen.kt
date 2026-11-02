@@ -178,6 +178,12 @@ fun SessionDetailScreen(
     LaunchedEffect(pendingHandoff, ui.loading) {
         val key = pendingHandoff ?: return@LaunchedEffect
         if (ui.loading) return@LaunchedEffect
+        // 过期意图不自动开门（审查轮1 M-1）：用户早已放弃的交接，几十分钟后
+        // 偶然点开同一会话不应凭空弹出交接单——过期即清。
+        if (!app.codeg.android.feature.handoff.HandoffAutoOpenBus.isFresh()) {
+            app.codeg.android.feature.handoff.HandoffAutoOpenBus.consume()
+            return@LaunchedEffect
+        }
         if (key == viewModel.sessionKey) {
             app.codeg.android.feature.handoff.HandoffAutoOpenBus.consume()
             showHandoff = true

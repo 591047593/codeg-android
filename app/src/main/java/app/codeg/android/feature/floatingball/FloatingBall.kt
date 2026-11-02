@@ -26,7 +26,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -342,15 +344,14 @@ fun FloatingBallHost(
                             color = colors.textTertiary,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
                         )
-                        FloatingBallCatalog.ACTIONS.forEach { (id, labelRes) ->
+                        // "panel" 是手势绑定语义（开面板），面板内自身无意义——不渲染死行。
+                        FloatingBallCatalog.ACTIONS.filter { it.first != "panel" }.forEach { (id, labelRes) ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (id != "panel") {
-                                            showPanel = false
-                                            onAction(id)
-                                        }
+                                        showPanel = false
+                                        onAction(id)
                                     }
                                     .padding(horizontal = 14.dp, vertical = 11.dp),
                             ) {
