@@ -100,6 +100,8 @@ fun ActivityScreen(
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     val stats by workbench.stats.collectAsStateWithLifecycle()
+    // 批v151 头部折叠记忆（跨启动）：点击立即生效（VM 内存态乐观更新），落盘异步。
+    val display by workbench.display.collectAsStateWithLifecycle()
     // Workbench poll only while this tab is composed (60s, foreground-gated).
     DisposableEffect(workbench) {
         workbench.setActive(true)
@@ -197,6 +199,10 @@ fun ActivityScreen(
             // feed's scroll/highlight machinery below is untouched.
             WorkbenchHeader(
                 stats = stats,
+                overviewCollapsed = display.overviewCollapsed,
+                attentionCollapsed = display.attentionCollapsed,
+                onToggleOverview = { workbench.setOverviewCollapsed(!display.overviewCollapsed) },
+                onToggleAttention = { workbench.setAttentionCollapsed(!display.attentionCollapsed) },
                 onOpenChats = onOpenChats,
                 onOpenFolders = onOpenFolders,
                 onOpenSearch = onOpenSearch,

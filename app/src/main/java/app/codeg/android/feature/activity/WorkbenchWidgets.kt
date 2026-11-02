@@ -1,5 +1,11 @@
 package app.codeg.android.feature.activity
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Search
@@ -26,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,7 +48,85 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
  * 批v150 工作台头三块（统计行 / 快捷入口行 / 需要处理预览）——全部真实数据：
  * 数字来自 [WorkbenchViewModel] 的任务板同源投影，快捷入口只做导航，预览行
  * 跳任务板。放在 feed 上方的固定区，feed 的滚动/高亮机制（v132-v137）零改动。
+ * 批v151：总览（统计+快捷）与需要处理两个区可独立折叠，状态由
+ * [WorkbenchViewModel.display] 持久化。
  */
+
+/**
+ * 总览折叠轨：展开时是右端「收起」的细条（不再占正文空间之外的高度），
+ * 折叠时显示一行摘要 + 展开箭头。整条可点（Role.Button + onClickLabel），
+ * 两个方向的触达目标都是全宽——与 v150 面板 2×2 卡的触达口径一致。
+ */
+@Composable
+private fun WorkbenchOverviewRail(
+    stats: WorkbenchStats,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = CodegTheme.colors
+    val summary = if (stats.hasLoaded) {
+        stringResource(
+            R.string.workbench_overview_summary,
+            stats.runningTasks,
+            stats.attentionTasks,
+            "${stats.onlineDevices}/${stats.totalDevices}",
+        )
+    } else {
+        "…"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                onClickLabel = stringResource(
+                    if (collapsed) R.string.workbench_overview_expand else R.string.workbench_overview_collapse
+                ),
+                role = Role.Button,
+                onClick = onToggle,
+            )
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    ) {
+        if (collapsed) {
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textTertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(18.dp),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.workbench_overview_collapse),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+            )
+            Icon(
+                Icons.Rounded.ExpandLess,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** Collapsible content slide: opens downward from the rail, closes upward. */
+private fun headerExpand() = expandVertically(expandFrom = Alignment.Top, animationSpec = tween(220)) + fadeIn(tween(220))
+
+private fun headerCollapse() = shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(180)) + fadeOut(tween(150))
 
 /** One stat card: value + label. Value "…" until the first round lands. */
 @Composable
@@ -208,10 +295,15 @@ private fun AttentionRow(entry: app.codeg.android.core.data.TaskBoardEntry, onCl
     }
 }
 
-/** 需要处理卡：≤3 条真实任务预览 + 去任务板。空态整块不渲染。 */
+/**
+ * 需要处理卡：≤3 条真实任务预览 + 去任务板。空态整块不渲染。
+ * 批v151：标题行（除去任务板 chip 外）可点折叠/展开预览行。
+ */
 @Composable
 internal fun WorkbenchAttentionCard(
     stats: WorkbenchStats,
+    collapsed: Boolean,
+    onToggleCollapse: () -> Unit,
     onOpenTasks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -229,13 +321,35 @@ internal fun WorkbenchAttentionCard(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(
-                text = stringResource(R.string.workbench_stat_attention),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.textPrimary,
-                modifier = Modifier.weight(1f),
-            )
+            // Toggle target = title + chevron only; 去任务板 keeps its own tap.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(
+                        onClickLabel = stringResource(
+                            if (collapsed) R.string.workbench_overview_expand else R.string.workbench_overview_collapse
+                        ),
+                        role = Role.Button,
+                        onClick = onToggleCollapse,
+                    )
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.workbench_stat_attention),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textPrimary,
+                )
+                Icon(
+                    if (collapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                    contentDescription = null,
+                    tint = colors.textTertiary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenTasks).padding(horizontal = 6.dp, vertical = 3.dp),
@@ -253,23 +367,31 @@ internal fun WorkbenchAttentionCard(
                 )
             }
         }
-        Spacer(Modifier.size(2.dp))
-        stats.attentionPreview.forEach { entry -> AttentionRow(entry, onOpenTasks) }
-        if (stats.attentionTasks > stats.attentionPreview.size) {
-            Text(
-                text = stringResource(R.string.workbench_attention_more, stats.attentionTasks - stats.attentionPreview.size),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textTertiary,
-                modifier = Modifier.padding(start = 6.dp, top = 2.dp).clickable(onClick = onOpenTasks),
-            )
+        AnimatedVisibility(visible = !collapsed, enter = headerExpand(), exit = headerCollapse()) {
+            Column {
+                Spacer(Modifier.size(2.dp))
+                stats.attentionPreview.forEach { entry -> AttentionRow(entry, onOpenTasks) }
+                if (stats.attentionTasks > stats.attentionPreview.size) {
+                    Text(
+                        text = stringResource(R.string.workbench_attention_more, stats.attentionTasks - stats.attentionPreview.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                        modifier = Modifier.padding(start = 6.dp, top = 2.dp).clickable(onClick = onOpenTasks),
+                    )
+                }
+            }
         }
     }
 }
 
-/** The whole fixed header: stats → quick entry → attention preview. */
+/** The whole fixed header: collapse rail → stats → quick entry → attention preview. */
 @Composable
 internal fun WorkbenchHeader(
     stats: WorkbenchStats,
+    overviewCollapsed: Boolean,
+    attentionCollapsed: Boolean,
+    onToggleOverview: () -> Unit,
+    onToggleAttention: () -> Unit,
     onOpenChats: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -278,8 +400,13 @@ internal fun WorkbenchHeader(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        WorkbenchStatsRow(stats, modifier = Modifier.padding(top = 8.dp))
-        WorkbenchQuickRow(onOpenChats, onOpenFolders, onOpenSearch, onOpenNewSession)
-        WorkbenchAttentionCard(stats, onOpenTasks)
+        WorkbenchOverviewRail(stats, overviewCollapsed, onToggleOverview, modifier = Modifier.padding(top = 6.dp))
+        AnimatedVisibility(visible = !overviewCollapsed, enter = headerExpand(), exit = headerCollapse()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                WorkbenchStatsRow(stats)
+                WorkbenchQuickRow(onOpenChats, onOpenFolders, onOpenSearch, onOpenNewSession)
+            }
+        }
+        WorkbenchAttentionCard(stats, attentionCollapsed, onToggleAttention, onOpenTasks)
     }
 }

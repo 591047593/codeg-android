@@ -13,6 +13,8 @@ import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.buildBoard
 import app.codeg.android.core.data.participating
 import app.codeg.android.core.datastore.ServerProfile
+import app.codeg.android.core.datastore.WorkbenchDisplay
+import app.codeg.android.core.datastore.WorkbenchDisplayStore
 import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -83,8 +86,32 @@ private data class RoundSignal(
 @HiltViewModel
 class WorkbenchViewModel @Inject constructor(
     private val repository: ServerRepository,
+    private val displayStore: WorkbenchDisplayStore,
     @ApplicationContext appContext: Context,
 ) : ViewModel() {
+
+    // 批v151 头部折叠记忆：store 是正本，内存 StateFlow 是乐观投影（点击立即生效，
+    // 落盘异步）；store 读取失败时保持展开态，不打断 stats 轮询。
+    private val _display = MutableStateFlow(WorkbenchDisplay())
+    val display: StateFlow<WorkbenchDisplay> = _display.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            // catch 不拦 CancellationException（结构化取消照常）；DataStore 读取失败
+            // 保持展开态即可，与 stats 的 retryWhen 同一策略取向。
+            displayStore.display.catch { }.collect { _display.value = it }
+        }
+    }
+
+    fun setOverviewCollapsed(collapsed: Boolean) {
+        _display.value = _display.value.copy(overviewCollapsed = collapsed)
+        viewModelScope.launch { displayStore.setOverviewCollapsed(collapsed) }
+    }
+
+    fun setAttentionCollapsed(collapsed: Boolean) {
+        _display.value = _display.value.copy(attentionCollapsed = collapsed)
+        viewModelScope.launch { displayStore.setAttentionCollapsed(collapsed) }
+    }
 
     /** Raw per-device slices (ids are per-server) — every device ever fetched in
      *  this VM's lifetime; the projection re-scopes instantly from this cache. */
