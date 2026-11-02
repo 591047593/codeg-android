@@ -95,6 +95,13 @@ class ServerRepository @Inject constructor(
 
     fun setChatsAll(all: Boolean) { _chatsAll.value = all }
 
+    // Search-tab aggregate ("全部") mode (批v151) — the third twin. Same rules:
+    // in-memory only, fan-out lives in SearchViewModel, cold start is single-device.
+    private val _searchAll = MutableStateFlow(false)
+    val searchAll: StateFlow<Boolean> = _searchAll.asStateFlow()
+
+    fun setSearchAll(all: Boolean) { _searchAll.value = all }
+
     /** Refresh tick for the aggregate Chats list (mode bumps + conversationsChanged). */
     private val _chatsRefreshTick = MutableStateFlow(0)
     val chatsRefreshTick: StateFlow<Int> = _chatsRefreshTick.asStateFlow()

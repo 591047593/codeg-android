@@ -42,11 +42,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -59,6 +61,12 @@ import app.codeg.android.feature.sessions.SessionRow
 @Composable
 fun SearchScreen(
     onOpenConversation: (Int) -> Unit,
+    // 批v151 All mode: the device bar's 全部 chip enters the aggregate fan-out.
+    // Rows render merged hits with their owning device; pin/rename/delete are
+    // withheld (server-local ids must not be mutated from the merged list) and a
+    // row open rides the owning-device handoff, exactly like the Chats aggregate.
+    allMode: Boolean = false,
+    onOpenAggregateRow: (serverId: String, conversationId: Int) -> Unit = { _, id -> onOpenConversation(id) },
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -151,7 +159,47 @@ fun SearchScreen(
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             EmptyState(Icons.Rounded.Search, stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_for, ui.query))
                         }
-                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    else -> if (allMode) {
+                        // 批v151 All mode: merged hits + a device-failure banner (same
+                        // "devices unreachable" language as the Activity aggregate).
+                        // Keys are serverId-scoped — conversation ids collide across
+                        // devices and would crash LazyColumn's duplicate-key check.
+                        val failed = ui.deviceStates.filter { it.status == DeviceLoadStatus.FAILED }
+                        Column(Modifier.fillMaxSize()) {
+                            if (failed.isNotEmpty()) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.activity_devices_unreachable,
+                                        failed.joinToString { it.name },
+                                    ),
+                                    fontSize = 12.sp,
+                                    color = colors.warning,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
+                            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                                items(ui.allResults, key = { "${it.serverId}:${it.conversation.id}" }) { hit ->
+                                    SessionRow(
+                                        hit.conversation,
+                                        onClick = { viewModel.submit(); onOpenAggregateRow(hit.serverId, hit.conversation.id) },
+                                        modifier = Modifier.animateItem(),
+                                        // Folder ids are server-local and the All view has
+                                        // no per-device label map; the owning device name
+                                        // is the identity that matters here.
+                                        folderName = null,
+                                        onTogglePin = null,
+                                        onDelete = null,
+                                        onRename = null,
+                                        serverName = hit.serverName,
+                                    )
+                                }
+                            }
+                        }
+                    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                         items(ui.results, key = { it.id }) { c ->
                             SessionRow(
                                 c,

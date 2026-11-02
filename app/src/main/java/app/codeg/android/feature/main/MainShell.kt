@@ -141,13 +141,18 @@ internal const val ROUTE_FOLDERS = "folders"
 internal const val ROUTE_SEARCH = "search"
 
 /**
- * Shape of the Activity tab's device sequence for the horizontal device swipe
- * (batch v123). 批v150: the old DEVICES_ONLY scope (Folders) retired with the
- * Folders tab — the gesture is gated to tab routes and Folders is a push now.
+ * Shape of a surface's device sequence for the horizontal device swipe (batch
+ * v123; 批v151 revives the second shape for the demoted push surfaces).
  */
 internal enum class DeviceSwipeScope {
-    /** Activity: aggregate "All" is index 0, devices follow (GlobalDeviceBar order). */
+    /** Aggregate "All" is index 0, devices follow (GlobalDeviceBar order). Used
+     *  by Activity and — 批v151 — the Chats/Search pushes, whose aggregates the
+     *  All chip now enters. */
     WITH_ALL,
+
+    /** 批v151: Folders push — no aggregate exists there, devices are 0..n-1 and
+     *  both ends fall through to [DeviceSwipeVerdict.Tab] (a no-op on pushes). */
+    DEVICE_ONLY,
 }
 
 /** What a committed device-swipe step should do (pure verdict from [resolveDeviceSwipeStep]). */
@@ -169,14 +174,20 @@ internal sealed interface DeviceSwipeVerdict {
  * outer tab-switch layer picks it up — mirroring the Activity tab's established
  * "inner first, outer at the edge" convention. The verdict names the DEVICE INDEX,
  * never a profile id — the caller resolves it against the live server list.
- * (批v150: the scope parameter retired with the Folders tab — Activity's
- * WITH_ALL shape is the only sequence left.)
+ * (批v151: [scope] selects the sequence shape — WITH_ALL counts the aggregate
+ * "All" as index 0; DEVICE_ONLY has no All row and both ends are Tab.)
  */
 internal fun resolveDeviceSwipeStep(
     currentIndex: Int,
     deviceCount: Int,
     step: Int,
+    scope: DeviceSwipeScope = DeviceSwipeScope.WITH_ALL,
 ): DeviceSwipeVerdict {
+    if (scope == DeviceSwipeScope.DEVICE_ONLY) {
+        val next = currentIndex + step
+        if (next < 0 || next >= deviceCount) return DeviceSwipeVerdict.Tab
+        return DeviceSwipeVerdict.Device(deviceIndex = next)
+    }
     // The sequence's logical bounds: All + devices → deviceCount+1 entries.
     val last = deviceCount // devices occupy 1..deviceCount
     val next = currentIndex + step
@@ -252,6 +263,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val activityAll by appViewModel.activityAll.collectAsStateWithLifecycle()
     // Aggregate "全部" mode for the Chats tab + the project filter (batch v132).
     val chatsAll by appViewModel.chatsAll.collectAsStateWithLifecycle()
+    // 批v151: the Search push joins the aggregate family (device bar All chip).
+    val searchAll by appViewModel.searchAll.collectAsStateWithLifecycle()
     val sessionProjects by appViewModel.sessionProjects.collectAsStateWithLifecycle()
     val sessionProjectMembers by appViewModel.sessionProjectMembers.collectAsStateWithLifecycle()
     val activeProjectId by appViewModel.activeProjectId.collectAsStateWithLifecycle()
@@ -405,7 +418,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // aggregate surface must not clear the filter, or Back couldn't return to the
     // exact 全部 view it came from; the effect re-runs and enforces the invariant the
     // moment the tab is revealed again.
-    androidx.compose.runtime.LaunchedEffect(currentRoute, activityAll, chatsAll) {
+    androidx.compose.runtime.LaunchedEffect(currentRoute, activityAll, chatsAll, searchAll) {
         // currentBackStackEntryAsState starts at null for one frame after rotation /
         // process restore (the NavHost restores its graph during composition, after
         // the initial read). Adjudicating on that frame used to clear the project
@@ -417,7 +430,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // stale filter would silently narrow the rows.
         if (currentRoute in barBearingRoutes) {
             val aggregateOn = (currentRoute == HomeTab.ACTIVITY.route && activityAll) ||
-                (currentRoute == ROUTE_CHATS && chatsAll)
+                (currentRoute == ROUTE_CHATS && chatsAll) ||
+                (currentRoute == ROUTE_SEARCH && searchAll)
             if (!aggregateOn) appViewModel.setActiveProject(null)
         }
     }
@@ -448,31 +462,40 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // screens — full-screen pushes and the rail layout don't need it, and the
     // gesture modifier itself skips the system back-gesture edge band.
     //
-    // With a device-swipe setting on, the swipe is claimed by the device sequence
+    // With the device-swipe layer on, the swipe is claimed by the device sequence
     // first (the GlobalDeviceBar's own order): mid-sequence it switches devices
     // only, and falling off either END hands the gesture back to the tab switch —
-    // the "inner first, outer at the edge" convention. Activity and Folders have
-    // SEPARATE settings toggles (v123 regression fix); single-device setups get no
-    // device layer and keep plain tab swipes. The per-tab sequence shape
-    // ([DeviceSwipeScope]) and the step arithmetic live in [resolveDeviceSwipeStep]
-    // (pure, unit-tested); here we only apply its verdict.
-    // 批v150: only the Activity tab keeps the device-swipe layer — the Folders
-    // toggle/scope retired when Folders became a push surface.
+    // the "inner first, outer at the edge" convention. 批v151: the three demoted
+    // list pushes carry the device layer too (mandate §四: 手势快速切换设备) —
+    // Chats/Search use WITH_ALL (their All chip enters the aggregate), Folders is
+    // DEVICE_ONLY, and on pushes the Tab verdict is a NO-OP (there is no tab
+    // sequence to fall through to from a pushed screen; currentTabIndex is -1 and
+    // the old index arithmetic would land on homeTabs[-1+step]).
     val deviceSwipeScope = when (currentRoute) {
         HomeTab.ACTIVITY.route ->
             if (appSettings.activityDeviceSwipe) DeviceSwipeScope.WITH_ALL else null
+        ROUTE_CHATS, ROUTE_SEARCH -> DeviceSwipeScope.WITH_ALL
+        ROUTE_FOLDERS -> DeviceSwipeScope.DEVICE_ONLY
         else -> null
     }
     val deviceSwipeOn = deviceSwipeScope != null && servers.size > 1
     val currentTabIndex = homeTabs.indexOfFirst { it.route == currentRoute }
-    // Index inside the tab's device sequence: Activity counts the aggregate "All"
-    // as 0; Folders has no All row, so devices are 0..n-1.
+    // Index inside the surface's device sequence: WITH_ALL counts the active
+    // aggregate "All" as 0 (each surface reads its own flag); DEVICE_ONLY is
+    // 0..n-1; null (no device layer) never reads it.
+    val routeAllActive = (currentRoute == HomeTab.ACTIVITY.route && activityAll) ||
+        (currentRoute == ROUTE_CHATS && chatsAll) ||
+        (currentRoute == ROUTE_SEARCH && searchAll)
     val currentDeviceIndex = when (deviceSwipeScope) {
         DeviceSwipeScope.WITH_ALL ->
-            if (activityAll) 0 else servers.indexOfFirst { it.id == selectedProfile?.id } + 1
-        else -> servers.indexOfFirst { it.id == selectedProfile?.id }.coerceAtLeast(0)
+            if (routeAllActive) 0 else servers.indexOfFirst { it.id == selectedProfile?.id } + 1
+        DeviceSwipeScope.DEVICE_ONLY ->
+            servers.indexOfFirst { it.id == selectedProfile?.id }.coerceAtLeast(0)
+        null -> 0
     }
-    val swipeModifier = if (showBottomBar && !wide && currentTabIndex >= 0) {
+    val swipeModifier = if (!wide && ((showBottomBar && currentTabIndex >= 0) ||
+            (deviceSwipeOn && currentRoute in barBearingRoutes))
+    ) {
         Modifier.tabSwipeNavigation(enabled = true) { direction ->
             val step = if (direction == SwipeDirection.NEXT) 1 else -1
             if (deviceSwipeOn && deviceSwipeScope != null) {
@@ -480,22 +503,32 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     currentIndex = currentDeviceIndex,
                     deviceCount = servers.size,
                     step = step,
+                    scope = deviceSwipeScope,
                 )) {
                     is DeviceSwipeVerdict.Device -> {
                         val server = servers.getOrNull(verdict.deviceIndex)
                         if (server == null) return@tabSwipeNavigation
-                        // Leaving any aggregate context (All/Chats-All/project filter).
+                        // Leaving any aggregate context (All/Chats-All/Search-All/project filter).
                         appViewModel.exitAggregate()
                         appViewModel.selectServer(server.id)
                     }
-                    is DeviceSwipeVerdict.All -> appViewModel.setActivityAll(true)
-                    // Off the sequence's ends → the outer layer (tab switch) takes it.
+                    is DeviceSwipeVerdict.All -> when (currentRoute) {
+                        HomeTab.ACTIVITY.route -> appViewModel.setActivityAll(true)
+                        ROUTE_CHATS -> appViewModel.setChatsAll(true)
+                        ROUTE_SEARCH -> appViewModel.setSearchAll(true)
+                        // DEVICE_ONLY surfaces have no aggregate to enter.
+                        else -> {}
+                    }
+                    // Off the sequence's ends → the outer layer (tab switch) takes it —
+                    // but a PUSH has no tab sequence: the verdict stays a no-op there.
                     DeviceSwipeVerdict.Tab -> {
-                        val next = currentTabIndex + step
-                        if (next in homeTabs.indices) onTab(homeTabs[next])
+                        if (currentTabIndex >= 0) {
+                            val next = currentTabIndex + step
+                            if (next in homeTabs.indices) onTab(homeTabs[next])
+                        }
                     }
                 }
-            } else {
+            } else if (currentTabIndex >= 0) {
                 val next = currentTabIndex + step
                 if (next in homeTabs.indices) onTab(homeTabs[next])
             }
@@ -767,8 +800,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     ) { padding ->
         // Only intercept scroll when the bottom bar is actually shown (a tab route on a
         // narrow screen); the side rail and full-screen routes don't hide-on-scroll.
+        // 批v151: the device-swipe gesture ALSO rides the three demoted list pushes
+        // (barBearingRoutes) — they have no bottom bar, but swiping devices there is
+        // the whole point (mandate §四); they just skip the bar-hide nested scroll.
         val contentModifier =
-            if (showBottomBar && !wide) Modifier.nestedScroll(barConnection).then(swipeModifier) else Modifier
+            if (showBottomBar && !wide) Modifier.nestedScroll(barConnection).then(swipeModifier)
+            else if (!wide && currentRoute in barBearingRoutes) swipeModifier
+            else Modifier
         // The app-global device bar rides above every tab's content (hidden on
         // full-screen routes and for single-server setups, where there is nothing
         // to switch). It owns the status-bar inset; each tab's TopAppBar is told
@@ -785,10 +823,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     selectedId = selectedProfile?.id,
                     // Batch v132: the All chip now also lives on the Chats surface (where
                     // it toggles the aggregate list); the subtitle echoes the active
-                    // project so a filter is never invisible.
+                    // project so a filter is never invisible. 批v151: Search's aggregate
+                    // joins the chip (fan-out results), no project filter there.
                     allSelected = (activityAll && currentRoute == HomeTab.ACTIVITY.route) ||
-                        (chatsAll && currentRoute == ROUTE_CHATS),
-                    showAll = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS,
+                        (chatsAll && currentRoute == ROUTE_CHATS) ||
+                        (searchAll && currentRoute == ROUTE_SEARCH),
+                    showAll = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS ||
+                        currentRoute == ROUTE_SEARCH,
                     allSubtitle = activeProjectId?.let { pid ->
                         sessionProjects.firstOrNull { it.id == pid }?.name
                     },
@@ -796,8 +837,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // Tapping the already-focused device (or "All" while a device
                         // is focused) must not restart the feed — the aggregate poll
                         // treats any profile/tick emission as a mode change. chatsAll
-                        // joins the guard so an aggregate Chats list is escapable too.
-                        if (activityAll || chatsAll || id != selectedProfile?.id) {
+                        // joins the guard so an aggregate Chats list is escapable too;
+                        // 批v151: searchAll likewise.
+                        if (activityAll || chatsAll || searchAll || id != selectedProfile?.id) {
                             appViewModel.exitAggregate()
                             appViewModel.selectServer(id)
                         }
@@ -809,9 +851,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // Programmatic entries — swipes, gestures — never open it.
                         // Per-tab flags: CHATS reads chatsAll, every other route reads
                         // activityAll; refresh is pull-to-refresh on either tab.
+                        // 批v151: SEARCH reads searchAll — no project filter exists on
+                        // search, so the second-stage tap is deliberately inert instead
+                        // of promising a sheet that can't affect the results.
                         when (currentRoute) {
                             ROUTE_CHATS -> {
                                 if (!chatsAll) appViewModel.setChatsAll(true) else showProjectSheet = true
+                            }
+                            ROUTE_SEARCH -> {
+                                if (!searchAll) appViewModel.setSearchAll(true)
                             }
                             else -> {
                                 if (!activityAll) appViewModel.setActivityAll(true) else showProjectSheet = true
@@ -932,7 +980,17 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 )
             }
             composable(ROUTE_SEARCH) {
-                SearchScreen(onOpenConversation = { id -> openConversationAndMark(selectedProfile?.id, id) })
+                // 批v151: All mode fans out across the aggregate scope; row opens ride
+                // the owning-device handoff dance (same single-flight as the Activity
+                // aggregate) so Back returns to the 全部 surface. Single-mode rows keep
+                // the plain selected-device open.
+                SearchScreen(
+                    allMode = searchAll,
+                    onOpenConversation = { id -> openConversationAndMark(selectedProfile?.id, id) },
+                    onOpenAggregateRow = { serverId, conversationId ->
+                        openAggregateRow(serverId, conversationId)
+                    },
+                )
             }
             composable(HomeTab.SETTINGS.route) {
                 SettingsScreen()

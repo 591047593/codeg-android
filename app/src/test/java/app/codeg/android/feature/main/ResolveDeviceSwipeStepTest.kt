@@ -5,9 +5,10 @@ import org.junit.Test
 
 /**
  * Pure arithmetic tests for the device-swipe step resolver (batch v123): the
- * Activity sequence counts the aggregate "All" as index 0 (devices 1..n) and the
- * ends fall through to the tab switch. 批v150: the Folders DEVICES_ONLY scope
- * retired with the Folders tab — Activity's shape is the only sequence left.
+ * WITH_ALL sequence counts the aggregate "All" as index 0 (devices 1..n) and the
+ * ends fall through to the tab switch. 批v150 retired the Folders scope; 批v151
+ * revives it as DEVICE_ONLY for the Folders push (no All row, devices 0..n-1,
+ * both ends are Tab — a no-op on pushed screens).
  */
 class ResolveDeviceSwipeStepTest {
 
@@ -50,5 +51,25 @@ class ResolveDeviceSwipeStepTest {
     fun `single device activity is All bookended`() {
         assertEquals(device(0, 1), resolveDeviceSwipeStep(0, 1, +1))
         assertEquals(ALL, resolveDeviceSwipeStep(1, 1, -1))
+    }
+
+    // ---- DEVICE_ONLY (批v151: the Folders push) ----
+
+    @Test
+    fun `device_only mid-sequence steps between devices`() {
+        assertEquals(device(1, 3), resolveDeviceSwipeStep(0, 3, +1, DeviceSwipeScope.DEVICE_ONLY))
+        assertEquals(device(0, 3), resolveDeviceSwipeStep(1, 3, -1, DeviceSwipeScope.DEVICE_ONLY))
+    }
+
+    @Test
+    fun `device_only ends fall to Tab — no aggregate, no tab switch from a push`() {
+        assertEquals(DeviceSwipeVerdict.Tab, resolveDeviceSwipeStep(0, 3, -1, DeviceSwipeScope.DEVICE_ONLY))
+        assertEquals(DeviceSwipeVerdict.Tab, resolveDeviceSwipeStep(2, 3, +1, DeviceSwipeScope.DEVICE_ONLY))
+    }
+
+    @Test
+    fun `device_only single device never moves`() {
+        assertEquals(DeviceSwipeVerdict.Tab, resolveDeviceSwipeStep(0, 1, +1, DeviceSwipeScope.DEVICE_ONLY))
+        assertEquals(DeviceSwipeVerdict.Tab, resolveDeviceSwipeStep(0, 1, -1, DeviceSwipeScope.DEVICE_ONLY))
     }
 }

@@ -262,6 +262,11 @@ class AppViewModel @Inject constructor(
 
     fun setChatsAll(all: Boolean) = serverRepository.setChatsAll(all)
 
+    // 批v151: search joins the aggregate family (设备条「全部」chip → 全设备 fan-out).
+    val searchAll: StateFlow<Boolean> = serverRepository.searchAll
+
+    fun setSearchAll(all: Boolean) = serverRepository.setSearchAll(all)
+
     val sessionProjects: StateFlow<List<SessionProject>> = sessionProjectRepo.projects
 
     val sessionProjectMembers: StateFlow<Map<String, List<SessionRef>>> = sessionProjectRepo.members
@@ -278,6 +283,7 @@ class AppViewModel @Inject constructor(
     fun exitAggregate() {
         serverRepository.setActivityAll(false)
         serverRepository.setChatsAll(false)
+        serverRepository.setSearchAll(false)
         sessionProjectRepo.setActive(null)
     }
 

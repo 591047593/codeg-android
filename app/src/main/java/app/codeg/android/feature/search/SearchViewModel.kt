@@ -2,6 +2,9 @@ package app.codeg.android.feature.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
+import app.codeg.android.core.data.DeviceLoad
+import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.RecentSearchesStore
 import app.codeg.android.core.datastore.ServerProfile
@@ -12,16 +15,57 @@ import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Per-device response cap inside an aggregate search round (批v151). The merge
+ *  answers "what matches across devices, most recent first" — one hot device
+ *  must not bury every other device's hits under 500 rows of history. */
+private const val AGG_FETCH_LIMIT = 200
+
+/** One device's slice inside an aggregate search round (批v151). */
+data class SearchDeviceResults(
+    val serverId: String,
+    val serverName: String,
+    val conversations: List<ConversationSummary>,
+)
+
+/** One merged aggregate row: the conversation plus the device it came from. */
+data class SearchHit(
+    val conversation: ConversationSummary,
+    val serverId: String,
+    val serverName: String,
+)
+
+/**
+ * Merge per-device search slices into one recency-sorted list (批v151). Pure —
+ * unit-tested in MergeSearchResultsTest. Ties (identical updatedAt, ids are
+ * server-local) break by serverId then conversation id so the order is
+ * deterministic across recompositions; otherwise two devices' identical
+ * timestamps could swap rows between frames and jitter the list. Pinned rows do
+ * NOT float here: the aggregate answers "what matches, most recent first", and
+ * pinning is a single-device view concern (row actions are disabled in All
+ * mode — a server-local id must never be mutated from the merged list).
+ */
+fun mergeSearchResults(perDevice: List<SearchDeviceResults>): List<SearchHit> =
+    perDevice.flatMap { d -> d.conversations.map { SearchHit(it, d.serverId, d.serverName) } }
+        .sortedWith(
+            compareByDescending<SearchHit> { it.conversation.updatedAt }
+                .thenBy { it.serverId }
+                .thenBy { it.conversation.id },
+        )
 
 /** Global conversation search: debounced server query + persisted recent terms. Port of iOS `SearchView`. */
 @OptIn(FlowPreview::class)
@@ -77,7 +121,10 @@ class SearchViewModel @Inject constructor(
                 serverKey = key
                 currentProfile = profile
                 client = resolved
-                if (switched) {
+                // 批v151: in All mode the fan-out owns the results (device-independent);
+                // a selected-device change must neither wipe them nor restart the
+                // search — just re-track the client for when All mode ends.
+                if (switched && !_ui.value.allMode) {
                     // Results are server-local (ids collide across devices) and this VM
                     // outlives device switches — stale rows must not survive a device
                     // change, or rename/pin/delete would hit the WRONG device's session.
@@ -97,7 +144,7 @@ class SearchViewModel @Inject constructor(
                     // minted AFTER the client swap (never before a suspension), so an old
                     // device's in-flight response can no longer land after the clear.
                     startSearch(_query.value, ++searchEpoch)
-                } else if (recovered) {
+                } else if (recovered && !_ui.value.allMode) {
                     // A token was added for the same device: the profile flow carries no
                     // token edits, so nothing else would clear the flag.
                     _ui.update { it.copy(noDevice = false) }
@@ -105,9 +152,24 @@ class SearchViewModel @Inject constructor(
                 }
                 // Fetch folder names AFTER starting the search: runSearch sets
                 // `searching` synchronously, so the empty state can't flash during
-                // this round trip.
-                val names = if (resolved == null) emptyMap() else resolveFolderNames(resolved)
-                _ui.update { it.copy(folderNames = names) }
+                // this round trip. All mode renders serverName instead (folder ids
+                // are server-local; the per-device fan-out doesn't pay for labels).
+                val names = if (resolved == null || _ui.value.allMode) emptyMap() else resolveFolderNames(resolved)
+                if (!_ui.value.allMode) _ui.update { it.copy(folderNames = names) }
+            }
+        }
+        // 批v151 All-mode toggle: entering leaves the current rows on screen until the
+        // fan-out replaces them (no wipe → no flash); leaving clears the aggregate
+        // rows and re-runs single-device search on the visible query.
+        viewModelScope.launch {
+            repository.searchAll.collectLatest { all ->
+                _ui.update {
+                    // Leaving All also drops the aggregate slices — they must never
+                    // resurface if All is re-entered before a fresh round lands.
+                    if (all) it.copy(allMode = true)
+                    else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
+                }
+                startSearch(_query.value, ++searchEpoch)
             }
         }
         viewModelScope.launch {
@@ -141,6 +203,12 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch { runSearch(raw, epoch) }
     }
 
+    /** Route by mode: the aggregate fan-out and the single-device search share the
+     *  epoch/debounce machinery but own disjoint state slices. */
+    private suspend fun runSearch(raw: String, epoch: Long) {
+        if (_ui.value.allMode) runAggregateSearch(raw, epoch) else runSingleSearch(raw, epoch)
+    }
+
     /** Resolve a client for [profile]; "missing token / unusable profile" is a null
      *  client, but cancellation always propagates — a superseded collectLatest action
      *  must actually stop, not run its tail after being cancelled. */
@@ -165,8 +233,12 @@ class SearchViewModel @Inject constructor(
     /** Optimistic pin/unpin on a search-result row; failure reverts.
      *  The revert is epoch-gated: if the device changed while the RPC was out, the
      *  snapshot it captured belongs to the previous device and must not be written
-     *  back over the new device's rows. */
+     *  back over the new device's rows.
+     *  批v151 defense-in-depth: All-mode rows carry server-local ids from OTHER
+     *  devices — the screen hides the actions, the VM refuses to run them against
+     *  whatever device happens to be selected. */
     fun setPinned(conversation: ConversationSummary, pinned: Boolean) {
+        if (_ui.value.allMode) return
         val active = client ?: return
         val epoch = searchEpoch
         val previous = _ui.value.results
@@ -196,6 +268,7 @@ class SearchViewModel @Inject constructor(
      * The restore is epoch-gated (see [setPinned]).
      */
     fun delete(conversation: ConversationSummary) {
+        if (_ui.value.allMode) return
         val active = client ?: return
         val epoch = searchEpoch
         val previous = _ui.value.results
@@ -222,6 +295,7 @@ class SearchViewModel @Inject constructor(
      * the edit started, not whatever device's row now carries the same id.
      */
     fun rename(conversation: ConversationSummary, title: String) {
+        if (_ui.value.allMode) return
         val active = client ?: return
         val epoch = searchEpoch
         viewModelScope.launch {
@@ -240,7 +314,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    private suspend fun runSearch(raw: String, epoch: Long) {
+    private suspend fun runSingleSearch(raw: String, epoch: Long) {
         val q = raw.trim()
         if (q.isEmpty()) {
             if (epoch == searchEpoch) {
@@ -289,6 +363,89 @@ class SearchViewModel @Inject constructor(
             // ignored
         }
     }
+
+    /**
+     * All-mode search (批v151): fan the query out across the aggregate scope
+     * (visible devices joined into「全部」, i.e. includeInAll), one bounded request
+     * per device, then merge by recency. Devices commit independently — a slow
+     * device only delays its own slice, never the list (same policy as the
+     * Activity aggregate feeds). Epoch-gated like the single search: a newer
+     * query/mode/device event orphans in-flight slices.
+     */
+    private suspend fun runAggregateSearch(raw: String, epoch: Long) {
+        val q = raw.trim()
+        if (q.isEmpty()) {
+            if (epoch == searchEpoch) {
+                _ui.update {
+                    it.copy(results = emptyList(), allResults = emptyList(), deviceStates = emptyList(), searching = false, query = "", error = null, noDevice = false)
+                }
+            }
+            return
+        }
+        if (epoch != searchEpoch) return
+        val scope = runCatching {
+            repository.visibleProfiles.first().filter { it.includeInAll }
+        }.getOrDefault(emptyList())
+        _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
+        if (scope.isEmpty()) {
+            if (epoch == searchEpoch) {
+                _ui.update { it.copy(allResults = emptyList(), deviceStates = emptyList(), searching = false) }
+            }
+            return
+        }
+        if (epoch != searchEpoch) return
+        _ui.update {
+            it.copy(deviceStates = scope.map { p -> DeviceLoad(p.id, p.name, DeviceLoadStatus.LOADING) })
+        }
+        val perDevice = coroutineScope {
+            scope.map { profile ->
+                async {
+                    val outcome: Result<List<ConversationSummary>> = try {
+                        Result.success(
+                            withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
+                                repository.client(profile)
+                                    ?.listConversations(search = q, sortBy = "updated")
+                                    ?.take(AGG_FETCH_LIMIT)
+                                    ?: throw IllegalStateException("client unavailable")
+                            } ?: throw java.util.concurrent.TimeoutException("device timeout"),
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                    // Commit the slice's device state the moment it lands so the
+                    // failure banner reflects reality while the round is still running.
+                    if (epoch == searchEpoch) {
+                        _ui.update { st ->
+                            st.copy(deviceStates = st.deviceStates.map { dl ->
+                                if (dl.serverId != profile.id) dl
+                                else outcome.fold(
+                                    onSuccess = { DeviceLoad(profile.id, profile.name, DeviceLoadStatus.OK) },
+                                    onFailure = { e -> DeviceLoad(profile.id, profile.name, DeviceLoadStatus.FAILED, e.displayMessage()) },
+                                )
+                            })
+                        }
+                    }
+                    profile to outcome
+                }
+            }.awaitAll()
+        }
+        if (epoch != searchEpoch) return // superseded while the round was in flight
+        val merged = mergeSearchResults(
+            perDevice.mapNotNull { (profile, outcome) ->
+                outcome.getOrNull()?.let { SearchDeviceResults(profile.id, profile.name, it) }
+            },
+        )
+        _ui.update { it.copy(allResults = merged, searching = false) }
+        try {
+            recentStore.add(q)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // ignored
+        }
+    }
 }
 
 data class SearchUiState(
@@ -303,4 +460,11 @@ data class SearchUiState(
     /** Owning device of [results]; screens key pending dialogs on it so a floating-ball
      *  device switch closes them before their stale server-local ids can misfire. */
     val serverId: String? = null,
+    // ---- 批v151 All-mode (aggregate fan-out) ----
+    /** Merged recency-sorted hits across the aggregate scope. */
+    val allResults: List<SearchHit> = emptyList(),
+    /** Per-device round state — the failure banner reads FAILED entries. */
+    val deviceStates: List<DeviceLoad> = emptyList(),
+    /** Mirror of ServerRepository.searchAll at the last mode transition. */
+    val allMode: Boolean = false,
 )

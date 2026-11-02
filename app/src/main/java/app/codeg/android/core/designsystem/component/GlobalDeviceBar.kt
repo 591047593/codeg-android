@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -24,6 +25,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,6 +52,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -121,12 +124,18 @@ fun GlobalDeviceBar(
                         onClick = onSelectAll,
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(stringResource(R.string.activity_all))
+                            Text(
+                                text = stringResource(R.string.activity_all),
+                                fontSize = 15.sp,
+                                fontWeight = if (allSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (allSelected) colors.onAccent else colors.textSecondary,
+                                maxLines = 1,
+                            )
                             // Collapsed slot when no project filter is active.
                             if (allSubtitle != null) {
                                 Text(
                                     text = "· $allSubtitle",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 12.sp,
                                     color = if (allSelected) colors.onAccent.copy(alpha = 0.85f) else colors.textTertiary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -156,9 +165,13 @@ fun GlobalDeviceBar(
                 ) {
                     Text(
                         text = server.name,
-                        style = MaterialTheme.typography.labelLarge,
+                        fontSize = 15.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (selected) colors.accent else if (server.includeInAll) colors.textSecondary else colors.textTertiary,
+                        color = when {
+                            selected -> colors.onAccent
+                            server.includeInAll -> colors.textSecondary
+                            else -> colors.textTertiary
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -255,27 +268,47 @@ private fun DeviceChip(
     val colors = CodegTheme.colors
     val shape = RoundedCornerShape(50)
     val longClickLabel = stringResource(R.string.device_skip_in_all)
-    Row(
+    // 批v151 polish (mandate 图二): a 40dp visual chip inside a ≥48dp touch box —
+    // the old ~30dp pill read as cramped little cards. Selected state is the solid
+    // accent container + trailing check (filter-chip convention) instead of a tint.
+    Box(
         modifier = Modifier
             .alpha(if (dimmed) 0.65f else 1f)
             .clip(shape)
-            .background(if (selected) colors.accentDim else Color.Transparent)
-            .border(
-                width = 1.dp,
-                color = if (selected) colors.accent.copy(alpha = 0.5f) else colors.surfaceStroke,
-                shape = shape,
-            )
             .combinedClickable(
                 onLongClickLabel = if (onLongClick != null) longClickLabel else null,
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // Padding INSIDE the clickable: expands the touch target to 48dp without
+            // fattening the visual chip.
+            .padding(vertical = 4.dp),
     ) {
-        leading(if (selected) colors.accent else colors.textTertiary)
-        content()
+        Row(
+            modifier = Modifier
+                .heightIn(min = 40.dp)
+                .clip(shape)
+                .background(if (selected) colors.accent else Color.Transparent)
+                .border(
+                    width = if (selected) 0.dp else 1.dp,
+                    color = if (selected) Color.Transparent else colors.surfaceStroke,
+                    shape = shape,
+                )
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            leading(if (selected) colors.onAccent else colors.textTertiary)
+            content()
+            if (selected) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = colors.onAccent,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
     }
 }
 

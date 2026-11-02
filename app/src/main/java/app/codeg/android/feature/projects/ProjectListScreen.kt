@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -209,6 +210,8 @@ fun ProjectListScreen(
  * relative last-opened time, then a drill-in chevron. The enclosing [GlassCard]
  * draws the surface; rows are split by inset hairlines. Long-press opens the
  * [FolderActionSheet] (copy path / remove from workspace) — batch v129.
+ * 批v151 polish (mandate 图二): 56dp row floor, 44dp tile, 12sp mono path with
+ * MIDDLE ellipsis (long absolute paths keep their head AND tail visible).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -222,15 +225,27 @@ private fun FolderRow(
     val colors = CodegTheme.colors
     val tile = colorFromHex(folder.color) ?: colors.accent
     Row(
-        modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        FolderBadge(color = tile, size = 40.dp)
+        FolderBadge(color = tile, size = 44.dp)
         Column(Modifier.weight(1f)) {
             Text(folder.name, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(folder.path, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(
+                    folder.path,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = colors.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 folder.gitBranch?.let { BranchPill(it) }
             }
         }
