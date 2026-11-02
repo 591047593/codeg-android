@@ -1,6 +1,6 @@
 # UIUX-AUDIT — Mobile Hub V2 重建审计（批v150 · ui重构任务书 交付物 1）
 
-> 审计日期：2026-11-02 · 基线：v1.0.1-fengx.40（versionCode 42，commit bf43de0）
+> 审计日期：2026-11-02 · 基线：v1.0.1-fengx.40（versionCode 42，tag commit 67a9610；本批从 77a22b7 起）
 > 依据：`/mnt/Projects/codeg/docs/writing-block (1).md`（UI/UX 重建任务书）+ `writing-block (2).md`（验收清单）+ ui1/ui2 对照图。
 > 结论口径：全部基于源码阅读与既有真机反馈记录；dell 无模拟器/真机环境且本地编译被资源纪律禁止，未截新图、不做假图。
 > 前置：阶段 0 的 V1 基线审计见 `docs/mobile-hub/UX-AUDIT.md`（2026-11-01）；本文件是重建批（v150）的差距审计与实施期复核。
@@ -33,5 +33,5 @@
 ## 4. 实施期新增发现（重建过程中确认，均已在 v150 修复）
 
 - 旧收件箱派发表单为 610 行独立实现，与派发语义强耦合且三处（派发单/快捷任务/未来入口）必然漂移 → 引入 `DispatchFormHost` 双宿主契约收敛（宿主 A=InboxViewModel，宿主 B=QuickActionViewModel）。
-- WorkbenchViewModel 首版 onFailure 分支有花括号错位（87dd237 提交破损）→ fb90dfa 修复并引入剥离源码括号平衡静态闸。
+- WorkbenchViewModel 首版 onFailure 分支有花括号错位（87dd237 提交破损）→ fb90dfa 修复，并用一次性「剥离源码括号平衡」脚本逐文件自查（未入 CI；仓库现有自动门禁只有 route-parity.sh，本批不新立无人执行的红线）。
 - `ServerProfile` 无在线字段，设备 chips 不做假在线点——加载/错误状态来自 loader 预检真实数据（errorDeviceIds/loadingDeviceId）。
