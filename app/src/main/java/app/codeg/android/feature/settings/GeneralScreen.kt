@@ -59,6 +59,9 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.feature.floatingball.FONT_STEPS
 import app.codeg.android.feature.floatingball.stepFontScale
+import app.codeg.android.feature.main.HomeTab
+import app.codeg.android.feature.main.resolveStartTab
+import app.codeg.android.feature.main.visibleTabs
 import kotlin.math.roundToInt
 
 @Composable
@@ -72,14 +75,26 @@ fun GeneralContent(
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Section(stringResource(R.string.general_shell_section)) {
-            // 批v150: a persisted five-tab-era startTab ("chats") is not a tab
-            // route any more — display the MIGRATED value so the start marker
-            // lands on the workbench instead of vanishing.
+            // 批v152: the start marker must follow the EFFECTIVE start tab — a
+            // persisted value that is currently hidden falls back to the first
+            // visible tab, so showing the raw saved route would mark an
+            // unreachable row.
+            val effectiveStart = remember(appSettings.startTab, appSettings.homeTabOrder, appSettings.hiddenHomeTabs) {
+                resolveStartTab(
+                    appSettings.startTab,
+                    visibleTabs(appSettings.homeTabOrder, appSettings.hiddenHomeTabs),
+                ).route
+            }
             TabOrderEditor(
                 savedOrder = appSettings.homeTabOrder,
-                startTab = app.codeg.android.feature.main.HomeTab.byRoute(appSettings.startTab).route,
+                startTab = effectiveStart,
+                hidden = appSettings.hiddenHomeTabs,
                 onReorder = viewModel::setHomeTabOrder,
                 onStartTab = viewModel::setStartTab,
+            )
+            TabVisibilityEditor(
+                hidden = appSettings.hiddenHomeTabs,
+                onHiddenChange = viewModel::setTabHidden,
             )
             ToggleRow(
                 stringResource(R.string.general_activity_swipe_title),
@@ -127,6 +142,23 @@ fun GeneralContent(
                     headlineColor = colors.textPrimary,
                     supportingColor = colors.textTertiary,
                 ),
+            )
+        }
+        // 批v152: cold-start collapse state for the two Activity workbench blocks.
+        // The user asked for "the sessions below to be visible most of the time",
+        // so both defaults can be turned off here; an in-session tap still wins.
+        Section(stringResource(R.string.general_workbench_section)) {
+            ToggleRow(
+                title = stringResource(R.string.general_workbench_overview_default_title),
+                subtitle = stringResource(R.string.general_workbench_overview_default_subtitle),
+                checked = appSettings.workbenchOverviewExpandedDefault,
+                onChange = viewModel::setWorkbenchOverviewDefaultExpanded,
+            )
+            ToggleRow(
+                title = stringResource(R.string.general_workbench_attention_default_title),
+                subtitle = stringResource(R.string.general_workbench_attention_default_subtitle),
+                checked = appSettings.workbenchAttentionExpandedDefault,
+                onChange = viewModel::setWorkbenchAttentionDefaultExpanded,
             )
         }
         Section(stringResource(R.string.general_floating_ball_section)) {
@@ -358,7 +390,13 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun ToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
     val colors = CodegTheme.colors
     ListItem(
         headlineContent = { Text(title) },
@@ -366,17 +404,54 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
         trailingContent = {
             Switch(
                 checked = checked,
-                onCheckedChange = onChange,
+                onCheckedChange = if (enabled) onChange else null,
+                enabled = enabled,
                 colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent),
             )
         },
         colors = ListItemDefaults.colors(
             containerColor = Color.Transparent,
-            headlineColor = colors.textPrimary,
+            headlineColor = if (enabled) colors.textPrimary else colors.textTertiary,
             supportingColor = colors.textTertiary,
         ),
-        modifier = Modifier.clickable { onChange(!checked) },
+        modifier = if (enabled) Modifier.clickable { onChange(!checked) } else Modifier,
     )
+}
+
+/**
+ * 批v152: per-tab visibility for the bottom bar / rail. Settings is rendered
+ * with its switch disabled — it is the only way back to this screen, and the
+ * store also refuses to persist its route as hidden, so an enabled switch here
+ * would be a lie.
+ */
+@Composable
+private fun TabVisibilityEditor(
+    hidden: List<String>,
+    onHiddenChange: (String, Boolean) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val hiddenSet = hidden.toSet()
+    Column {
+        Text(
+            stringResource(R.string.general_tab_visibility_subtitle),
+            fontSize = 12.sp,
+            color = colors.textTertiary,
+            modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+        )
+        HomeTab.entries.forEachIndexed { index, tab ->
+            val locked = tab == HomeTab.SETTINGS
+            ToggleRow(
+                title = stringResource(tab.label),
+                subtitle = stringResource(if (locked) R.string.general_tab_settings_locked else R.string.general_tab_visible_subtitle),
+                checked = locked || tab.route !in hiddenSet,
+                onChange = { visible -> onHiddenChange(tab.route, !visible) },
+                enabled = !locked,
+            )
+            if (index < HomeTab.entries.lastIndex) {
+                HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 56.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -419,21 +494,32 @@ private fun StepButton(
 private fun TabOrderEditor(
     savedOrder: List<String>,
     startTab: String,
+    hidden: List<String>,
     onReorder: (List<String>) -> Unit,
     onStartTab: (String) -> Unit,
 ) {
     val colors = CodegTheme.colors
-    val tabs = remember(savedOrder) { app.codeg.android.feature.main.HomeTab.orderedBy(savedOrder) }
+    val tabs = remember(savedOrder) { HomeTab.orderedBy(savedOrder) }
+    val hiddenSet = hidden.toSet()
     Column {
         Text(stringResource(R.string.general_tab_order_subtitle), fontSize = 12.sp, color = colors.textTertiary, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp))
         tabs.forEachIndexed { index, tab ->
+            // 批v152: a hidden tab cannot be the start tab — the cold-start
+            // resolver would silently fall back, so the tap must not pretend
+            // otherwise.
+            val canStart = tab.route !in hiddenSet
+            val isStart = tab.route == startTab
             ListItem(
                 headlineContent = { Text(stringResource(tab.label)) },
                 leadingContent = {
                     Icon(
-                        if (tab.route == startTab) Icons.Rounded.Check else tab.icon,
+                        if (isStart) Icons.Rounded.Check else tab.icon,
                         contentDescription = null,
-                        tint = if (tab.route == startTab) colors.accent else colors.textTertiary,
+                        tint = when {
+                            isStart -> colors.accent
+                            canStart -> colors.textTertiary
+                            else -> colors.textTertiary.copy(alpha = 0.5f)
+                        },
                         modifier = Modifier.size(20.dp),
                     )
                 },
@@ -453,9 +539,13 @@ private fun TabOrderEditor(
                 },
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent,
-                    headlineColor = if (tab.route == startTab) colors.accent else colors.textPrimary,
+                    headlineColor = when {
+                        isStart -> colors.accent
+                        canStart -> colors.textPrimary
+                        else -> colors.textTertiary.copy(alpha = 0.6f)
+                    },
                 ),
-                modifier = Modifier.clickable { onStartTab(tab.route) },
+                modifier = if (canStart) Modifier.clickable { onStartTab(tab.route) } else Modifier,
             )
             if (index < tabs.lastIndex) {
                 HorizontalDivider(color = colors.hairline, modifier = Modifier.padding(start = 56.dp))

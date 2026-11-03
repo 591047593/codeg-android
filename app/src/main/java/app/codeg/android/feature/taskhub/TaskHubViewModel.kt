@@ -10,6 +10,7 @@ import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
+import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.buildBoard
 import app.codeg.android.core.data.participating
 import app.codeg.android.core.data.retryableIds
@@ -57,7 +58,7 @@ import javax.inject.Inject
  * degrades its own slice (banner + retry), never the board (v137 mechanism).
  *
  * Realtime: a 25s poll + pull-to-refresh; switching the global device re-runs
- * the round immediately (selectedId/activityAll feed the poll combine).
+ * the round immediately (selectedId/tasksAll feed the poll combine).
  */
 @HiltViewModel
 class TaskHubViewModel @Inject constructor(
@@ -131,7 +132,7 @@ class TaskHubViewModel @Inject constructor(
             _ui,
             repository.profiles,
             repository.selectedId,
-            repository.activityAll,
+            repository.tasksAll,
         ) { state, profiles, selectedId, allMode ->
             val names = profiles.associate { it.id to it.name }
             val scopeIds = scopeIds(profiles, allMode, selectedId)
@@ -170,7 +171,7 @@ class TaskHubViewModel @Inject constructor(
 
     /** Folder names present on the currently scoped devices, sorted — the picker. */
     val folderOptions: StateFlow<List<String>> =
-        combine(_ui, repository.profiles, repository.selectedId, repository.activityAll) { state, profiles, selectedId, allMode ->
+        combine(_ui, repository.profiles, repository.selectedId, repository.tasksAll) { state, profiles, selectedId, allMode ->
             val ids = scopeIds(profiles, allMode, selectedId)
             ids.flatMap { state.folderNames[it]?.values.orEmpty() }
                 .distinct()
@@ -209,6 +210,10 @@ class TaskHubViewModel @Inject constructor(
      */
     private val _active = MutableStateFlow(false)
     fun setActive(active: Boolean) { _active.value = active }
+
+    /** 批v152: one-shot segment jump from the workbench cards / preview — the
+     *  board reads then clears it so a plain tab return keeps the user's choice. */
+    fun consumeSegmentRequest(): TaskSegment? = repository.consumeTaskSegment()
 
     init {
         viewModelScope.launch { pollLoop() }
@@ -262,7 +267,7 @@ class TaskHubViewModel @Inject constructor(
                 _active,
                 foreground,
                 repository.selectedId,
-                repository.activityAll,
+                repository.tasksAll,
             ) { tick, active, fg, _, _ -> PollInputs(tick, active, fg) }
                 .collectLatest { input ->
                     // Pull-to-refresh / device-set change: refetch now (any new tick
@@ -307,7 +312,7 @@ class TaskHubViewModel @Inject constructor(
 
     private suspend fun fetchAllInner() {
         val profiles = repository.profiles.first()
-        val devices = profiles.filter { it.id in scopeIds(profiles, repository.activityAll.value, repository.selectedId.first()) }
+        val devices = profiles.filter { it.id in scopeIds(profiles, repository.tasksAll.value, repository.selectedId.first()) }
         if (devices.isEmpty()) {
             _ui.update { it.copy(deviceStates = emptyList(), tasks = emptyList(), lastRefreshed = Instant.now(), hasLoaded = true) }
             return

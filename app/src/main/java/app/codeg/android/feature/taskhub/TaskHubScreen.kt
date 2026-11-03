@@ -100,6 +100,12 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
 
     var segmentName by rememberSaveable { mutableStateOf(TaskSegment.TODO.name) }
     val segment = runCatching { TaskSegment.valueOf(segmentName) }.getOrDefault(TaskSegment.TODO)
+    // 批v152: the workbench stat cards / 需要处理 preview ask for a SPECIFIC segment.
+    // Consumed once on entry (the request is read-then-cleared in the repository),
+    // so a later plain tab return keeps whatever segment the user picked himself.
+    LaunchedEffect(viewModel) {
+        viewModel.consumeSegmentRequest()?.let { segmentName = it.name }
+    }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var folderSheet by remember { mutableStateOf(false) }
     // The detail sheet holds a KEY, not a row snapshot: the 25s poll keeps

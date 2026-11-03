@@ -32,8 +32,17 @@ data class AppSettings(
     /** Bottom-tab display order as route names ("chats", "folders", …). Missing
      *  entries fall back to their enum order; unknown names are dropped. */
     val homeTabOrder: List<String> = emptyList(),
-    /** Route name of the tab the app opens on cold start (default: chats). */
+    /** 批v152: bottom-tab routes hidden by the user (Settings shows all five, the
+     *  bar/rail renders `all - hidden`). SETTINGS is never hideable — the settings
+     *  page is the only way back, so it is filtered out of the stored list too. */
+    val hiddenHomeTabs: List<String> = emptyList(),
+    /** Route name of the tab the app opens on cold start (default: activity). */
     val startTab: String = DEFAULT_START_TAB,
+    /** 批v152: workbench 总览区 (stats + quick row) folded by default on cold start.
+     *  A per-session manual toggle still wins for the rest of the process. */
+    val workbenchOverviewExpandedDefault: Boolean = true,
+    /** 批v152: workbench 需要处理区 folded by default on cold start. */
+    val workbenchAttentionExpandedDefault: Boolean = true,
     /** Horizontal swipe between devices while on the Activity tab (default: off).
      *  批v150: the Folders twin toggle retired with the Folders tab. */
     val activityDeviceSwipe: Boolean = false,
@@ -60,8 +69,7 @@ data class AppSettings(
         // id 一致（那边只兜「未知 id」，新用户拿到的是这里的值）。显式选过
         // 配色的用户存的是自己的 id，不受影响。
         const val DEFAULT_ACCENT = "teal"
-        // 批v150 four-tab workbench: the app opens on the workbench. A stored
-        // startTab from the five-tab era ("chats") falls back here via HomeTab.byRoute.
+        // The app opens on the workbench unless the user picked another start tab.
         const val DEFAULT_START_TAB = "activity"
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
@@ -71,6 +79,28 @@ data class AppSettings(
     }
 }
 
+/** The five tab routes in the enum's default order. Kept as plain strings so the
+ *  data layer stays free of UI types (feature/main's HomeTab mirrors this list). */
+private val HOME_TAB_ROUTES = listOf("activity", "chats", "inbox", "tasks", "settings")
+
+/**
+ * 批v152 read-side migration: orders saved before 会话 returned as a tab never
+ * mention its route, and the tab order resolver appends unknown tabs AFTER the
+ * saved ones — which would park 会话 behind 设置. Insert it right after 动态 so an
+ * upgraded bar matches the fresh-install default instead of a surprise tail slot.
+ */
+internal fun migrateHomeTabOrder(saved: List<String>): List<String> {
+    if (saved.isEmpty() || "chats" in saved) return saved
+    val after = saved.indexOf("activity")
+    return if (after < 0) listOf("chats") + saved
+    else saved.toMutableList().apply { add(after + 1, "chats") }
+}
+
+/** The order a cold start/bar renders: saved known routes first, then every tab
+ *  the order does not mention yet (same rule as HomeTab.orderedBy). */
+private fun resolvedTabOrder(saved: List<String>): List<String> =
+    (saved.filter { it in HOME_TAB_ROUTES } + HOME_TAB_ROUTES.filterNot { it in saved }).distinct()
+
 /**
  * Persists appearance + shell settings (theme, accent, bottom-tab order, cold-start
  * tab). Applied app-wide instantly; never synced to the server (matches iOS).
@@ -79,6 +109,13 @@ data class AppSettings(
 class AppSettingsStore @Inject constructor(
     private val dataStore: DataStore<Preferences>,
 ) {
+    /** Last settings emission (null until DataStore's first read). A ViewModel
+     *  created after the app reports settings loaded can seed derived state from
+     *  the real values instead of flashing the defaults for a frame. */
+    @Volatile
+    private var latest: AppSettings? = null
+    val current: AppSettings? get() = latest
+
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
             themeMode = ThemeMode.from(prefs[MODE]),
@@ -86,8 +123,13 @@ class AppSettingsStore @Inject constructor(
             // Comma-joined route names: DataStore's stringSet doesn't guarantee order,
             // and the whole point of this pref is the ordering. Route names contain
             // no commas.
-            homeTabOrder = prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+            homeTabOrder = migrateHomeTabOrder(
+                prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+            ),
+            hiddenHomeTabs = prefs[HIDDEN_TABS]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
             startTab = prefs[START_TAB] ?: AppSettings.DEFAULT_START_TAB,
+            workbenchOverviewExpandedDefault = prefs[WORKBENCH_OVERVIEW_DEFAULT] ?: true,
+            workbenchAttentionExpandedDefault = prefs[WORKBENCH_ATTENTION_DEFAULT] ?: true,
             activityDeviceSwipe = prefs[ACTIVITY_DEVICE_SWIPE] ?: false,
             floatBallEnabled = prefs[FLOAT_BALL_ENABLED] ?: true,
             floatBallSize = prefs[FLOAT_BALL_SIZE]?.takeIf { it in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE,
@@ -98,7 +140,7 @@ class AppSettingsStore @Inject constructor(
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
             dispatchDefaultFolderName = prefs[DISPATCH_DEFAULT_FOLDER_NAME] ?: "",
             dispatchDefaultAgent = prefs[DISPATCH_DEFAULT_AGENT] ?: "",
-        )
+        ).also { latest = it }
     }
 
     /** Persist the dispatch-sheet defaults in one write (they change together). */
@@ -142,6 +184,37 @@ class AppSettingsStore @Inject constructor(
     /** Persist the cold-start tab by route name. */
     suspend fun setStartTab(route: String) {
         dataStore.edit { it[START_TAB] = route }
+    }
+
+    /** 批v152: hide/show a bottom tab by route. SETTINGS is force-kept — without
+     *  it the settings page itself would be unreachable (self-lock). */
+    suspend fun setTabHidden(route: String, hidden: Boolean) {
+        if (route == "settings") return
+        dataStore.edit { prefs ->
+            val current = prefs[HIDDEN_TABS]?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+            val next = if (hidden) (current + route).distinct() else current - route
+            prefs[HIDDEN_TABS] = next.joinToString(",")
+            // A hidden tab cannot be a cold-start destination: repoint the saved
+            // start tab to the first still-visible one (SETTINGS can never be
+            // hidden, so the fallback list is non-empty). The running shell keeps
+            // its bound start destination — its bar renders regardless (MainShell).
+            if (hidden && prefs[START_TAB] == route) {
+                val visible = resolvedTabOrder(
+                    prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+                ).filterNot { it in next }
+                prefs[START_TAB] = visible.firstOrNull() ?: "settings"
+            }
+        }
+    }
+
+    /** 批v152: cold-start default for the workbench 总览区. */
+    suspend fun setWorkbenchOverviewExpandedDefault(expanded: Boolean) {
+        dataStore.edit { it[WORKBENCH_OVERVIEW_DEFAULT] = expanded }
+    }
+
+    /** 批v152: cold-start default for the workbench 需要处理区. */
+    suspend fun setWorkbenchAttentionExpandedDefault(expanded: Boolean) {
+        dataStore.edit { it[WORKBENCH_ATTENTION_DEFAULT] = expanded }
     }
 
     /** Persist the Activity-tab device-swipe toggle. */
@@ -233,7 +306,10 @@ class AppSettingsStore @Inject constructor(
         val MODE = stringPreferencesKey("theme_mode")
         val ACCENT = stringPreferencesKey("accent_id")
         val TAB_ORDER = stringPreferencesKey("home_tab_order")
+        val HIDDEN_TABS = stringPreferencesKey("hidden_home_tabs")
         val START_TAB = stringPreferencesKey("start_tab")
+        val WORKBENCH_OVERVIEW_DEFAULT = booleanPreferencesKey("workbench_overview_expanded_default")
+        val WORKBENCH_ATTENTION_DEFAULT = booleanPreferencesKey("workbench_attention_expanded_default")
         val ACTIVITY_DEVICE_SWIPE = booleanPreferencesKey("activity_device_swipe")
         val SESSION_READ_MARKS = stringPreferencesKey("session_read_marks")
         val FLOAT_BALL_ENABLED = booleanPreferencesKey("float_ball_enabled")

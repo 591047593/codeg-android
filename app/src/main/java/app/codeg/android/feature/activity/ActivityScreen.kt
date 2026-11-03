@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,8 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,6 +45,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.data.FocusItem
+import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.SessionRef
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -73,8 +73,6 @@ import java.time.Instant
 @Composable
 fun ActivityScreen(
     servers: List<ServerProfile>,
-    selectedServerId: String?,
-    onSelectServer: (String) -> Unit,
     onManageServers: () -> Unit,
     onOpenConversation: (Int) -> Unit,
     allMode: Boolean = false,
@@ -89,7 +87,9 @@ fun ActivityScreen(
     onOpenFolders: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenNewSession: () -> Unit = {},
-    onOpenTasks: () -> Unit = {},
+    // 批v152: the stat cards jump into a SPECIFIC task-board segment (running /
+    // needs-you); the shell routes the request through ServerRepository.
+    onOpenTasks: (TaskSegment) -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
     workbench: WorkbenchViewModel = hiltViewModel(),
 ) {
@@ -113,8 +113,9 @@ fun ActivityScreen(
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
     val colors = CodegTheme.colors
     val listState = rememberLazyListState()
-    val selectedName = servers.firstOrNull { it.id == selectedServerId }?.name
-        ?: stringResource(R.string.app_name)
+    // 批v152: the device bar (multi-device) owns the status-bar inset; it is not
+    // rendered for a single device, so this page has to carry the inset itself.
+    val topInset = if (servers.size > 1) Modifier else Modifier.statusBarsPadding()
 
     // Flattened lazy items — one source of truth for rendering, focus registration
     // and scroll indexing. Both modes register (v136): a single-device activity list
@@ -184,15 +185,10 @@ fun ActivityScreen(
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            TopAppBar(
-                title = { Text(if (allMode) stringResource(R.string.activity_all) else selectedName) },
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent, titleContentColor = colors.textPrimary),
-            )
-        },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        // 批v152: the old title bar (全部/设备名) only repeated the device bar above
+        // and left the right half empty — removed; the bar is the single device cue.
+        Column(Modifier.padding(padding).then(topInset).fillMaxSize()) {
             // 批v150: the task board and the idea inbox are first-class bottom tabs
             // now (new mandate §一.2). This screen is the WORKBENCH: fixed header
             // (stats / quick entry / 需要处理 preview) over the live feed — the
@@ -208,6 +204,8 @@ fun ActivityScreen(
                 onOpenSearch = onOpenSearch,
                 onOpenNewSession = onOpenNewSession,
                 onOpenTasks = onOpenTasks,
+                // 在线设备卡 → 设备管理（与设备栏「管理设备」同一个去处）。
+                onOpenDevices = onManageServers,
             )
             Box(Modifier.fillMaxSize()) {
             when {

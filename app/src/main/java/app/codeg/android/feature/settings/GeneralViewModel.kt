@@ -195,6 +195,21 @@ class GeneralViewModel @Inject constructor(
         viewModelScope.launch { appSettingsStore.setStartTab(route) }
     }
 
+    /** 批v152: show/hide a bottom tab (Settings itself is force-kept by the store). */
+    fun setTabHidden(route: String, hidden: Boolean) {
+        viewModelScope.launch { appSettingsStore.setTabHidden(route, hidden) }
+    }
+
+    /** 批v152: cold-start default for the workbench 总览区. */
+    fun setWorkbenchOverviewDefaultExpanded(expanded: Boolean) {
+        viewModelScope.launch { appSettingsStore.setWorkbenchOverviewExpandedDefault(expanded) }
+    }
+
+    /** 批v152: cold-start default for the workbench 需要处理区. */
+    fun setWorkbenchAttentionDefaultExpanded(expanded: Boolean) {
+        viewModelScope.launch { appSettingsStore.setWorkbenchAttentionExpandedDefault(expanded) }
+    }
+
     fun setActivityDeviceSwipe(enabled: Boolean) {
         viewModelScope.launch { appSettingsStore.setActivityDeviceSwipe(enabled) }
     }

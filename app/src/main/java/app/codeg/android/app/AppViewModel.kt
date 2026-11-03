@@ -7,6 +7,7 @@ import app.codeg.android.core.data.QuickSwitchStep
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.SessionFocusHub
 import app.codeg.android.core.data.SessionProjectRepository
+import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.nextQuickSwitchStep
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
@@ -267,6 +268,17 @@ class AppViewModel @Inject constructor(
 
     fun setSearchAll(all: Boolean) = serverRepository.setSearchAll(all)
 
+    // 批v152: the task board's aggregate ("全部") joins the family — the board tab
+    // gets the same All chip + default-all entry as Activity/Chats/Search.
+    val tasksAll: StateFlow<Boolean> = serverRepository.tasksAll
+
+    fun setTasksAll(all: Boolean) = serverRepository.setTasksAll(all)
+
+    /** One-shot segment jump for the task board (stat cards / 需要处理 preview). */
+    fun requestTaskSegment(segment: TaskSegment) = serverRepository.requestTaskSegment(segment)
+
+    fun consumeTaskSegment(): TaskSegment? = serverRepository.consumeTaskSegment()
+
     val sessionProjects: StateFlow<List<SessionProject>> = sessionProjectRepo.projects
 
     val sessionProjectMembers: StateFlow<Map<String, List<SessionRef>>> = sessionProjectRepo.members
@@ -284,6 +296,7 @@ class AppViewModel @Inject constructor(
         serverRepository.setActivityAll(false)
         serverRepository.setChatsAll(false)
         serverRepository.setSearchAll(false)
+        serverRepository.setTasksAll(false)
         sessionProjectRepo.setActive(null)
     }
 

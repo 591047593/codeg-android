@@ -42,18 +42,22 @@
     <string name="workbench_stat_running">Running</string>
     <string name="workbench_stat_attention">Needs you</string>
     <string name="workbench_stat_online">Online</string>
+    <string name="workbench_stat_running_action">View running tasks</string>
+    <string name="workbench_stat_attention_action">View tasks that need you</string>
+    <string name="workbench_stat_online_action">Manage devices</string>
     <string name="workbench_quick_chats">Chats</string>
     <string name="workbench_quick_folders">Projects</string>
     <string name="workbench_quick_search">Search</string>
     <string name="workbench_new_session">New session</string>
     <string name="workbench_view_all_sessions">View all</string>
-    <string name="workbench_open_task_board">Task board</string>
     <string name="workbench_attention_more">%1$d more</string>
     <string name="workbench_overview_summary">%1$d running · %2$d need attention · %3$s online</string>
     <string name="workbench_overview_collapse">Collapse overview</string>
     <string name="workbench_overview_expand">Expand overview</string>
-    <string name="workbench_attention_collapse">Collapse preview</string>
-    <string name="workbench_attention_expand">Expand preview</string>
+    <string name="workbench_attention_collapse">Collapse needs-you</string>
+    <string name="workbench_attention_expand">Expand needs-you</string>
+    <string name="workbench_attention_expanded">Expanded</string>
+    <string name="workbench_attention_collapsed">Collapsed</string>
     <string name="tab_search">Search</string>
     <string name="tab_settings">Settings</string>
 
@@ -384,6 +388,14 @@
     <string name="general_max_depth_subtitle">How many levels deep agents may delegate.</string>
     <string name="general_shell_section">Navigation</string>
     <string name="general_tab_order_subtitle">Tap ▲▼ to reorder the bottom bar; tap a row\'s name to make it the tab the app opens on.</string>
+    <string name="general_tab_visibility_subtitle">Uncheck a tab to hide it from the bottom bar. Settings always stays visible.</string>
+    <string name="general_tab_visible_subtitle">Show in the bottom bar</string>
+    <string name="general_tab_settings_locked">Always visible — it is the way back to this screen</string>
+    <string name="general_workbench_section">Workbench</string>
+    <string name="general_workbench_overview_default_title">Overview expanded by default</string>
+    <string name="general_workbench_overview_default_subtitle">Start with the running/needs-you/online summary row open.</string>
+    <string name="general_workbench_attention_default_title">Needs-you expanded by default</string>
+    <string name="general_workbench_attention_default_subtitle">Start with the needs-you card list open.</string>
     <string name="general_activity_swipe_title">Swipe between devices on Activity</string>
     <string name="general_activity_swipe_subtitle">On the Activity tab, horizontal swipes switch devices (All → each device); swiping past the ends moves between tabs.</string>
 

@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -56,6 +58,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -99,14 +102,15 @@ import app.codeg.android.feature.sessions.nextProjectFilter
 import app.codeg.android.feature.taskhub.TaskHubScreen
 
 /**
- * Bottom-navigation destinations (批v150 four-tab workbench: 动态 | 收件箱 | 任务板 |
- * 设置). Each carries an outlined icon (unselected) and a filled icon (selected) —
- * the Material 3 / GitHub / ChatGPT convention where the active tab fills in.
+ * Bottom-navigation destinations (批v152 five-tab bar: 动态 | 会话 | 收件箱 |
+ * 任务板 | 设置 — the Chats surface is back as a first-class tab). Each carries
+ * an outlined icon (unselected) and a filled icon (selected) — the Material 3 /
+ * GitHub / ChatGPT convention where the active tab fills in.
  *
- * The old Chats/Folders/Search tabs are NOT deleted — they are demoted to
- * full-screen push surfaces ([ROUTE_CHATS]/[ROUTE_FOLDERS]/[ROUTE_SEARCH], route
- * strings unchanged) so persisted tab orders, deep links and floating-ball action
- * ids survive. Their entry points live on the workbench and the ball's quick panel.
+ * Folders/Search are still demoted to full-screen push surfaces
+ * ([ROUTE_FOLDERS]/[ROUTE_SEARCH], route strings unchanged) so persisted tab
+ * orders, deep links and floating-ball action ids survive. Their entry points
+ * live on the workbench and the ball's quick panel.
  */
 enum class HomeTab(
     val route: String,
@@ -115,6 +119,7 @@ enum class HomeTab(
     val selectedIcon: ImageVector,
 ) {
     ACTIVITY("activity", R.string.tab_activity, Icons.Outlined.Bolt, Icons.Rounded.Bolt),
+    CHATS("chats", R.string.tab_chats, Icons.Outlined.Forum, Icons.Rounded.Forum),
     INBOX("inbox", R.string.tab_inbox, Icons.Outlined.Inbox, Icons.Rounded.Inbox),
     TASKS("tasks", R.string.tab_tasks, Icons.Outlined.Assignment, Icons.Rounded.Assignment),
     SETTINGS("settings", R.string.tab_settings, Icons.Outlined.Settings, Icons.Rounded.Settings);
@@ -131,6 +136,24 @@ enum class HomeTab(
         fun byRoute(route: String?): HomeTab = entries.firstOrNull { it.route == route } ?: ACTIVITY
     }
 }
+
+/**
+ * 批v152: the tabs the bar/rail actually renders — the saved order minus the
+ * user's hidden routes. SETTINGS is never hidden (the store refuses to persist
+ * it too): it is the only route back to the visibility switches, so dropping it
+ * would let the user lock himself out of every other tab. Because SETTINGS can
+ * never be filtered out, the result is guaranteed non-empty.
+ */
+internal fun visibleTabs(savedOrder: List<String>, hidden: List<String>): List<HomeTab> {
+    val hiddenSet = hidden.toSet() - HomeTab.SETTINGS.route
+    return HomeTab.orderedBy(savedOrder).filterNot { it.route in hiddenSet }
+}
+
+/** 批v152: the cold-start tab, constrained to the visible set — a hidden start
+ *  tab falls back to the first visible tab instead of opening an unreachable
+ *  route as the NavHost start destination. */
+internal fun resolveStartTab(savedStart: String?, tabs: List<HomeTab>): HomeTab =
+    tabs.firstOrNull { it == HomeTab.byRoute(savedStart) } ?: tabs.firstOrNull() ?: HomeTab.ACTIVITY
 
 private const val ROUTE_SERVERS = "servers"
 private const val ROUTE_EDITOR = "editor"
@@ -243,18 +266,29 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // already in the saved order / start tab (no default-order flash on cold start).
     val settingsLoaded by appViewModel.settingsLoaded.collectAsStateWithLifecycle()
     val appSettings by appViewModel.settings.collectAsStateWithLifecycle()
-    val homeTabs = remember(appSettings.homeTabOrder) { HomeTab.orderedBy(appSettings.homeTabOrder) }
+    val homeTabs = remember(appSettings.homeTabOrder, appSettings.hiddenHomeTabs) {
+        visibleTabs(appSettings.homeTabOrder, appSettings.hiddenHomeTabs)
+    }
     // The start destination is bound once per shell lifetime: NavHost rebuilds (and
     // wipes) the whole graph when startDestination changes, so a runtime edit must
     // not feed through here — it takes effect on the next cold start.
-    val startTab = remember { HomeTab.byRoute(appSettings.startTab) }
-    val showBottomBar = homeTabs.any { it.route == currentRoute }
+    val startTab = remember { resolveStartTab(appSettings.startTab, homeTabs) }
+    // 批v152 审查修正: the bar is also rendered on the NavHost start destination
+    // even when that tab was hidden at runtime (settings edits apply to the bar
+    // immediately but the start destination is bound for the shell's lifetime).
+    // Without this, Back from 设置 would land on the now-hidden start page with no
+    // bar and no in-screen back button — a dead end.
+    val showBottomBar = homeTabs.any { it.route == currentRoute } ||
+        currentRoute == startTab.route
     val tabRoutes = remember(homeTabs) { homeTabs.map { it.route }.toSet() }
     // 批v150: the demoted list surfaces keep the app-global device bar. They have
     // no in-screen device selector, so without the bar here an aggregate chats
     // list (chatsAll) would have no way to be entered or left (review BLOCKER).
-    val barBearingRoutes = remember(homeTabs) {
-        tabRoutes + setOf(ROUTE_CHATS, ROUTE_FOLDERS, ROUTE_SEARCH)
+    // 批v152: keyed off ALL tab routes, not just the visible ones — a tab hidden
+    // from the bar can still be pushed (workbench quick entry / ball action) and
+    // that screen must keep its device bar + status-bar inset.
+    val barBearingRoutes = remember {
+        HomeTab.entries.map { it.route }.toSet() + setOf(ROUTE_FOLDERS, ROUTE_SEARCH)
     }
     // Routes whose list registers a focus ring for the ball cycle/open gestures —
     // the four tabs' surfaces plus the Chats push (Activity and Chats are the only
@@ -268,6 +302,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val chatsAll by appViewModel.chatsAll.collectAsStateWithLifecycle()
     // 批v151: the Search push joins the aggregate family (device bar All chip).
     val searchAll by appViewModel.searchAll.collectAsStateWithLifecycle()
+    // 批v152: the task board joins too — 全部 aggregating every device's board.
+    val tasksAll by appViewModel.tasksAll.collectAsStateWithLifecycle()
     val sessionProjects by appViewModel.sessionProjects.collectAsStateWithLifecycle()
     val sessionProjectMembers by appViewModel.sessionProjectMembers.collectAsStateWithLifecycle()
     val activeProjectId by appViewModel.activeProjectId.collectAsStateWithLifecycle()
@@ -462,6 +498,25 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         if (servers.size < 2) appViewModel.exitAggregate()
     }
 
+    // 批v152: a cold start on 会话 / 任务板 should land on the ALL-devices view —
+    // the same promise as entering those tabs from the bar/ball (mandate B2). This
+    // is an ENTRY rule, not a route-keyed effect: a route-triggered "default to All"
+    // would yank the user back to 全部 every time he returns from a conversation, a
+    // rotation or a device add. rememberSaveable keeps the one-shot across config
+    // changes; once burned, any manual device choice stands for the session.
+    var launchDefaultApplied by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(servers.size) {
+        if (launchDefaultApplied || servers.isEmpty()) return@LaunchedEffect
+        if (servers.size >= 2) {
+            when (startTab) {
+                HomeTab.CHATS -> appViewModel.setChatsAll(true)
+                HomeTab.TASKS -> appViewModel.setTasksAll(true)
+                else -> {}
+            }
+        }
+        launchDefaultApplied = true
+    }
+
     val onTab: (HomeTab) -> Unit = { tab ->
         nav.navigate(tab.route) {
             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
@@ -475,6 +530,26 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // the push semantics working as intended (review 修订⑤).
     val pushSurface: (String) -> Unit = { route ->
         nav.navigate(route) { launchSingleTop = true }
+    }
+    // 批v152: every "user enters a tab" gesture (bottom bar / rail / ball action /
+    // deep link / workbench quick entry / cold-start) goes through here. Two jobs:
+    //
+    // 1. 会话 and 任务板 enter on the ALL-devices view — the mandate: tapping 会话
+    //    from the bar must show every device's sessions without a manual 全部 tap.
+    //    Only on an actual entry (route differs): re-tapping the current tab, the
+    //    device swipe and coming BACK from a detail must keep the user's device.
+    // 2. A tab hidden via Settings is not in [homeTabs]; navigating to its route as
+    //    a tab destination would still work, but the back stack would not treat it
+    //    as a tab. Push it instead (it stays reachable from the ball/workbench).
+    val enterTab: (HomeTab) -> Unit = { tab ->
+        if (tab.route != currentRoute) {
+            if (servers.size >= 2) when (tab) {
+                HomeTab.CHATS -> appViewModel.setChatsAll(true)
+                HomeTab.TASKS -> appViewModel.setTasksAll(true)
+                else -> {}
+            }
+        }
+        if (tab in homeTabs) onTab(tab) else pushSurface(tab.route)
     }
 
     // Horizontal swipe between the bottom tabs: drag left → next tab, right →
@@ -495,6 +570,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         HomeTab.ACTIVITY.route ->
             if (appSettings.activityDeviceSwipe) DeviceSwipeScope.WITH_ALL else null
         ROUTE_CHATS, ROUTE_SEARCH -> DeviceSwipeScope.WITH_ALL
+        // 批v152: the task board has an aggregate now, so it joins the WITH_ALL
+        // sequence (swipe left from a device lands on 全部 before leaving the tab).
+        HomeTab.TASKS.route -> DeviceSwipeScope.WITH_ALL
         ROUTE_FOLDERS -> DeviceSwipeScope.DEVICE_ONLY
         else -> null
     }
@@ -505,7 +583,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // 0..n-1; null (no device layer) never reads it.
     val routeAllActive = (currentRoute == HomeTab.ACTIVITY.route && activityAll) ||
         (currentRoute == ROUTE_CHATS && chatsAll) ||
-        (currentRoute == ROUTE_SEARCH && searchAll)
+        (currentRoute == ROUTE_SEARCH && searchAll) ||
+        (currentRoute == HomeTab.TASKS.route && tasksAll)
     val currentDeviceIndex = when (deviceSwipeScope) {
         DeviceSwipeScope.WITH_ALL ->
             if (routeAllActive) 0 else servers.indexOfFirst { it.id == selectedProfile?.id } + 1
@@ -536,6 +615,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         HomeTab.ACTIVITY.route -> appViewModel.setActivityAll(true)
                         ROUTE_CHATS -> appViewModel.setChatsAll(true)
                         ROUTE_SEARCH -> appViewModel.setSearchAll(true)
+                        HomeTab.TASKS.route -> appViewModel.setTasksAll(true)
                         // DEVICE_ONLY surfaces have no aggregate to enter.
                         else -> {}
                     }
@@ -544,13 +624,16 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     DeviceSwipeVerdict.Tab -> {
                         if (currentTabIndex >= 0) {
                             val next = currentTabIndex + step
-                            if (next in homeTabs.indices) onTab(homeTabs[next])
+                            // 批v152 审查修正: a swipe IS a tab entry — route it
+                            // through enterTab so 会话/任务板 land on 全部 like a
+                            // bar tap does (bare onTab skipped the aggregate flag).
+                            if (next in homeTabs.indices) enterTab(homeTabs[next])
                         }
                     }
                 }
             } else if (currentTabIndex >= 0) {
                 val next = currentTabIndex + step
-                if (next in homeTabs.indices) onTab(homeTabs[next])
+                if (next in homeTabs.indices) enterTab(homeTabs[next])
             }
         }
     } else Modifier
@@ -559,15 +642,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val pendingLink by app.codeg.android.core.common.DeepLinkBus.pending.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(pendingLink) {
         val route = pendingLink ?: return@LaunchedEffect
-        fun toTab(it: HomeTab) = nav.navigate(it.route) {
-            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true; restoreState = true
-        }
+        fun toTab(it: HomeTab) = enterTab(it)
         when (route) {
             is app.codeg.android.core.common.DeepLinkRoute.OpenTab -> when (route.tab) {
-                // 批v150: the demoted surfaces are pushes now — the alias keeps
-                // working, it just lands on a full-screen list (Back returns).
-                "chats" -> pushSurface(ROUTE_CHATS)
+                // 批v152: Chats is a first-class tab again — the deep link lands on
+                // the tab (All-devices per enterTab), not a pushed copy on top of it.
+                "chats" -> enterTab(HomeTab.CHATS)
                 "projects", "folders" -> pushSurface(ROUTE_FOLDERS)
                 "activity" -> toTab(HomeTab.ACTIVITY)
                 "inbox" -> toTab(HomeTab.INBOX)
@@ -727,16 +807,16 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             "quickSearch" -> pushSurface(ROUTE_SEARCH)
             // 批v151: global new-session sheet — pick device, then folder, then jump.
             "quickNewSession" -> { showQuickTask = false; showQuickNewSession = true }
-            // 批v150: the demoted surfaces are pushes; the action ids are UNCHANGED
-            // (persisted bindings reference them).
-            "tabChats" -> pushSurface(ROUTE_CHATS)
+            // 批v152: Chats is a tab again — the ball entry goes through enterTab
+            // (All-devices on entry); folders/search stay pushes.
+            "tabChats" -> enterTab(HomeTab.CHATS)
             "tabFolders" -> pushSurface(ROUTE_FOLDERS)
-            "tabActivity" -> onTab(HomeTab.ACTIVITY)
+            "tabActivity" -> enterTab(HomeTab.ACTIVITY)
             "tabSearch" -> pushSurface(ROUTE_SEARCH)
-            "tabSettings" -> onTab(HomeTab.SETTINGS)
+            "tabSettings" -> enterTab(HomeTab.SETTINGS)
             // 批v151: the two remaining quick-entry tabs join the ball catalog.
-            "tabInbox" -> onTab(HomeTab.INBOX)
-            "tabTasks" -> onTab(HomeTab.TASKS)
+            "tabInbox" -> enterTab(HomeTab.INBOX)
+            "tabTasks" -> enterTab(HomeTab.TASKS)
             "toggleThemeMode" -> appViewModel.toggleThemeMode()
             "nextAccent" -> appViewModel.cycleAccent()
             "fontScaleUp", "fontScaleDown", "fontScaleReset" -> {
@@ -800,13 +880,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 HomeTab.ACTIVITY.route -> appViewModel.setActivityAll(!activityAll)
                 ROUTE_CHATS -> appViewModel.setChatsAll(!chatsAll)
                 ROUTE_SEARCH -> appViewModel.setSearchAll(!searchAll)
+                HomeTab.TASKS.route -> appViewModel.setTasksAll(!tasksAll)
                 else -> {}
             }
             // Bumps the repository tick the Activity tab's combine already rides —
             // same channel the workbench's manual refresh uses, no new bus.
             "refreshActivity" -> appViewModel.refreshActivityAll()
             "ballSettings" -> {
-                onTab(HomeTab.SETTINGS)
+                enterTab(HomeTab.SETTINGS)
                 FloatingBallSettingsBus.open()
             }
         }
@@ -821,7 +902,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 CodegBottomBar(
                     currentRoute,
                     homeTabs,
-                    onTab,
+                    enterTab,
                     // Report a shrinking height as the bar hides so the Scaffold gives the
                     // freed strip back to the content (the whole point — reclaim the space);
                     // the bar is drawn at full height and slid down within, clipped away.
@@ -870,11 +951,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     // it toggles the aggregate list); the subtitle echoes the active
                     // project so a filter is never invisible. 批v151: Search's aggregate
                     // joins the chip (fan-out results), no project filter there.
+                    // 批v152: the task board is the fourth aggregate surface — the All
+                    // chip fans out every device's board.
                     allSelected = (activityAll && currentRoute == HomeTab.ACTIVITY.route) ||
                         (chatsAll && currentRoute == ROUTE_CHATS) ||
-                        (searchAll && currentRoute == ROUTE_SEARCH),
+                        (searchAll && currentRoute == ROUTE_SEARCH) ||
+                        (tasksAll && currentRoute == HomeTab.TASKS.route),
                     showAll = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS ||
-                        currentRoute == ROUTE_SEARCH,
+                        currentRoute == ROUTE_SEARCH || currentRoute == HomeTab.TASKS.route,
                     allSubtitle = activeProjectId?.let { pid ->
                         sessionProjects.firstOrNull { it.id == pid }?.name
                     },
@@ -884,7 +968,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // treats any profile/tick emission as a mode change. chatsAll
                         // joins the guard so an aggregate Chats list is escapable too;
                         // 批v151: searchAll likewise.
-                        if (activityAll || chatsAll || searchAll || id != selectedProfile?.id) {
+                        if (activityAll || chatsAll || searchAll || tasksAll || id != selectedProfile?.id) {
                             appViewModel.exitAggregate()
                             appViewModel.selectServer(id)
                         }
@@ -906,6 +990,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                             ROUTE_SEARCH -> {
                                 if (!searchAll) appViewModel.setSearchAll(true)
                             }
+                            HomeTab.TASKS.route -> {
+                                // No project filter on the board — second stage inert.
+                                if (!tasksAll) appViewModel.setTasksAll(true)
+                            }
                             else -> {
                                 if (!activityAll) appViewModel.setActivityAll(true) else showProjectSheet = true
                             }
@@ -916,7 +1004,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 )
             }
             androidx.compose.foundation.layout.Row {
-                if (showBottomBar && wide) CodegNavRail(currentRoute, homeTabs, onTab)
+                if (showBottomBar && wide) CodegNavRail(currentRoute, homeTabs, enterTab)
             NavHost(
                 navController = nav,
                 startDestination = startTab.route,
@@ -983,7 +1071,6 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             composable(HomeTab.ACTIVITY.route) {
                 ActivityScreen(
                     servers = servers,
-                    selectedServerId = selectedProfile?.id,
                     allMode = activityAll,
                     onRefreshAll = appViewModel::refreshActivityAll,
                     // In aggregate mode a row tap focuses that device: leave "All",
@@ -994,7 +1081,6 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // returns to the 全部 surface (see openAggregateRow).
                         openAggregateRow(serverId, conversationId)
                     },
-                    onSelectServer = appViewModel::selectServer,
                     onManageServers = { nav.navigate(ROUTE_SERVERS) },
                     // Long-press handoff on an aggregate row must land on the OWNING
                     // device first (folderId is server-local), same dance as onOpenRow.
@@ -1010,18 +1096,23 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         ProjectSettingsBus.open()
                         onTab(HomeTab.SETTINGS)
                     },
-                    // 批v150 工作台接线：chats/folders/search 是 push 面；「查看
-                    // 全部」先置 chatsAll 再 push（聚合会话能力从工作台一键可达，
-                    // 审查修订①）；需要处理预览跳任务板 tab。
-                    onOpenChats = { pushSurface(ROUTE_CHATS) },
-                    onOpenAllChats = {
-                        appViewModel.setChatsAll(true)
-                        pushSurface(ROUTE_CHATS)
-                    },
+                    // 批v150 工作台接线（批v152：会话已回到五栏，全部走 enterTab，
+                    // 由它负责「进入即全部」；任务板段位直达用一次性请求）。
+                    onOpenChats = { enterTab(HomeTab.CHATS) },
+                    onOpenAllChats = { enterTab(HomeTab.CHATS) },
                     onOpenFolders = { pushSurface(ROUTE_FOLDERS) },
                     onOpenSearch = { pushSurface(ROUTE_SEARCH) },
                     onOpenNewSession = openNewTask,
-                    onOpenTasks = { onTab(HomeTab.TASKS) },
+                    onOpenTasks = { segment ->
+                        appViewModel.requestTaskSegment(segment)
+                        enterTab(HomeTab.TASKS)
+                        // 批v152 审查修正: the stat cards count the workbench's
+                        // scope (single device unless the Activity tab is in 全部).
+                        // enterTab defaults the board to 全部, which would show a
+                        // DIFFERENT, larger set than the number just tapped —
+                        // mirror the workbench scope instead.
+                        if (servers.size >= 2 && !activityAll) appViewModel.setTasksAll(false)
+                    },
                 )
             }
             composable(ROUTE_SEARCH) {
@@ -1361,7 +1452,7 @@ private fun CodegNavRail(
                             contentDescription = stringResource(tab.label),
                         )
                     },
-                    label = { Text(stringResource(tab.label)) },
+                    label = { Text(stringResource(tab.label), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     alwaysShowLabel = true,
                     colors = androidx.compose.material3.NavigationRailItemDefaults.colors(
                         selectedIconColor = colors.accent,
@@ -1412,7 +1503,7 @@ private fun CodegBottomBar(
                             contentDescription = stringResource(tab.label),
                         )
                     },
-                    label = { Text(stringResource(tab.label)) },
+                    label = { Text(stringResource(tab.label), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     alwaysShowLabel = true,
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = colors.accent,

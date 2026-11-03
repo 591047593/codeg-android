@@ -1,21 +1,26 @@
 package app.codeg.android.feature.main
 
+import app.codeg.android.core.datastore.migrateHomeTabOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 批v150 四栏工作台的持久化迁移：five-tab 时代存进 DataStore 的 tab 顺序与
- * 起始页都是**路由字符串**——枚举四栏化后，旧值必须安静地收敛到合法集合，
- * 而不是让未知路由出现在底栏或起始判定里。读侧纯函数即迁移面（无写回）。
+ * 批v152 把会话恢复成底栏标签后，持久化的 tab 顺序/起始页仍需安静收敛：
+ * 未知路由（v150 时代的 folders/search）被丢弃，chats 重新成为合法项。
+ * 另覆盖底栏显隐与生效起始页两个纯函数——它们是「隐藏后不会锁死设置页」
+ * 与「隐藏的起始页自动回退」的唯一保证。
  */
 class TabMigrationTest {
 
     @Test
-    fun `a five-tab saved order collapses to the four tabs`() {
+    fun `saved order keeps survivors and re-appends the rest`() {
         val migrated = HomeTab.orderedBy(listOf("chats", "folders", "activity", "search", "settings"))
-        // "activity"/"settings" survive in their saved relative order; the demoted
-        // routes are dropped; the new tabs append in enum order.
-        assertEquals(listOf(HomeTab.ACTIVITY, HomeTab.SETTINGS, HomeTab.INBOX, HomeTab.TASKS), migrated)
+        // "chats"/"activity"/"settings" survive in saved order; the demoted push
+        // routes are dropped; the remaining tabs append in enum order.
+        assertEquals(
+            listOf(HomeTab.CHATS, HomeTab.ACTIVITY, HomeTab.SETTINGS, HomeTab.INBOX, HomeTab.TASKS),
+            migrated,
+        )
     }
 
     @Test
@@ -24,16 +29,19 @@ class TabMigrationTest {
     }
 
     @Test
-    fun `unknown routes never resurrect demoted tabs`() {
+    fun `unknown routes are dropped without resurrecting push surfaces`() {
         val migrated = HomeTab.orderedBy(listOf("chats", "search", "bogus", "inbox"))
-        // known=[INBOX] first, then every remaining tab in enum order (4 tabs total).
-        assertEquals(listOf(HomeTab.INBOX, HomeTab.ACTIVITY, HomeTab.TASKS, HomeTab.SETTINGS), migrated)
+        // known=[CHATS, INBOX] first, then every remaining tab in enum order.
+        assertEquals(
+            listOf(HomeTab.CHATS, HomeTab.INBOX, HomeTab.ACTIVITY, HomeTab.TASKS, HomeTab.SETTINGS),
+            migrated,
+        )
     }
 
     @Test
-    fun `five-tab-era startTab migrates to the workbench`() {
-        // "chats" was the shipped default start tab — the most common stored value.
-        assertEquals(HomeTab.ACTIVITY, HomeTab.byRoute("chats"))
+    fun `chats resolves as a tab again`() {
+        assertEquals(HomeTab.CHATS, HomeTab.byRoute("chats"))
+        // Demoted push routes are not tabs — they fall back to the workbench.
         assertEquals(HomeTab.ACTIVITY, HomeTab.byRoute("folders"))
         assertEquals(HomeTab.ACTIVITY, HomeTab.byRoute("search"))
         assertEquals(HomeTab.ACTIVITY, HomeTab.byRoute(null))
@@ -48,7 +56,66 @@ class TabMigrationTest {
     }
 
     @Test
+    fun `hidden tabs leave the bar but settings can never be hidden`() {
+        val tabs = visibleTabs(
+            savedOrder = emptyList(),
+            hidden = listOf("chats", "inbox", "tasks", "settings"),
+        )
+        // settings is force-kept (it is the way back to the switches), chats/inbox/
+        // tasks are gone from the bar.
+        assertEquals(listOf(HomeTab.ACTIVITY, HomeTab.SETTINGS), tabs)
+    }
+
+    @Test
+    fun `hiding everything still yields a non-empty bar`() {
+        val tabs = visibleTabs(
+            savedOrder = emptyList(),
+            hidden = HomeTab.entries.map { it.route },
+        )
+        assertEquals(listOf(HomeTab.SETTINGS), tabs)
+    }
+
+    @Test
+    fun `a hidden start tab falls back to the first visible tab`() {
+        val tabs = visibleTabs(savedOrder = emptyList(), hidden = listOf("activity"))
+        assertEquals(HomeTab.CHATS, resolveStartTab("activity", tabs))
+    }
+
+    @Test
+    fun `a visible start tab is preserved`() {
+        val tabs = visibleTabs(savedOrder = emptyList(), hidden = listOf("activity"))
+        assertEquals(HomeTab.INBOX, resolveStartTab("inbox", tabs))
+    }
+
+    @Test
     fun `the shipped default start tab is the workbench`() {
         assertEquals("activity", app.codeg.android.core.datastore.AppSettings.DEFAULT_START_TAB)
+    }
+
+    @Test
+    fun `legacy order gains chats right after the workbench`() {
+        // v150-era default: 会话 was not a tab, so the saved order has no "chats".
+        // Inserting it after "activity" keeps the upgraded bar in the fresh order
+        // instead of parking 会话 behind 设置 (the append-unknown-tabs rule).
+        assertEquals(
+            listOf("activity", "chats", "inbox", "tasks", "settings"),
+            migrateHomeTabOrder(listOf("activity", "inbox", "tasks", "settings")),
+        )
+    }
+
+    @Test
+    fun `orders that already mention chats stay untouched`() {
+        val saved = listOf("chats", "activity", "settings")
+        assertEquals(saved, migrateHomeTabOrder(saved))
+        assertEquals(emptyList<String>(), migrateHomeTabOrder(emptyList()))
+    }
+
+    @Test
+    fun `legacy order without the workbench gets chats up front`() {
+        // No "activity" anchor → prepend, so 会话 still leads the bar.
+        assertEquals(
+            listOf("chats", "folders", "settings"),
+            migrateHomeTabOrder(listOf("folders", "settings")),
+        )
     }
 }

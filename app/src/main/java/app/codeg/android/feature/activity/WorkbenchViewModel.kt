@@ -12,9 +12,9 @@ import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.buildBoard
 import app.codeg.android.core.data.participating
+import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.WorkbenchDisplay
-import app.codeg.android.core.datastore.WorkbenchDisplayStore
 import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -86,54 +86,48 @@ private data class RoundSignal(
 @HiltViewModel
 class WorkbenchViewModel @Inject constructor(
     private val repository: ServerRepository,
-    private val displayStore: WorkbenchDisplayStore,
+    private val appSettingsStore: AppSettingsStore,
     @ApplicationContext appContext: Context,
 ) : ViewModel() {
 
-    // 批v151 头部折叠记忆：store 是正本，内存 StateFlow 是乐观投影（点击立即生效，
-    // 落盘异步）；store 读取失败时保持展开态，不打断 stats 轮询。
-    private val _display = MutableStateFlow(WorkbenchDisplay())
-    val display: StateFlow<WorkbenchDisplay> = _display.asStateFlow()
+    // 批v152 折叠语义改为「设置里的冷启动默认 + 本进程手动覆盖」：
+    // - _manual 为 null = 用户本次启动还没动过 → 跟随设置里的默认（展开/折叠）；
+    // - 用户点过任一条轨 → _manual 写入当前两区状态，此后本进程内设置变更不再
+    //   把用户手选的态掰回去（跨启动恢复默认，v151 的跨启动记忆退役）。
+    private val _manual = MutableStateFlow<WorkbenchDisplay?>(null)
 
-    /** 在途落盘写计数（审查修正）：collector 跳过这些窗口期的 store 回放，防止
-     *  "写 A 落盘 → 回放旧快照 → 盖掉点击 B 的乐观态"的一闪回退。写本身 FIFO
-     *  串行，终值不丢；回放窗口一过，collector 恢复跟读。 */
-    private val pendingWrites = java.util.concurrent.atomic.AtomicInteger(0)
+    // Seed from the store snapshot so a collapsed-by-default workbench does not
+    // flash expanded for the frames before the DataStore flow re-emits (the VM is
+    // only built after settingsLoaded, so the snapshot is already populated).
+    private val _display = MutableStateFlow(
+        appSettingsStore.current?.let {
+            WorkbenchDisplay(
+                overviewCollapsed = !it.workbenchOverviewExpandedDefault,
+                attentionCollapsed = !it.workbenchAttentionExpandedDefault,
+            )
+        } ?: WorkbenchDisplay(),
+    )
+    val display: StateFlow<WorkbenchDisplay> = _display.asStateFlow()
 
     init {
         viewModelScope.launch {
             // catch 不拦 CancellationException（结构化取消照常）；DataStore 读取失败
             // 保持展开态即可，与 stats 的 retryWhen 同一策略取向。
-            displayStore.display.catch { }.collect { snapshot ->
-                if (pendingWrites.get() == 0) _display.value = snapshot
-            }
+            combine(_manual, appSettingsStore.settings) { manual, settings ->
+                manual ?: WorkbenchDisplay(
+                    overviewCollapsed = !settings.workbenchOverviewExpandedDefault,
+                    attentionCollapsed = !settings.workbenchAttentionExpandedDefault,
+                )
+            }.catch { }.collect { _display.value = it }
         }
     }
 
     fun setOverviewCollapsed(collapsed: Boolean) {
-        _display.value = _display.value.copy(overviewCollapsed = collapsed)
-        persist { displayStore.setOverviewCollapsed(collapsed) }
+        _manual.value = (_manual.value ?: _display.value).copy(overviewCollapsed = collapsed)
     }
 
     fun setAttentionCollapsed(collapsed: Boolean) {
-        _display.value = _display.value.copy(attentionCollapsed = collapsed)
-        persist { displayStore.setAttentionCollapsed(collapsed) }
-    }
-
-    private fun persist(write: suspend () -> Unit) {
-        viewModelScope.launch {
-            pendingWrites.incrementAndGet()
-            try {
-                write()
-            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // 落盘失败不炸进程（第1轮并发审查修正）：与读取侧 catch{} 同一
-                // 策略取向——乐观态保留，下一次任意 store 回放自然对齐。
-            } finally {
-                pendingWrites.decrementAndGet()
-            }
-        }
+        _manual.value = (_manual.value ?: _display.value).copy(attentionCollapsed = collapsed)
     }
 
     /** Raw per-device slices (ids are per-server) — every device ever fetched in

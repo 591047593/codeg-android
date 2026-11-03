@@ -189,6 +189,10 @@ fun FloatingBallHost(
                 // back-gesture band steals horizontal swipes started on the ball.
                 .systemGestureExclusion()
                 .graphicsLayer {
+                    // 批v152：阴影轮廓跟图层自己的 shape 走（默认 RectangleShape），
+                    // 这层又在下面的 clip(CircleShape) 之外，于是球外落下一圈方形阴影。
+                    // 只改轮廓，clip 仍为 false —— 圆形裁剪交给后面的 clip。
+                    shape = CircleShape
                     // dragArmed = held 1s: the ball swells to say "drag me now".
                     val scale = when {
                         dragArmed -> 1.16f

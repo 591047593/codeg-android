@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -36,11 +35,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
+import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.TaskStatusTone
 import app.codeg.android.core.data.taskStatusUi
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -132,14 +134,24 @@ private fun headerExpand() = expandVertically(expandFrom = Alignment.Top, animat
 
 private fun headerCollapse() = shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = tween(180)) + fadeOut(tween(150))
 
-/** One stat card: value + label. Value "…" until the first round lands. */
+/** One stat card: value + label. Value "…" until the first round lands.
+ *  批v152：卡是入口，不只是展示——运行中/需要处理跳任务板对应段，在线设备跳
+ *  设备管理；onClickLabel 让读屏用户知道点了会去哪。 */
 @Composable
-private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+private fun StatCard(
+    label: String,
+    value: String,
+    onClickLabel: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = CodegTheme.colors
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
             .background(colors.bgElevated)
+            .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         Text(
@@ -159,20 +171,37 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
-/** 统计行：运行中 / 需要处理 / 在线设备（真实计数，首round未落地前显示 …）。 */
+/** 统计行：运行中 / 需要处理 / 在线设备（真实计数，首round未落地前显示 …）。
+ *  批v152：三张卡都可点，跳转目标见 [StatCard]。 */
 @Composable
-internal fun WorkbenchStatsRow(stats: WorkbenchStats, modifier: Modifier = Modifier) {
+internal fun WorkbenchStatsRow(
+    stats: WorkbenchStats,
+    onOpenRunning: () -> Unit,
+    onOpenAttention: () -> Unit,
+    onOpenDevices: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val value = { n: Int -> if (stats.hasLoaded) n.toString() else "…" }
     Row(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatCard(stringResource(R.string.workbench_stat_running), value(stats.runningTasks), Modifier.weight(1f))
+        StatCard(
+            stringResource(R.string.workbench_stat_running),
+            value(stats.runningTasks),
+            stringResource(R.string.workbench_stat_running_action),
+            onOpenRunning,
+            Modifier.weight(1f),
+        )
         StatCard(
             stringResource(R.string.workbench_stat_attention),
             value(stats.attentionTasks),
+            stringResource(R.string.workbench_stat_attention_action),
+            onOpenAttention,
             Modifier.weight(1f),
         )
         StatCard(
             stringResource(R.string.workbench_stat_online),
             if (stats.hasLoaded) "${stats.onlineDevices}/${stats.totalDevices}" else "…",
+            stringResource(R.string.workbench_stat_online_action),
+            onOpenDevices,
             Modifier.weight(1f),
         )
     }
@@ -302,8 +331,9 @@ private fun AttentionRow(entry: app.codeg.android.core.data.TaskBoardEntry, onCl
 }
 
 /**
- * 需要处理卡：≤3 条真实任务预览 + 去任务板。空态整块不渲染。
- * 批v151：标题行（除去任务板 chip 外）可点折叠/展开预览行。
+ * 需要处理卡：≤3 条真实任务预览。空态整块不渲染。
+ * 批v151：可折叠；批v152：整行任意位置点击折叠/展开（「去任务板」按钮已删，
+ * 预览行/「还有 N 条」仍跳任务板「等你处理」段）。
  */
 @Composable
 internal fun WorkbenchAttentionCard(
@@ -315,6 +345,9 @@ internal fun WorkbenchAttentionCard(
 ) {
     val colors = CodegTheme.colors
     if (stats.attentionTasks == 0) return
+    val stateText = stringResource(
+        if (collapsed) R.string.workbench_attention_collapsed else R.string.workbench_attention_expanded
+    )
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -325,59 +358,37 @@ internal fun WorkbenchAttentionCard(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(
+                    // 需要处理卡自己的标签（审查修正）：复用总览的 expand/collapse
+                    // 文案会让读屏用户以为在操作总览区。
+                    onClickLabel = stringResource(
+                        if (collapsed) R.string.workbench_attention_expand else R.string.workbench_attention_collapse
+                    ),
+                    role = Role.Button,
+                    onClick = onToggleCollapse,
+                )
+                // 触达修正（第1轮可及性审查）：标题行 ~26dp → 48dp 触达。
+                .heightIn(min = 48.dp)
+                .semantics { stateDescription = stateText }
+                .padding(horizontal = 4.dp, vertical = 3.dp),
         ) {
-            // Toggle target = title + chevron only; 去任务板 keeps its own tap.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(
-                        // 需要处理卡自己的标签（审查修正）：复用总览的 expand/collapse
-                        // 文案会让读屏用户以为在操作总览区。
-                        onClickLabel = stringResource(
-                            if (collapsed) R.string.workbench_attention_expand else R.string.workbench_attention_collapse
-                        ),
-                        role = Role.Button,
-                        onClick = onToggleCollapse,
-                    )
-                    // 触达修正（第1轮可及性审查）：标题行 ~26dp → 48dp 触达。
-                    .heightIn(min = 48.dp)
-                    .padding(horizontal = 4.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.workbench_stat_attention),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary,
-                )
-                Icon(
-                    if (collapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
-                    contentDescription = null,
-                    tint = colors.textTertiary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenTasks)
-                    // 触达修正（第1轮可及性审查）：去任务板 ~22dp → 48dp 触达。
-                    .heightIn(min = 48.dp).padding(horizontal = 6.dp, vertical = 3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.workbench_open_task_board),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.accent,
-                )
-                Icon(
-                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.accent,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+            Text(
+                text = stringResource(R.string.workbench_stat_attention),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textPrimary,
+            )
+            // 批v152: chevron 推到最右，整行可点的视觉暗示。
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (collapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(16.dp),
+            )
         }
         AnimatedVisibility(visible = !collapsed, enter = headerExpand(), exit = headerCollapse()) {
             Column {
@@ -389,8 +400,15 @@ internal fun WorkbenchAttentionCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = colors.textTertiary,
                         // 触达修正（第1轮可及性审查）：链接行 ~18dp → 48dp 触达
-                        //（clickable 在前、padding 在内）。
-                        modifier = Modifier.clickable(onClick = onOpenTasks).padding(horizontal = 6.dp, vertical = 16.dp),
+                        //（clickable 在前、padding 在内）。批v152 审查修正：补
+                        // role/onClickLabel，读屏用户才能听出这是一条跳转动作。
+                        modifier = Modifier
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(R.string.workbench_stat_attention_action),
+                                onClick = onOpenTasks,
+                            )
+                            .padding(horizontal = 6.dp, vertical = 16.dp),
                     )
                 }
             }
@@ -410,7 +428,8 @@ internal fun WorkbenchHeader(
     onOpenFolders: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenNewSession: () -> Unit,
-    onOpenTasks: () -> Unit,
+    onOpenTasks: (TaskSegment) -> Unit,
+    onOpenDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 间距不靠 spacedBy 撑（审查修正：折叠后 AnimatedVisibility 仍是零高子项，
@@ -420,10 +439,21 @@ internal fun WorkbenchHeader(
         WorkbenchOverviewRail(stats, overviewCollapsed, onToggleOverview, modifier = Modifier.padding(top = 6.dp))
         AnimatedVisibility(visible = !overviewCollapsed, enter = headerExpand(), exit = headerCollapse()) {
             Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                WorkbenchStatsRow(stats)
+                WorkbenchStatsRow(
+                    stats,
+                    onOpenRunning = { onOpenTasks(TaskSegment.RUNNING) },
+                    onOpenAttention = { onOpenTasks(TaskSegment.ATTENTION) },
+                    onOpenDevices = onOpenDevices,
+                )
                 WorkbenchQuickRow(onOpenChats, onOpenFolders, onOpenSearch, onOpenNewSession)
             }
         }
-        WorkbenchAttentionCard(stats, attentionCollapsed, onToggleAttention, onOpenTasks, modifier = Modifier.padding(top = 10.dp))
+        WorkbenchAttentionCard(
+            stats,
+            attentionCollapsed,
+            onToggleAttention,
+            onOpenTasks = { onOpenTasks(TaskSegment.ATTENTION) },
+            modifier = Modifier.padding(top = 10.dp),
+        )
     }
 }

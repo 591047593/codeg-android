@@ -102,6 +102,30 @@ class ServerRepository @Inject constructor(
 
     fun setSearchAll(all: Boolean) { _searchAll.value = all }
 
+    // Task-board aggregate ("全部") mode (批v152) — the fourth twin. Same rules:
+    // in-memory only, a cold start lands on the single-device board unless the
+    // entry point (bottom bar / ball / workbench card) sets All first.
+    private val _tasksAll = MutableStateFlow(false)
+    val tasksAll: StateFlow<Boolean> = _tasksAll.asStateFlow()
+
+    fun setTasksAll(all: Boolean) { _tasksAll.value = all }
+
+    /** One-shot 段位 request (批v152): the workbench stat cards and the 需要处理
+     *  preview ask the board to open on a specific segment. The board CONSUMES it
+     *  (reads then clears) so a later tab switch doesn't re-apply a stale jump. */
+    private val _taskSegmentRequest = MutableStateFlow<TaskSegment?>(null)
+
+    fun requestTaskSegment(segment: TaskSegment) { _taskSegmentRequest.value = segment }
+
+    // compareAndSet loop instead of a plain read+write: the board and a stat-card
+    // tap can race across threads, and a stale segment must not be re-applied.
+    fun consumeTaskSegment(): TaskSegment? {
+        while (true) {
+            val current = _taskSegmentRequest.value ?: return null
+            if (_taskSegmentRequest.compareAndSet(current, null)) return current
+        }
+    }
+
     /** Refresh tick for the aggregate Chats list (mode bumps + conversationsChanged). */
     private val _chatsRefreshTick = MutableStateFlow(0)
     val chatsRefreshTick: StateFlow<Int> = _chatsRefreshTick.asStateFlow()
