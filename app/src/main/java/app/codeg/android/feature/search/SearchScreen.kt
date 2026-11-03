@@ -250,7 +250,6 @@ fun SearchScreen(
     }
 }
 
-@Composable
 /** 设备失败横幅：All 模式的列表分支与空态分支共用（同 Activity 聚合口径）。 */
 @Composable
 private fun UnreachableDevicesBanner(failed: List<DeviceLoad>) {

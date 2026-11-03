@@ -198,12 +198,31 @@ class SearchViewModel @Inject constructor(
 
     fun submit() {
         val q = _query.value.trim()
-        if (q.isNotEmpty()) viewModelScope.launch { recentStore.add(q) }
+        if (q.isEmpty()) return
+        // 写盘失败不炸进程（第2轮审查修正）：与 runSingleSearch/runAggregateSearch
+        // 对 add() 的包法一致——磁盘满时每次搜索提交都会走到这里。
+        viewModelScope.launch {
+            try {
+                recentStore.add(q)
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun useRecent(term: String) { _query.value = term }
 
-    fun clearRecent() { viewModelScope.launch { recentStore.clear() } }
+    fun clearRecent() {
+        viewModelScope.launch {
+            try {
+                recentStore.clear()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     /** Re-run the current query after a failure (drives the inline-error Retry button).
      *  Also recovers a missing token: [runSearch] re-resolves a null client from the

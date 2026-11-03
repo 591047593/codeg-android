@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -105,6 +107,10 @@ fun GeneralContent(
                                         if (selected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
                                     )
                                     .clickable { viewModel.setInboxNewIdeaStyle(id) }
+                                    // 触达对齐第1轮标准（第2轮审查修正）：同批新 chip
+                                    // 也撑 48dp，padding 留在触达区内。
+                                    .heightIn(min = 48.dp)
+                                    .wrapContentHeight(Alignment.CenterVertically)
                                     .padding(horizontal = 10.dp, vertical = 5.dp),
                             )
                         }

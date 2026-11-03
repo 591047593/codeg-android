@@ -270,14 +270,17 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val sessionProjects by appViewModel.sessionProjects.collectAsStateWithLifecycle()
     val sessionProjectMembers by appViewModel.sessionProjectMembers.collectAsStateWithLifecycle()
     val activeProjectId by appViewModel.activeProjectId.collectAsStateWithLifecycle()
-    var showProjectSheet by remember { mutableStateOf(false) }
+    // 旋转存活（第2轮审查修正）：旗标用 Saveable——manifest 无 configChanges，
+    // 旋转重建 Activity 时普通 remember 归 false 会连人带输入一起拆掉；本库
+    // 自身约定（InboxScreen 编辑态）就是"旋转不得关 sheet、丢输入即丢工作"。
+    var showProjectSheet by rememberSaveable { mutableStateOf(false) }
     // 批v150 quick-center sheets: the ball panel's 记录想法/创建任务/会话交接
     // cards land here — the shell owns them because the ball's actions do.
-    var showQuickIdea by remember { mutableStateOf(false) }
-    var showQuickTask by remember { mutableStateOf(false) }
-    var showQuickHandoff by remember { mutableStateOf(false) }
+    var showQuickIdea by rememberSaveable { mutableStateOf(false) }
+    var showQuickTask by rememberSaveable { mutableStateOf(false) }
+    var showQuickHandoff by rememberSaveable { mutableStateOf(false) }
     // 批v151: ball "quickNewSession" — the global new-session sheet (P6).
-    var showQuickNewSession by remember { mutableStateOf(false) }
+    var showQuickNewSession by rememberSaveable { mutableStateOf(false) }
     // 每次打开快照一个 token：派发/保存的完成回调可能在 sheet 被关掉、又被重新
     // 打开之后才迟到（VM 协程持有旧闭包）。旧 token 与当前不一致时只弹回执，
     // 不关掉用户刚打开的新 sheet。两个 sheet 分开计数——共用计数器时后开的会
@@ -369,6 +372,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // All flag is independent and untouched (the old per-tab exit note is moot).
     // v136: a ball-driven switch REPLACES a detail already on top (see above).
     fun openAggregateRow(serverId: String, conversationId: Int) {
+        // 幽灵设备守卫（第2轮审查修正）：聚合行可能在设备被删/隐藏后仍带旧
+        // serverId——不校验会把全局选中持久化到一个不存在的设备上。
+        if (servers.none { it.id == serverId }) return
         handoffTo(serverId) { openConversationAndMark(serverId, conversationId, replaceTop = true) }
     }
     // Wide screens (tablets / landscape) use a side NavigationRail instead of the bottom bar.
