@@ -178,17 +178,25 @@ fun GeneralContent(
                             "medium" to R.string.ball_size_medium,
                             "large" to R.string.ball_size_large,
                         ).forEach { (id, labelRes) ->
-                            val selected = appSettings.floatBallSize == id
+                            // 局部变量刻意叫 isSelected：若叫 selected，下方
+                            // semantics lambda 的左值会解析到局部变量报编译错
+                            // （v151 教训，同新想法样式 chip）。
+                            val isSelected = appSettings.floatBallSize == id
                             Text(
                                 stringResource(labelRes),
                                 fontSize = 13.sp,
-                                color = if (selected) colors.onAccent else colors.textSecondary,
+                                color = if (isSelected) colors.onAccent else colors.textSecondary,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (selected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
+                                        if (isSelected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
                                     )
                                     .clickable { viewModel.setFloatBallSize(id) }
+                                    // 批v153（第3轮可及性审查）：对齐新想法样式 chip 的
+                                    // 三件套——48dp 触达 + selected 朗读（同族同法）。
+                                    .semantics { selected = isSelected }
+                                    .heightIn(min = 48.dp)
+                                    .wrapContentHeight(Alignment.CenterVertically)
                                     .padding(horizontal = 10.dp, vertical = 5.dp),
                             )
                         }
@@ -458,9 +466,9 @@ private fun TabVisibilityEditor(
 private fun Stepper(value: Int, onDec: () -> Unit, onInc: () -> Unit) {
     val colors = CodegTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        StepButton(Icons.Rounded.Remove, onClick = onDec)
+        StepButton(Icons.Rounded.Remove, modifier = Modifier.size(36.dp), onClick = onDec)
         Text("$value", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, modifier = Modifier.padding(horizontal = 8.dp))
-        StepButton(Icons.Rounded.Add, onClick = onInc)
+        StepButton(Icons.Rounded.Add, modifier = Modifier.size(36.dp), onClick = onInc)
     }
 }
 
@@ -468,19 +476,21 @@ private fun Stepper(value: Int, onDec: () -> Unit, onInc: () -> Unit) {
 private fun StepButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean = true,
+    contentDescription: String? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val colors = CodegTheme.colors
     FilledTonalIconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.size(36.dp),
+        modifier = modifier,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
             containerColor = colors.textPrimary.copy(alpha = 0.06f),
             contentColor = colors.textPrimary,
         ),
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -525,16 +535,31 @@ private fun TabOrderEditor(
                 },
                 trailingContent = {
                     Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-                        StepButton(Icons.Rounded.ArrowDropUp, enabled = index > 0, onClick = {
-                            val next = tabs.toMutableList()
-                            next[index - 1] = tabs[index].also { next[index] = next[index - 1] }
-                            onReorder(next.map { it.route })
-                        })
-                        StepButton(Icons.Rounded.ArrowDropDown, enabled = index < tabs.lastIndex, onClick = {
-                            val next = tabs.toMutableList()
-                            next[index + 1] = tabs[index].also { next[index] = next[index + 1] }
-                            onReorder(next.map { it.route })
-                        })
+                        // 批v153（第3轮可及性审查）：36dp 无标签双胞胎按钮——读屏
+                        // 用户无法区分上下、也低于 48dp 触达标准；补朗读文案并撑到
+                        // 48dp（同屏 Stepper 的 ± 键保持 36dp 视觉不动）。
+                        StepButton(
+                            Icons.Rounded.ArrowDropUp,
+                            enabled = index > 0,
+                            contentDescription = stringResource(R.string.common_move_up),
+                            modifier = Modifier.size(48.dp),
+                            onClick = {
+                                val next = tabs.toMutableList()
+                                next[index - 1] = tabs[index].also { next[index] = next[index - 1] }
+                                onReorder(next.map { it.route })
+                            },
+                        )
+                        StepButton(
+                            Icons.Rounded.ArrowDropDown,
+                            enabled = index < tabs.lastIndex,
+                            contentDescription = stringResource(R.string.common_move_down),
+                            modifier = Modifier.size(48.dp),
+                            onClick = {
+                                val next = tabs.toMutableList()
+                                next[index + 1] = tabs[index].also { next[index] = next[index + 1] }
+                                onReorder(next.map { it.route })
+                            },
+                        )
                     }
                 },
                 colors = ListItemDefaults.colors(

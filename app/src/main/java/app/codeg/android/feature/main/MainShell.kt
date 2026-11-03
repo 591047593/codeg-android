@@ -29,6 +29,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.NavigationBarItem
@@ -308,6 +310,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // Aggregate "All devices" mode (Activity tab), owned by ServerRepository so the
     // ActivityViewModel can react without ViewModel-to-ViewModel injection.
     val activityAll by appViewModel.activityAll.collectAsStateWithLifecycle()
+    // 批v153（UX 审查）：底栏收件箱徽标计数（草稿数，派发成功即删）。
+    val inboxBadge by appViewModel.inboxBadge.collectAsStateWithLifecycle()
     // Aggregate "全部" mode for the Chats tab + the project filter (batch v132).
     val chatsAll by appViewModel.chatsAll.collectAsStateWithLifecycle()
     // 批v151: the Search push joins the aggregate family (device bar All chip).
@@ -520,6 +524,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         if (appViewModel.launchDeviceDefaultApplied || servers.isEmpty()) return@LaunchedEffect
         if (servers.size >= 2) {
             when (startTab) {
+                HomeTab.ACTIVITY -> appViewModel.setActivityAll(true)
                 HomeTab.CHATS -> appViewModel.setChatsAll(true)
                 HomeTab.TASKS -> appViewModel.setTasksAll(true)
                 else -> {}
@@ -545,8 +550,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // 批v152: every "user enters a tab" gesture (bottom bar / rail / ball action /
     // deep link / workbench quick entry / cold-start) goes through here. Two jobs:
     //
-    // 1. 会话 and 任务板 enter on the ALL-devices view — the mandate: tapping 会话
-    //    from the bar must show every device's sessions without a manual 全部 tap.
+    // 1. 动态/会话/任务板 enter on the ALL-devices view — the mandate (批v153
+    //    extends B2 to the workbench: the "what are all my devices doing" question
+    //    must be answered the moment the app opens, not after a manual 全部 tap).
     //    Only on an actual entry (route differs): re-tapping the current tab, the
     //    device swipe and coming BACK from a detail must keep the user's device.
     // 2. A tab hidden via Settings is not in [homeTabs]; navigating to its route as
@@ -555,6 +561,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val enterTab: (HomeTab) -> Unit = { tab ->
         if (tab.route != currentRoute) {
             if (servers.size >= 2) when (tab) {
+                HomeTab.ACTIVITY -> appViewModel.setActivityAll(true)
                 HomeTab.CHATS -> appViewModel.setChatsAll(true)
                 HomeTab.TASKS -> appViewModel.setTasksAll(true)
                 else -> {}
@@ -919,6 +926,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     currentRoute,
                     homeTabs,
                     enterTab,
+                    inboxBadge = inboxBadge,
                     // Report a shrinking height as the bar hides so the Scaffold gives the
                     // freed strip back to the content (the whole point — reclaim the space);
                     // the bar is drawn at full height and slid down within, clipped away.
@@ -1056,6 +1064,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         servers = servers,
                         selectedId = selectedProfile?.id,
                         onManageServers = { nav.navigate(ROUTE_SERVERS) },
+                        // 批v153（UX 审查）：会话页自带的搜索入口，不再绕工作台。
+                        onOpenSearch = { pushSurface(ROUTE_SEARCH) },
                         onOpenConversation = { id -> openConversationAndMark(selectedProfile?.id, id) },
                         onNewTask = openNewTask,
                         onHandoff = { folderId, ref -> nav.navigate(handoffRoute(folderId, ref)) },
@@ -1114,7 +1124,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     },
                     // 批v150 工作台接线（批v152：会话已回到五栏，全部走 enterTab，
                     // 由它负责「进入即全部」；任务板段位直达用一次性请求）。
-                    onOpenChats = { enterTab(HomeTab.CHATS) },
+                    // 批v153（UX 审查）：快捷行会话卡与底栏重复，换成「创建任务」
+                    // 直达球的快速任务 sheet。
+                    onQuickTask = { showQuickTask = true },
                     onOpenAllChats = { enterTab(HomeTab.CHATS) },
                     onOpenFolders = { pushSurface(ROUTE_FOLDERS) },
                     onOpenSearch = { pushSurface(ROUTE_SEARCH) },
@@ -1159,6 +1171,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // selection lands before the push (Back returns to the inbox).
                         handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
                     },
+                    // 批v153（UX 审查）：任务模式派发回执直达任务板。
+                    onOpenTasks = { enterTab(HomeTab.TASKS) },
                 )
             }
             composable(HomeTab.TASKS.route) {
@@ -1372,8 +1386,20 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { quickActionViewModel.clearConfirmed() }) {
-                        Text(stringResource(R.string.common_ok))
+                    // 批v153（UX 审查）：任务模式回执闭合「派出去之后呢」——会话模式
+                    // 会自动跳会话，任务模式给一个去任务板的直达。
+                    Row {
+                        if (!ref.sessionMode) {
+                            TextButton(onClick = {
+                                quickActionViewModel.clearConfirmed()
+                                enterTab(HomeTab.TASKS)
+                            }) {
+                                Text(stringResource(R.string.receipt_open_task_board))
+                            }
+                        }
+                        TextButton(onClick = { quickActionViewModel.clearConfirmed() }) {
+                            Text(stringResource(R.string.common_ok))
+                        }
                     }
                 },
             )
@@ -1496,6 +1522,7 @@ private fun CodegBottomBar(
     currentRoute: String?,
     tabs: List<HomeTab>,
     onSelect: (HomeTab) -> Unit,
+    inboxBadge: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
@@ -1518,10 +1545,19 @@ private fun CodegBottomBar(
                     selected = selected,
                     onClick = { onSelect(tab) },
                     icon = {
-                        Icon(
-                            if (selected) tab.selectedIcon else tab.icon,
-                            contentDescription = stringResource(tab.label),
-                        )
+                        // 批v153（UX 审查）：收件箱有草稿时给环境感知徽标——不用切
+                        // 过去才知道有想法等处理。横屏 NavRail 不挂（那台设备上
+                        // 收件箱一般不是主要入口）。
+                        BadgedBox(badge = {
+                            if (tab == HomeTab.INBOX && inboxBadge > 0) {
+                                Badge { Text(inboxBadge.toString()) }
+                            }
+                        }) {
+                            Icon(
+                                if (selected) tab.selectedIcon else tab.icon,
+                                contentDescription = stringResource(tab.label),
+                            )
+                        }
                     },
                     label = { Text(stringResource(tab.label), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     alwaysShowLabel = true,

@@ -45,7 +45,6 @@
     <string name="workbench_stat_running_action">View running tasks</string>
     <string name="workbench_stat_attention_action">View tasks that need you</string>
     <string name="workbench_stat_online_action">Manage devices</string>
-    <string name="workbench_quick_chats">Chats</string>
     <string name="workbench_quick_folders">Projects</string>
     <string name="workbench_quick_search">Search</string>
     <string name="workbench_new_session">New session</string>
@@ -714,6 +713,8 @@
     <string name="compose_ctx_folder">Folder</string>
     <string name="compose_ctx_agent">Agent</string>
     <string name="common_close">Close</string>
+    <string name="common_move_up">Move up</string>
+    <string name="common_move_down">Move down</string>
     <string name="session_toc_open">Message list</string>
     <string name="session_toc_image">[Image]</string>
 
@@ -1326,7 +1327,7 @@
     <string name="ball_action_quick_search">Global search</string>
     <string name="ball_panel_all_actions">All actions</string>
     <string name="ball_panel_actions_title">Actions</string>
-    <string name="ball_quick_new_session_note">Start a chat</string>
+    <string name="ball_quick_new_session_global_note">Pick a device &amp; folder, then jump in</string>
     <string name="ball_quick_idea_note">Save a thought</string>
     <string name="ball_quick_task_note">Dispatch without the inbox</string>
     <string name="ball_quick_handoff_note">Move work along</string>
@@ -1347,5 +1348,6 @@
     <string name="option_sheet_search">Search options</string>
     <string name="picker_no_options">Nothing available</string>
     <string name="dispatch_created_title">%1$s created</string>
+    <string name="receipt_open_task_board">Go to task board</string>
     <string name="dispatch_created_body">“%2$s” on %1$s is in. Check the task board (or the session) for its live status.</string>
 </resources>

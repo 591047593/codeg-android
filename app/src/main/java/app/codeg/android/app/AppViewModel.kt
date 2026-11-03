@@ -11,6 +11,7 @@ import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.nextQuickSwitchStep
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
+import app.codeg.android.core.datastore.IdeaStore
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.datastore.SessionRef
@@ -36,12 +37,19 @@ class AppViewModel @Inject constructor(
     private val serverRepository: ServerRepository,
     private val appSettingsStore: AppSettingsStore,
     private val sessionProjectRepo: SessionProjectRepository,
+    private val ideaStore: IdeaStore,
     /** Floating-ball session cycling — the shell dispatches the ball actions here. */
     val focusHub: SessionFocusHub,
 ) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = appSettingsStore.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings.INITIAL)
+
+    // 批v153（UX 审查）：底栏收件箱徽标——有想法草稿等处理时给环境感知，不用切
+    // 到收件箱才知道。计数 = 收件箱草稿数（派发成功即删）。
+    val inboxBadge: StateFlow<Int> = ideaStore.ideas
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** False until DataStore's first emission lands — the shell holds on it so the
      *  start tab / tab order are applied from the real saved values, not defaults. */

@@ -96,6 +96,8 @@ fun InboxScreen(
     // 批v149 会话模式：派发确认后自动跳转会话（serverId 先落设备再推详情，
     // 会话详情读 selectedProfile 恰好一次，见 MainShell 的 onOpenSession 接线）。
     onOpenSession: (serverId: String, conversationId: Int) -> Unit = { _, _ -> },
+    /** 批v153（UX 审查）：任务模式派发回执的「去任务板」直达。 */
+    onOpenTasks: () -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
@@ -277,8 +279,20 @@ fun InboxScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { dispatchResult = null; dispatchingId = null }) {
-                    Text(stringResource(android.R.string.ok))
+                // 批v153（UX 审查）：任务模式回执直达任务板（会话模式已自动跳会话）。
+                Row {
+                    if (ref.state == DispatchState.CONFIRMED && !ref.sessionMode) {
+                        TextButton(onClick = {
+                            dispatchResult = null
+                            dispatchingId = null
+                            onOpenTasks()
+                        }) {
+                            Text(stringResource(R.string.receipt_open_task_board))
+                        }
+                    }
+                    TextButton(onClick = { dispatchResult = null; dispatchingId = null }) {
+                        Text(stringResource(android.R.string.ok))
+                    }
                 }
             },
         )

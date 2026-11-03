@@ -269,15 +269,15 @@ fun SearchScreen(
     }
 }
 
-/** 设备失败横幅：All 模式的列表分支与空态分支共用（同 Activity 聚合口径）。 */
+/** 设备失败横幅：All 模式的列表分支与空态分支共用（同 Activity 聚合口径）。
+ *  批v153（第3轮可及性审查）：去掉 maxLines=1——多设备同时挂时设备名单被截
+ *  用户看不到哪台挂了；Activity 聚合的同文案本就不限行。 */
 @Composable
 private fun UnreachableDevicesBanner(failed: List<DeviceLoad>) {
     Text(
         text = stringResource(R.string.activity_devices_unreachable, failed.joinToString { it.name }),
         fontSize = 12.sp,
         color = CodegTheme.colors.warning,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp),

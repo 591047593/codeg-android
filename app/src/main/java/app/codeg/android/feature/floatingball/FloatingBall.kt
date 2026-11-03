@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Assignment
@@ -313,7 +314,10 @@ fun FloatingBallHost(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     )
                     val quickCards = listOf(
-                        Triple("newSession", R.string.ball_action_new_session, R.string.ball_quick_new_session_note),
+                        // 批v153（UX 审查）：首卡换全局新建会话——v151 专门做的
+                        // 「选设备→选目录→自动跳会话」此前沉在「全部动作」目录里；
+                        // 本机 composer 仍由会话页 FAB 与默认左滑手势承载。
+                        Triple("quickNewSession", R.string.workbench_new_session, R.string.ball_quick_new_session_global_note),
                         Triple("quickIdea", R.string.ball_action_quick_idea, R.string.ball_quick_idea_note),
                         Triple("quickTask", R.string.ball_action_quick_task, R.string.ball_quick_task_note),
                         Triple("quickHandoff", R.string.ball_action_quick_handoff, R.string.ball_quick_handoff_note),
@@ -369,6 +373,10 @@ fun FloatingBallHost(
                                         showPanel = false
                                         onAction(id)
                                     }
+                                    // 批v153（第3轮可及性审查）：~40.6dp 不达 48dp 触达
+                                    // 标准，v151 新加的 5 个动作正落在这里；行间只有
+                                    // hairline 分隔，撑高同时降低相邻行误触。
+                                    .heightIn(min = 48.dp)
                                     .padding(horizontal = 14.dp, vertical = 11.dp),
                             ) {
                                 Text(stringResource(labelRes), color = colors.textPrimary, fontSize = 14.sp)
@@ -383,6 +391,8 @@ fun FloatingBallHost(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { showPanel = false }
+                            .heightIn(min = 48.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
                             .padding(horizontal = 14.dp, vertical = 11.dp),
                     )
                 }
@@ -448,7 +458,8 @@ private fun QuickPanelCard(
 
 /** Icon for a quick-center card id (falls back to the ball mark). */
 private fun quickPanelIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
-    "newSession" -> Icons.Rounded.Add
+    // 批v153（UX 审查）：首卡换全局新建会话（注册表见 MainShell「quickNewSession」）。
+    "quickNewSession" -> Icons.Rounded.Add
     "quickIdea" -> Icons.Rounded.Lightbulb
     "quickTask" -> Icons.Rounded.Assignment
     "quickHandoff" -> Icons.Rounded.SwapHoriz
@@ -468,6 +479,7 @@ private fun PanelActionRow(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

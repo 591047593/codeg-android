@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,6 +100,8 @@ fun SessionListScreen(
     servers: List<ServerProfile>,
     selectedId: String?,
     onManageServers: () -> Unit,
+    /** 批v153（UX 审查）：页内搜索入口，MainShell push 搜索面。 */
+    onOpenSearch: () -> Unit = {},
     onOpenConversation: (Int) -> Unit,
     onNewTask: () -> Unit,
     onHandoff: (folderId: Int, reference: String) -> Unit = { _, _ -> },
@@ -191,6 +194,15 @@ fun SessionListScreen(
                 // the title is a plain label, and the Dns icon keeps the manage entry.
                 title = { Text(selectedName) },
                 actions = {
+                    // 批v153（UX 审查）：会话页补搜索入口——此前按名字找会话必须
+                    // 先离开当前页去工作台的搜索卡。
+                    IconButton(onClick = onOpenSearch) {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = stringResource(R.string.workbench_quick_search),
+                            tint = colors.textSecondary,
+                        )
+                    }
                     IconButton(onClick = onManageServers) {
                         Icon(
                             Icons.Rounded.Dns,

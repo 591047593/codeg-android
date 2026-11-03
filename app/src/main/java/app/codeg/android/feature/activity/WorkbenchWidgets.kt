@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Assignment
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
@@ -78,6 +79,11 @@ private fun WorkbenchOverviewRail(
     } else {
         "…"
     }
+    // 批v153（第3轮可及性审查）：与「需要处理」卡同款状态朗读——读屏要能听出
+    // 当前是收起还是展开（复用同义文案，zh/en 均为「已收起/已展开」口径）。
+    val stateLabel = stringResource(
+        if (collapsed) R.string.workbench_attention_collapsed else R.string.workbench_attention_expanded,
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -95,6 +101,7 @@ private fun WorkbenchOverviewRail(
             // 触达修正（第1轮可及性审查）：细条全宽但仅 ~28dp 高——clickable 之后
             // 撑到 48dp（padding 在内，触达区含 padding），不改变视觉密度。
             .heightIn(min = 48.dp)
+            .semantics { stateDescription = stateLabel }
             .padding(horizontal = 10.dp, vertical = 5.dp),
     ) {
         if (collapsed) {
@@ -235,10 +242,11 @@ private fun QuickCard(
     }
 }
 
-/** 快捷入口行：会话 / 项目 / 搜索 + 新建会话主按钮。 */
+/** 快捷入口行：快速任务 / 项目 / 搜索 + 新建会话主按钮（批v153：会话卡与底栏
+ *  重复，工作台补「创建任务」直达）。 */
 @Composable
 internal fun WorkbenchQuickRow(
-    onOpenChats: () -> Unit,
+    onQuickTask: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenNewSession: () -> Unit,
@@ -250,7 +258,7 @@ internal fun WorkbenchQuickRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        QuickCard(Icons.Rounded.Forum, stringResource(R.string.workbench_quick_chats), onOpenChats, Modifier.weight(1f))
+        QuickCard(Icons.Rounded.Assignment, stringResource(R.string.ball_action_quick_task), onQuickTask, Modifier.weight(1f))
         QuickCard(Icons.Rounded.FolderOpen, stringResource(R.string.workbench_quick_folders), onOpenFolders, Modifier.weight(1f))
         QuickCard(Icons.Rounded.Search, stringResource(R.string.workbench_quick_search), onOpenSearch, Modifier.weight(1f))
         // Primary action: same frosted-chip language as the ball size chips.
@@ -271,6 +279,9 @@ internal fun WorkbenchQuickRow(
                 color = colors.onAccent,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                // 批v153（第3轮可及性审查）：同屏 QuickCard 全带省略，主按钮漏网
+                // ——EN/fontScale 2.0 下会在字符中间硬切。
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -424,7 +435,7 @@ internal fun WorkbenchHeader(
     attentionCollapsed: Boolean,
     onToggleOverview: () -> Unit,
     onToggleAttention: () -> Unit,
-    onOpenChats: () -> Unit,
+    onQuickTask: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenNewSession: () -> Unit,
@@ -445,7 +456,7 @@ internal fun WorkbenchHeader(
                     onOpenAttention = { onOpenTasks(TaskSegment.ATTENTION) },
                     onOpenDevices = onOpenDevices,
                 )
-                WorkbenchQuickRow(onOpenChats, onOpenFolders, onOpenSearch, onOpenNewSession)
+                WorkbenchQuickRow(onQuickTask, onOpenFolders, onOpenSearch, onOpenNewSession)
             }
         }
         WorkbenchAttentionCard(

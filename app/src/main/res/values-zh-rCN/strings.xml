@@ -45,7 +45,6 @@
     <string name="workbench_stat_running_action">查看运行中任务</string>
     <string name="workbench_stat_attention_action">查看需要处理的任务</string>
     <string name="workbench_stat_online_action">管理设备</string>
-    <string name="workbench_quick_chats">会话</string>
     <string name="workbench_quick_folders">项目</string>
     <string name="workbench_quick_search">搜索</string>
     <string name="workbench_new_session">新建会话</string>
@@ -706,6 +705,8 @@
     <string name="compose_ctx_folder">目录</string>
     <string name="compose_ctx_agent">智能体</string>
     <string name="common_close">关闭</string>
+    <string name="common_move_up">上移</string>
+    <string name="common_move_down">下移</string>
     <string name="session_toc_open">消息列表</string>
     <string name="session_toc_image">[图片]</string>
 
@@ -1312,7 +1313,7 @@
     <string name="ball_action_quick_search">全局搜索</string>
     <string name="ball_panel_all_actions">全部动作</string>
     <string name="ball_panel_actions_title">动作</string>
-    <string name="ball_quick_new_session_note">快速开始新会话</string>
+    <string name="ball_quick_new_session_global_note">选设备与目录，直接开聊</string>
     <string name="ball_quick_idea_note">随手保存灵感</string>
     <string name="ball_quick_task_note">不进收件箱直接派发</string>
     <string name="ball_quick_handoff_note">转移进行中的工作</string>
@@ -1333,5 +1334,6 @@
     <string name="option_sheet_search">搜索选项</string>
     <string name="picker_no_options">暂无可选项</string>
     <string name="dispatch_created_title">%1$s已创建</string>
+    <string name="receipt_open_task_board">去任务板</string>
     <string name="dispatch_created_body">「%2$s」（%1$s）已提交成功，可到任务板或会话里查看实时状态。</string>
 </resources>

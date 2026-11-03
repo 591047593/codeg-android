@@ -758,7 +758,15 @@ private fun TaskDetailSheet(
             .sheetContentScrollLock()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 批v153（第3轮可及性审查）：dragHandle=null 后标题行是唯一拖拽关闭区，
+        // 1 行标题时 ≈42.6dp——补 48dp（与 8 张姊妹 sheet 标题条同法）。
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .wrapContentHeight(Alignment.CenterVertically),
+        ) {
             Text(
                 task.title,
                 style = MaterialTheme.typography.titleMedium,
