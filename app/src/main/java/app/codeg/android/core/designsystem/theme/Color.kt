@@ -94,14 +94,18 @@ fun codegColors(isDark: Boolean, accent: AccentPalette): CodegColors {
             onAccent = onAccentColor(accentColor),
             accentDim = accentColor.copy(alpha = 0.16f),
             success = Color(0xFF0F946B),
-            warning = Color(0xFFB07A10),
+            // 浅色警告色加深（第1轮可及性审查修正）：#B07A10 在浅底上 3.4:1，
+            // 12sp 小字不达 AA；#8A650B ≈5:1。暗色侧不变。
+            warning = Color(0xFF8A650B),
         )
     }
 }
 
-/** Black or white text/icon on a filled accent, chosen by luminance (iOS `onColor`). */
+/** Black or white text/icon on a filled accent, chosen by luminance (iOS `onColor`).
+ *  阈值 0.4（第1轮可及性审查修正）：0.6 时 TEAL/ORANGE/PURPLE 暗色强调上的白字
+ *  对比只有 1.6-1.8:1；0.4 让这批色板翻为黑字（≈10:1），深底色板仍用白字。 */
 private fun onAccentColor(accent: Color): Color =
-    if (accent.luminance() > 0.6f) Color(0xFF0F0F0F) else Color.White
+    if (accent.luminance() > 0.4f) Color(0xFF0F0F0F) else Color.White
 
 /** The cool indigo glow used in the app background (iOS `CodegBackground`). */
 val CodegGlowCool = Color(0xFF4D6BF2)

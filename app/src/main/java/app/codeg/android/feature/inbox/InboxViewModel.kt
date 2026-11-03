@@ -8,6 +8,7 @@ import app.codeg.android.core.data.DispatchService
 import app.codeg.android.core.data.DispatchTargetLoader
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.SessionAutoStart
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.DispatchStore
@@ -47,6 +48,7 @@ class InboxViewModel @Inject constructor(
     private val dispatchService: DispatchService,
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
+    private val sessionAutoStart: SessionAutoStart,
     appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel(), app.codeg.android.feature.dispatch.DispatchFormHost {
 
@@ -459,6 +461,12 @@ class InboxViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val ref = dispatchStore.refs.first().firstOrNull { it.requestId == requestId } ?: return@launch
+                if (ref.state == DispatchState.PENDING) {
+                    // 提交还在途（第1轮派发审查修正）：此刻拉列表永远"查无此任务"，
+                    // 会误发"未创建"诱发双建——探针只对 UNKNOWN 有意义（§5.4）。
+                    _ui.value = _ui.value.copy(dispatchError = "派发仍在提交中，请稍候再检查")
+                    return@launch
+                }
                 val client = repository.profiles.first()
                     .firstOrNull { it.id == ref.serverId }?.let { repository.client(it) }
                 if (client == null) {
@@ -518,6 +526,12 @@ class InboxViewModel @Inject constructor(
                     val stillLive = dispatchStore.refs.first().any { it.requestId == requestId }
                     if (stillLive) {
                         dispatchStore.put(ref.copy(remoteTodoId = matchId, state = DispatchState.CONFIRMED))
+                        if (ref.sessionMode) {
+                            // 探针确认的会话同样武装自动起跑（第1轮派发审查修正）：
+                            // 与 DispatchService 的两条确认路同权——否则跳转时机已
+                            // 过，用户得去设备里手动翻这条刚确认的会话。
+                            sessionAutoStart.arm(ref.serverId, matchId, ref.description)
+                        }
                     }
                     _ui.value = _ui.value.copy(
                         dispatchError = null,

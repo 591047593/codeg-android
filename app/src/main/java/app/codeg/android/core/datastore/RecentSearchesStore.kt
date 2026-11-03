@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -24,6 +25,9 @@ class RecentSearchesStore @Inject constructor(
     suspend fun add(term: String) {
         val trimmed = term.trim()
         if (trimmed.isEmpty()) return
+        // 头部命中短路（第1轮性能审查修正）：重复提交同一词（连点搜索/重进
+        // 页面）不再触发整条 edit 写盘——读一次比对首位即可，落在最常见路径上。
+        if (searches.first().firstOrNull()?.equals(trimmed, ignoreCase = true) == true) return
         dataStore.edit { prefs ->
             val list = decode(prefs[KEY]).toMutableList()
             list.removeAll { it.equals(trimmed, ignoreCase = true) }

@@ -1185,7 +1185,7 @@
     <string name="task_confirm_deliver_title">Deliver as PR?</string>
     <string name="task_confirm_deliver_msg">Pushes the work branch and opens a pull request; the task is marked done afterwards. This can take several minutes — the server waits for the PR.</string>
     <string name="task_confirm_archive_title">Archive this task?</string>
-    <string name="task_confirm_archive_msg">Archived tasks are hidden from the board — toggle "Show archived" to find them again.</string>
+    <string name="task_confirm_archive_msg">Archived tasks are hidden from the board — toggle \"Show archived\" to find them again.</string>
     <string name="task_confirm_unarchive_title">Unarchive this task?</string>
     <string name="task_confirm_unarchive_msg">The task will reappear on the board.</string>
     <string name="task_confirm_defer_title">Shelve this task?</string>
@@ -1203,7 +1203,7 @@
     <string name="task_empty_board">No tasks on any device</string>
     <string name="inbox_title">Ideas</string>
     <string name="inbox_new">New idea</string>
-    <string name="inbox_idea_style_title">"New idea" button</string>
+    <string name="inbox_idea_style_title">\"New idea\" button</string>
     <string name="inbox_idea_style_subtitle">Bottom-right corner or bottom-center</string>
     <string name="inbox_idea_style_corner">Corner</string>
     <string name="inbox_idea_style_center">Bottom center</string>
@@ -1257,7 +1257,7 @@
     <string name="dispatch_branch_loading">Loading branches…</string>
     <string name="dispatch_branch_failed">Branch list unavailable — dispatch still uses the project default. Tap the row to retry.</string>
     <string name="dispatch_pick_branch">Pick branch</string>
-    <string name="dispatch_unknown_need_probe">Run "Check server" first — re-dispatch unlocks only after the server confirms the task was not created.</string>
+    <string name="dispatch_unknown_need_probe">Run \"Check server\" first — re-dispatch unlocks only after the server confirms the task was not created.</string>
     <!-- 批v149 执行方式（会话 / 任务） -->
     <string name="dispatch_mode">Run as</string>
     <string name="dispatch_mode_session">Session</string>

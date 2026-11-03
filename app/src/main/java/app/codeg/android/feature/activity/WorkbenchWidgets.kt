@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,6 +90,9 @@ private fun WorkbenchOverviewRail(
                 role = Role.Button,
                 onClick = onToggle,
             )
+            // 触达修正（第1轮可及性审查）：细条全宽但仅 ~28dp 高——clickable 之后
+            // 撑到 48dp（padding 在内，触达区含 padding），不改变视觉密度。
+            .heightIn(min = 48.dp)
             .padding(horizontal = 10.dp, vertical = 5.dp),
     ) {
         if (collapsed) {
@@ -255,6 +259,8 @@ private fun AttentionRow(entry: app.codeg.android.core.data.TaskBoardEntry, onCl
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
+            // 触达修正（第1轮可及性审查）：预览行 ~34dp → 48dp 触达。
+            .heightIn(min = 48.dp)
             .padding(horizontal = 6.dp, vertical = 7.dp),
     ) {
         Surface(
@@ -337,6 +343,8 @@ internal fun WorkbenchAttentionCard(
                         role = Role.Button,
                         onClick = onToggleCollapse,
                     )
+                    // 触达修正（第1轮可及性审查）：标题行 ~26dp → 48dp 触达。
+                    .heightIn(min = 48.dp)
                     .padding(horizontal = 4.dp, vertical = 3.dp),
             ) {
                 Text(
@@ -354,7 +362,9 @@ internal fun WorkbenchAttentionCard(
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenTasks).padding(horizontal = 6.dp, vertical = 3.dp),
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenTasks)
+                    // 触达修正（第1轮可及性审查）：去任务板 ~22dp → 48dp 触达。
+                    .heightIn(min = 48.dp).padding(horizontal = 6.dp, vertical = 3.dp),
             ) {
                 Text(
                     text = stringResource(R.string.workbench_open_task_board),
@@ -378,7 +388,9 @@ internal fun WorkbenchAttentionCard(
                         text = stringResource(R.string.workbench_attention_more, stats.attentionTasks - stats.attentionPreview.size),
                         style = MaterialTheme.typography.labelSmall,
                         color = colors.textTertiary,
-                        modifier = Modifier.padding(start = 6.dp, top = 2.dp).clickable(onClick = onOpenTasks),
+                        // 触达修正（第1轮可及性审查）：链接行 ~18dp → 48dp 触达
+                        //（clickable 在前、padding 在内）。
+                        modifier = Modifier.clickable(onClick = onOpenTasks).padding(horizontal = 6.dp, vertical = 16.dp),
                     )
                 }
             }

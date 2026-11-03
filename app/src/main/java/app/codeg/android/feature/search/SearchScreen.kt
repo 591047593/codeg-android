@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -170,8 +171,14 @@ fun SearchScreen(
                                 )
                             }
                         } else {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                EmptyState(Icons.Rounded.Search, stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_for, ui.query))
+                            // 部分失败但零命中（第1轮派发审查修正）：失败横幅置顶，
+                            // 网络故障不再冒充"无匹配"——与列表分支同一文案口径。
+                            val failedEmpty = if (allMode) ui.deviceStates.filter { it.status == DeviceLoadStatus.FAILED } else emptyList()
+                            Column(Modifier.fillMaxSize()) {
+                                if (failedEmpty.isNotEmpty()) UnreachableDevicesBanner(failedEmpty)
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    EmptyState(Icons.Rounded.Search, stringResource(R.string.search_no_results), stringResource(R.string.search_no_results_for, ui.query))
+                                }
                             }
                         }
                     }
@@ -183,19 +190,7 @@ fun SearchScreen(
                         val failed = ui.deviceStates.filter { it.status == DeviceLoadStatus.FAILED }
                         Column(Modifier.fillMaxSize()) {
                             if (failed.isNotEmpty()) {
-                                Text(
-                                    text = stringResource(
-                                        R.string.activity_devices_unreachable,
-                                        failed.joinToString { it.name },
-                                    ),
-                                    fontSize = 12.sp,
-                                    color = colors.warning,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                )
+                                UnreachableDevicesBanner(failed)
                             }
                             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
                                 items(ui.allResults, key = { "${it.serverId}:${it.conversation.id}" }) { hit ->
@@ -256,6 +251,21 @@ fun SearchScreen(
 }
 
 @Composable
+/** 设备失败横幅：All 模式的列表分支与空态分支共用（同 Activity 聚合口径）。 */
+@Composable
+private fun UnreachableDevicesBanner(failed: List<DeviceLoad>) {
+    Text(
+        text = stringResource(R.string.activity_devices_unreachable, failed.joinToString { it.name }),
+        fontSize = 12.sp,
+        color = CodegTheme.colors.warning,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
 private fun RecentList(recent: List<String>, onUse: (String) -> Unit, onClear: () -> Unit) {
     val colors = CodegTheme.colors
     Column(Modifier.fillMaxSize()) {

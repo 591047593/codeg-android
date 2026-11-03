@@ -296,8 +296,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // is still where the tap came from. The in-flight flag is released on every exit
     // path — including a failed DataStore write — or one bad tap would wedge every
     // cross-device open until the process dies.
-    fun handoffTo(serverId: String, onLanded: suspend () -> Unit) {
-        if (handoffInFlight) return
+    // 返回是否接单（第1轮审查修正）：在途被丢时调用方要走回执兜底，不能
+    // "会话创建了却无声消失"。落地守卫的异步丢弃不在此列（用户已导航走）。
+    fun handoffTo(serverId: String, onLanded: suspend () -> Unit): Boolean {
+        if (handoffInFlight) return false
         handoffInFlight = true
         val origin = nav.currentBackStackEntry?.destination?.route
         appViewModel.selectServerAndWait(serverId) {
@@ -311,6 +313,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 handoffInFlight = false
             }
         }
+        return true
     }
     // Open a conversation AND stamp it read in one place — every entry point that
     // shows a conversation from a list (Chats / Activity single / Activity aggregate /
@@ -709,11 +712,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             // 批v150 quick-center actions (panel 2×2 cards): idea/task/handoff
             // open shell-level sheets; search is the demoted push surface.
             "quickIdea" -> showQuickIdea = true
-            "quickTask" -> showQuickTask = true
+            // quickTask/quickNewSession 共用宿主 B（QuickActionViewModel）——互斥
+            // 打开（第1轮派发审查修正）：一张 sheet 的 loadTarget 会清掉另一张
+            // 正在填的目录/Agent 列表，不能同屏叠开。
+            "quickTask" -> { showQuickNewSession = false; showQuickTask = true }
             "quickHandoff" -> showQuickHandoff = true
             "quickSearch" -> pushSurface(ROUTE_SEARCH)
             // 批v151: global new-session sheet — pick device, then folder, then jump.
-            "quickNewSession" -> showQuickNewSession = true
+            "quickNewSession" -> { showQuickTask = false; showQuickNewSession = true }
             // 批v150: the demoted surfaces are pushes; the action ids are UNCHANGED
             // (persisted bindings reference them).
             "tabChats" -> pushSurface(ROUTE_CHATS)
@@ -1210,15 +1216,19 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // 批v151: the ball's 全局新建会话 sheet — session CONFIRMED closes the
         // sheet and jumps to the created conversation (no receipt dialog), via
         // the same owning-device dance as the inbox's v149 session dispatch.
+        // 第1轮审查修正：跳转没走成时（单飞被占 / 迟到回调）回执兜底——
+        // "创建了但没下文"至少留下一条全局可见记录。
         if (showQuickNewSession) {
             val openToken = remember { quickNewSessionSeq.incrementAndGet() }
             QuickNewSessionSheet(
-                onConfirmedSession = { serverId, conversationId ->
-                    // 迟到回调整支拦下（审查修正）：token 不匹配时连跳转一起放弃——
-                    // 跳转是副作用，quickIdea/quickTask 的"过期只留回执"哲学同样适用。
-                    if (quickNewSessionSeq.get() == openToken) {
+                onConfirmedSession = { ref ->
+                    val convId = ref.remoteTodoId
+                    if (quickNewSessionSeq.get() == openToken && convId != null) {
                         showQuickNewSession = false
-                        handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                        val accepted = handoffTo(ref.serverId) { openConversationAndMark(ref.serverId, convId) }
+                        if (!accepted) quickActionViewModel.confirmCreated(ref)
+                    } else {
+                        quickActionViewModel.confirmCreated(ref)
                     }
                 },
                 onDismiss = { if (quickNewSessionSeq.get() == openToken) showQuickNewSession = false },

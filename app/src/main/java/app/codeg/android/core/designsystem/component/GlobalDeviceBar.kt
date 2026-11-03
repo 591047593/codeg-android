@@ -49,6 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -186,7 +188,9 @@ fun GlobalDeviceBar(
                 }
             }
             item(key = "chip-manage") {
-                IconButton(onClick = onManageServers, modifier = Modifier.size(30.dp)) {
+                // 触达修正（第1轮可及性审查）：30dp 低于 48dp 最小触达标准——回
+                // 默认尺寸，视觉仍由 16dp 的齿轮图标定调。
+                IconButton(onClick = onManageServers) {
                     Icon(
                         Icons.Rounded.Settings,
                         contentDescription = stringResource(R.string.devicebar_manage),
@@ -280,6 +284,9 @@ private fun DeviceChip(
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
+            // TalkBack 读出选中态（第1轮可及性审查）：combinedClickable 不带
+            // selected 语义，选中/未选中在无障碍里听起来一模一样。
+            .semantics { selected = selected }
             // Padding INSIDE the clickable: expands the touch target to 48dp without
             // fattening the visual chip.
             .padding(vertical = 4.dp),

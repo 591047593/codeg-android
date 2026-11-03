@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -475,6 +476,10 @@ private fun UnknownRefCard(
     onRedispatch: () -> Unit,
 ) {
     val colors = CodegTheme.colors
+    // PENDING 的 ref 只是路过 UNKNOWN 视图（第1轮派发审查修正）：动作全禁 +
+    // 标题换成"派发中"口径，镜像 IdeaCard 的 inFlight 门——服务端确认落地前
+    // 重派会双建、放弃会丢真任务。
+    val inFlight = ref.state == DispatchState.PENDING
     // 批v147 视觉规范：拒绝红底大卡，孤儿 UNKNOWN 也只允许柔和底色 + 红字标题。
     Card(
         colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
@@ -482,9 +487,9 @@ private fun UnknownRefCard(
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(
-                stringResource(R.string.dispatch_unknown),
+                stringResource(if (inFlight) R.string.dispatch_pending_note else R.string.dispatch_unknown),
                 style = MaterialTheme.typography.titleSmall,
-                color = colors.danger,
+                color = if (inFlight) colors.textSecondary else colors.danger,
             )
             Text(
                 "${ref.title} · ${ref.serverName.ifBlank { ref.serverId }} · ${ref.folderName.ifBlank { "#${ref.folderId}" }}",
@@ -495,29 +500,31 @@ private fun UnknownRefCard(
                 modifier = Modifier.padding(top = 2.dp),
             )
             Row(modifier = Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (probing) {
+                if (probing || inFlight) {
                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(6.dp))
                 }
-                TextButton(onClick = onProbe, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text(stringResource(R.string.dispatch_unknown_check), style = MaterialTheme.typography.labelMedium)
-                }
-                TextButton(
-                    onClick = onRedispatch,
-                    enabled = !probing && canRedispatch,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Text(
-                        stringResource(R.string.dispatch_redispatch),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (!probing && canRedispatch) colors.textPrimary else colors.textTertiary,
-                    )
-                }
-                TextButton(onClick = onDiscard, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Text(stringResource(R.string.dispatch_unknown_discard), style = MaterialTheme.typography.labelMedium)
+                if (!inFlight) {
+                    TextButton(onClick = onProbe, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Text(stringResource(R.string.dispatch_unknown_check), style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = onRedispatch,
+                        enabled = !probing && canRedispatch,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.dispatch_redispatch),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (!probing && canRedispatch) colors.textPrimary else colors.textTertiary,
+                        )
+                    }
+                    TextButton(onClick = onDiscard, enabled = !probing, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Text(stringResource(R.string.dispatch_unknown_discard), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
-            if (!canRedispatch) {
+            if (!inFlight && !canRedispatch) {
                 Text(
                     stringResource(R.string.dispatch_unknown_need_probe),
                     style = MaterialTheme.typography.labelSmall,
@@ -597,11 +604,16 @@ private fun DispatchSheet(
         ) {
             // Fixed header outside DispatchForm's own scroll: the title row stays
             // the drag-to-close area (v151 sheet contract), same as QuickTaskSheet.
+            // dragHandle=null → 标题条撑到 48dp（第1轮可及性审查）。
             Text(
                 stringResource(R.string.inbox_dispatch),
                 style = MaterialTheme.typography.titleMedium,
                 color = CodegTheme.colors.textPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             app.codeg.android.feature.dispatch.DispatchForm(
                 host = viewModel,

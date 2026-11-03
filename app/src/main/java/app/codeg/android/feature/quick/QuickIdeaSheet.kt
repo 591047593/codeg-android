@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -145,12 +148,16 @@ fun QuickIdeaSheet(
                 .fillMaxWidth()
                 .sheetContentScrollLock(),
         ) {
+            // dragHandle=null：标题条就是拖拽关闭区——撑到 48dp（第1轮可及性
+            // 审查），视觉节奏不变。
             Text(
                 stringResource(R.string.quick_idea_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = CodegTheme.colors.textPrimary,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
                     .padding(horizontal = 16.dp)
                     .padding(top = 12.dp),
             )

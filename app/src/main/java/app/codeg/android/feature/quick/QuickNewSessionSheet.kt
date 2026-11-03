@@ -2,7 +2,9 @@ package app.codeg.android.feature.quick
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -11,11 +13,13 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.codeg.android.R
+import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -36,7 +40,7 @@ import app.codeg.android.feature.dispatch.DispatchForm
 @Composable
 fun QuickNewSessionSheet(
     /** Session-mode CONFIRMED result → close + jump (shell owns the dance). */
-    onConfirmedSession: (serverId: String, conversationId: Int) -> Unit,
+    onConfirmedSession: (ref: DispatchRef) -> Unit,
     onDismiss: () -> Unit,
     viewModel: QuickActionViewModel = hiltViewModel(),
 ) {
@@ -56,11 +60,17 @@ fun QuickNewSessionSheet(
                 // the fixed title above (the sheet itself sets dragHandle = null).
                 .nestedScroll(rememberSheetDragLock()),
         ) {
+            // Title IS the close affordance here (dragHandle = null) — 44dp 条撑到
+            // 48dp（第1轮可及性审查），内容仍垂直居中，视觉密度不变。
             Text(
                 stringResource(R.string.quick_new_session_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = CodegTheme.colors.textPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             DispatchForm(
                 host = viewModel,
@@ -68,7 +78,7 @@ fun QuickNewSessionSheet(
                 onResult = { ref ->
                     val convId = ref.remoteTodoId
                     if (ref.sessionMode && ref.state == DispatchState.CONFIRMED && convId != null) {
-                        onConfirmedSession(ref.serverId, convId)
+                        onConfirmedSession(ref)
                     } else {
                         viewModel.confirmCreated(ref)
                         onDismiss()

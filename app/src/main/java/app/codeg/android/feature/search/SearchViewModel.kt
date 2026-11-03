@@ -183,7 +183,10 @@ class SearchViewModel @Inject constructor(
                         if (all) it.copy(allMode = true)
                         else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
                     }
-                    if (!sigChanged || all) startSearch(_query.value, ++searchEpoch)
+                    if (!sigChanged || all) runSearch(_query.value, ++searchEpoch)
+                    // 直接 await（第1轮性能审查修正）：startSearch 的 viewModelScope
+                    // launch 会逃出 collectLatest 的取消域——快速连切 All/单设备会让
+                    // N 设备轮次堆跑到超时；await 后新一轮 emission 结构性取消旧轮。
                 }
         }
         viewModelScope.launch {
@@ -397,9 +400,17 @@ class SearchViewModel @Inject constructor(
             return
         }
         if (epoch != searchEpoch) return
-        val scope = runCatching {
+        val scope = try {
             repository.visibleProfiles.first().filter { it.includeInAll }
-        }.getOrDefault(emptyList())
+        } catch (e: CancellationException) {
+            // 结构化取消照常（第1轮并发审查修正）：runCatching 会把取消吞成
+            // "空范围"，让被取代的轮次继续跑尾巴。
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+        // 悬挂点之后重验 epoch：first() 可取消，过期轮次不得再写 searching=true。
+        if (epoch != searchEpoch) return
         _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
         if (scope.isEmpty()) {
             if (epoch == searchEpoch) {
@@ -448,7 +459,11 @@ class SearchViewModel @Inject constructor(
         if (epoch != searchEpoch) return // superseded while the round was in flight
         val merged = mergeSearchResults(
             perDevice.mapNotNull { (profile, outcome) ->
-                outcome.getOrNull()?.let { SearchDeviceResults(profile.id, profile.name, it) }
+                outcome.getOrNull()?.let {
+                    // 单响应内去重（第1轮墨菲验收加固）：服务端返回重复会话 id 会
+                    // 直接撞 LazyColumn 的 key 崩溃，渲染前拦掉。
+                    SearchDeviceResults(profile.id, profile.name, it.distinctBy { c -> c.id })
+                }
             },
         )
         _ui.update { it.copy(allResults = merged, searching = false) }

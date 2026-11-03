@@ -125,6 +125,11 @@ class WorkbenchViewModel @Inject constructor(
             pendingWrites.incrementAndGet()
             try {
                 write()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 落盘失败不炸进程（第1轮并发审查修正）：与读取侧 catch{} 同一
+                // 策略取向——乐观态保留，下一次任意 store 回放自然对齐。
             } finally {
                 pendingWrites.decrementAndGet()
             }
