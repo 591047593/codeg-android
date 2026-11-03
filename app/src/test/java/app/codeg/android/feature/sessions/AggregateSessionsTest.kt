@@ -51,7 +51,11 @@ class AggregateSessionsTest {
         )
 
         // No "b" section, and b's pinned row must not leak into the pinned bucket.
-        assertEquals(listOf("a"), sections.map { it.serverId })
+        // (The pinned bucket itself has a null serverId — compare device sections only.)
+        assertEquals(
+            listOf("a"),
+            sections.filter { it.kind == AggregateKind.DEVICE }.map { it.serverId },
+        )
         val pinned = sections.first { it.kind == AggregateKind.PINNED }
         assertEquals(listOf(2), pinned.rows.map { it.conversation.id })
     }
