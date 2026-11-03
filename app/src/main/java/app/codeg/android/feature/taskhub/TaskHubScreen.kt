@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -300,10 +301,15 @@ fun TaskHubScreen(viewModel: TaskHubViewModel = hiltViewModel(key = "taskhub")) 
                     .nestedScroll(rememberSheetDragLock())
                     .padding(top = 12.dp, bottom = 24.dp),
             ) {
+                // dragHandle=null：标题条就是拖拽关闭区——撑到 48dp（第3轮扫尾修正）。
                 Text(
                     stringResource(R.string.task_folder_picker),
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .wrapContentHeight(Alignment.CenterVertically)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                 )
                 FolderOptionRow(
                     label = stringResource(R.string.task_filter_folder),

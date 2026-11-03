@@ -272,6 +272,10 @@ private fun DeviceChip(
     val colors = CodegTheme.colors
     val shape = RoundedCornerShape(50)
     val longClickLabel = stringResource(R.string.device_skip_in_all)
+    // 捕获成局部（第3轮收口修正）：下面 lambda 里写 `selected = selected` 时，
+    // RHS 会解析到 SemanticsPropertyReceiver 的同名扩展属性而非外层参数——读取
+    // 一个未设置的语义属性在开 TalkBack 构建节点时直接抛异常。
+    val isSelected = selected
     // 批v151 polish (mandate 图二): a 40dp visual chip inside a ≥48dp touch box —
     // the old ~30dp pill read as cramped little cards. Selected state is the solid
     // accent container + trailing check (filter-chip convention) instead of a tint.
@@ -286,7 +290,7 @@ private fun DeviceChip(
             )
             // TalkBack 读出选中态（第1轮可及性审查）：combinedClickable 不带
             // selected 语义，选中/未选中在无障碍里听起来一模一样。
-            .semantics { selected = selected }
+            .semantics { selected = isSelected }
             // Padding INSIDE the clickable: expands the touch target to 48dp without
             // fattening the visual chip.
             .padding(vertical = 4.dp),

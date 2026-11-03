@@ -160,6 +160,7 @@
     <string name="search_recent">最近搜索</string>
     <string name="search_clear">清除</string>
     <string name="search_no_results">没有结果</string>
+    <string name="search_all_searching">正在搜索全部设备…</string>
     <string name="search_no_results_for">没有匹配 \"%1$s\" 的结果。</string>
     <string name="search_no_device_hint">请先在设置里添加或选择一台服务器，再搜索。</string>
     <string name="search_failed">搜索失败</string>

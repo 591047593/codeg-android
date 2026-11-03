@@ -182,6 +182,24 @@ fun SearchScreen(
                             }
                         }
                     }
+                    allMode && ui.allResults.isEmpty() && ui.searching -> {
+                        // 进「全部」的扇出等待期（第3轮扫尾修正）：合并结果要等全部
+                        // 设备落地才写 allResults，等待期渲染进度而不是空列表——
+                        // 旧单设备结果已在切模式时让位，不能给用户 10s 白板。
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = colors.accent)
+                                Text(
+                                    stringResource(R.string.search_all_searching),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.textSecondary,
+                                )
+                            }
+                        }
+                    }
                     else -> if (allMode) {
                         // 批v151 All mode: merged hits + a device-failure banner (same
                         // "devices unreachable" language as the Activity aggregate).

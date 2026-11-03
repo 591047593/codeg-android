@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -58,11 +59,16 @@ fun RecentSessionPickerSheet(
                 .nestedScroll(rememberSheetDragLock())
                 .padding(bottom = 16.dp),
         ) {
+            // dragHandle=null：标题条就是拖拽关闭区——撑到 48dp（第3轮扫尾修正）。
             Text(
                 stringResource(R.string.recent_pick_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             when {
                 ui.loading -> Column(Modifier.heightIn(min = 160.dp)) {

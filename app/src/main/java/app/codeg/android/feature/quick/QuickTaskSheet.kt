@@ -2,7 +2,9 @@ package app.codeg.android.feature.quick
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -11,6 +13,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
@@ -53,11 +56,17 @@ fun QuickTaskSheet(
                 // the sheet itself sets dragHandle = null.
                 .nestedScroll(rememberSheetDragLock()),
         ) {
+            // dragHandle=null：标题条就是拖拽关闭区——撑到 48dp（第3轮扫尾修正，
+            // 补齐同批姊妹 sheet 家族），视觉节奏不变。
             Text(
                 stringResource(R.string.quick_task_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = app.codeg.android.core.designsystem.theme.CodegTheme.colors.textPrimary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             )
             DispatchForm(
                 host = viewModel,

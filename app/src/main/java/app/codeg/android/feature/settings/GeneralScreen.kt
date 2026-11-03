@@ -47,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,6 +99,9 @@ fun GeneralContent(
                             "centerWide" to R.string.inbox_idea_style_center,
                         ).forEach { (id, labelRes) ->
                             val selected = appSettings.inboxNewIdeaStyle == id
+                            // 局部捕获（第3轮收口修正）：semantics lambda 内 RHS 的
+                            // `selected` 会解析到 receiver 的同名扩展属性而非本参数。
+                            val isSelected = selected
                             Text(
                                 stringResource(labelRes),
                                 fontSize = 13.sp,
@@ -108,7 +113,9 @@ fun GeneralContent(
                                     )
                                     .clickable { viewModel.setInboxNewIdeaStyle(id) }
                                     // 触达对齐第1轮标准（第2轮审查修正）：同批新 chip
-                                    // 也撑 48dp，padding 留在触达区内。
+                                    // 也撑 48dp，padding 留在触达区内。TalkBack 读出
+                                    // 当前选中样式（第3轮扫尾修正）。
+                                    .semantics { selected = isSelected }
                                     .heightIn(min = 48.dp)
                                     .wrapContentHeight(Alignment.CenterVertically)
                                     .padding(horizontal = 10.dp, vertical = 5.dp),

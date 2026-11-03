@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -145,7 +146,16 @@ fun OptionListSheet(
                 .padding(horizontal = 16.dp)
                 .padding(top = 12.dp, bottom = 20.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            // dragHandle=null：标题条就是拖拽关闭区——撑到 48dp（第3轮扫尾修正）。
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .wrapContentHeight(Alignment.CenterVertically),
+            )
             Spacer(Modifier.size(10.dp))
             if (options.size > 6) {
                 OutlinedTextField(

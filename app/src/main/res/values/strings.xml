@@ -160,6 +160,7 @@
     <string name="search_recent">Recent</string>
     <string name="search_clear">Clear</string>
     <string name="search_no_results">No results</string>
+    <string name="search_all_searching">Searching all devices…</string>
     <string name="search_no_results_for">Nothing matched \"%1$s\".</string>
     <string name="search_no_device_hint">Add or select a server in Settings, then search.</string>
     <string name="search_failed">Search failed</string>
