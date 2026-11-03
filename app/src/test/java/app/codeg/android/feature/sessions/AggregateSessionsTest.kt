@@ -130,9 +130,13 @@ class AggregateSessionsTest {
         val sections = buildAggregateSessionSections(
             listOf(
                 deviceA to listOf(
+                    // R2D#1: the "live" fixture must sit INSIDE the freshness window —
+                    // a fixed-past t0 turned it into a 6-day-old corpse once unread
+                    // gating moved from the raw flag to isLiveFresh()'s 60-min rule.
                     ConversationSummary(
                         id = 1, folderId = 0, title = "live", agentType = AgentType.CODEX,
-                        status = ConversationStatus.IN_PROGRESS, createdAt = t0, updatedAt = at(1),
+                        status = ConversationStatus.IN_PROGRESS, createdAt = t0,
+                        updatedAt = Instant.now().minusSeconds(30),
                     ),
                     conv(2, 5),
                 ),
