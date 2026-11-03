@@ -76,6 +76,7 @@ import app.codeg.android.R
 import app.codeg.android.app.AppViewModel
 import app.codeg.android.core.data.FocusPreview
 import app.codeg.android.core.data.resolveCycleTarget
+import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.designsystem.component.GlobalDeviceBar
 import app.codeg.android.core.designsystem.theme.CodegTheme
@@ -1386,10 +1387,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     )
                 },
                 confirmButton = {
-                    // 批v153（UX 审查）：任务模式回执闭合「派出去之后呢」——会话模式
-                    // 会自动跳会话，任务模式给一个去任务板的直达。
+                    // 批v153（UX 审查）：回执闭合「派出去之后呢」——能自动跳会话的
+                    // CONFIRMED（sessionMode + convId 非空）根本不会渲染本对话框，
+                    // 所以 gate 只看 state：会话模式跳转被拒/迟到的兜底回执同样
+                    // 给「去任务板」直达（R4 墨菲审查：原 !sessionMode 漏了这条死路）。
                     Row {
-                        if (!ref.sessionMode) {
+                        if (ref.state == DispatchState.CONFIRMED) {
                             TextButton(onClick = {
                                 quickActionViewModel.clearConfirmed()
                                 enterTab(HomeTab.TASKS)

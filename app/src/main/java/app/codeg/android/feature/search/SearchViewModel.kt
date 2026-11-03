@@ -184,14 +184,19 @@ class SearchViewModel @Inject constructor(
                     _ui.update {
                         // Leaving All also drops the aggregate slices — they must never
                         // resurface if All is re-entered before a fresh round lands.
-                        // 批v153: it also drops the single-device slices — inside All the
-                        // switched-branch wipe is skipped (allMode guard), so they can
-                        // still belong to a device left minutes ago; pin/rename/delete
-                        // would fire a server-local id at the WRONG device before the
-                        // fresh round below lands. serverId rides along so the delete
-                        // dialog's remember key re-arms on the change.
+                        // 批v153: a real mode flip also drops the single-device slices —
+                        // inside All the switched-branch wipe is skipped (allMode guard),
+                        // so they can still belong to a device left minutes ago;
+                        // pin/rename/delete would fire a server-local id at the WRONG
+                        // device before the fresh round below lands. serverId rides along
+                        // so the delete dialog's remember key re-arms on the change.
+                        // 批v153 R4（墨菲审查）：the single-device wipe MUST gate on
+                        // modeChanged — a sig-only emission while in single mode (device
+                        // bar's includeInAll long-press, device rename) would otherwise
+                        // wipe visible results with no round replacing them: the re-run
+                        // clause below needs !sigChanged || all || modeChanged.
                         if (all) it.copy(allMode = true)
-                        else it.copy(
+                        else if (modeChanged) it.copy(
                             allMode = false,
                             allResults = emptyList(),
                             deviceStates = emptyList(),
@@ -199,6 +204,7 @@ class SearchViewModel @Inject constructor(
                             folderNames = emptyMap(),
                             serverId = currentProfile?.id,
                         )
+                        else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
                     }
                     // 批v153: a mode flip must always answer the visible query — the sig
                     // clause alone skips the leave-All round when the device signature
@@ -389,6 +395,11 @@ class SearchViewModel @Inject constructor(
             }
             return
         }
+        if (epoch != searchEpoch) return
+        // 批v153 R4（R2 修复的镜像）：client 为空时 resolveClient 是悬挂点——
+        // searching 声明必须先于它，否则重解析的数帧里屏上停留上一轮的
+        // "无匹配"空态（R2 只给 runAggregateSearch 前移了这行）。
+        _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
         val c = client ?: currentProfile?.let { profile ->
             // Commit the re-resolved client only while this search is still current: a
             // device switch during the token read must not be overwritten by the
@@ -404,8 +415,6 @@ class SearchViewModel @Inject constructor(
             }
             return
         }
-        if (epoch != searchEpoch) return
-        _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
         val results = try {
             c.listConversations(search = q, sortBy = "updated")
         } catch (e: CancellationException) {

@@ -46,9 +46,9 @@ class AppViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings.INITIAL)
 
     // 批v153（UX 审查）：底栏收件箱徽标——有想法草稿等处理时给环境感知，不用切
-    // 到收件箱才知道。计数 = 收件箱草稿数（派发成功即删）。
-    val inboxBadge: StateFlow<Int> = ideaStore.ideas
-        .map { it.size }
+    // 到收件箱才知道。计数 = 收件箱草稿数（派发成功即删）。R4 起走 ideaCount
+    // （原始串 distinct，无关写盘不进 decode），不再重 sort 的 ideas 流。
+    val inboxBadge: StateFlow<Int> = ideaStore.ideaCount
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** False until DataStore's first emission lands — the shell holds on it so the

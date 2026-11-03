@@ -279,9 +279,11 @@ fun InboxScreen(
                 }
             },
             confirmButton = {
-                // 批v153（UX 审查）：任务模式回执直达任务板（会话模式已自动跳会话）。
+                // 批v153（UX 审查）：回执直达任务板。R4 墨菲审查：能自动跳会话的
+                // CONFIRMED（sessionMode + convId 非空）根本不会进本对话框，gate
+                // 只看 state——会话模式 convId=null 的死路回执同样有去处。
                 Row {
-                    if (ref.state == DispatchState.CONFIRMED && !ref.sessionMode) {
+                    if (ref.state == DispatchState.CONFIRMED) {
                         TextButton(onClick = {
                             dispatchResult = null
                             dispatchingId = null

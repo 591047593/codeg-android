@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -39,6 +40,15 @@ class IdeaStore @Inject constructor(
 
     val ideas: Flow<List<IdeaEntry>> =
         dataStore.data.map { prefs -> decode(prefs[KEY]).sortedByDescending { it.updatedAt } }
+
+    // 批v153 R4（性能审查）：徽标专用计数流。全库共用一个 Preferences DataStore，
+    // 任何 key 的写盘都会让 dataStore.data 重发射；徽标是常驻订阅，先在原始串上
+    // distinct 挡掉无关写盘（绝大多数），只有 idea_inbox 真变了才 decode。
+    val ideaCount: Flow<Int> =
+        dataStore.data
+            .map { prefs -> prefs[KEY] }
+            .distinctUntilChanged()
+            .map { raw -> decode(raw).size }
 
     suspend fun upsert(idea: IdeaEntry) {
         dataStore.edit { prefs ->

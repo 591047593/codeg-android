@@ -196,8 +196,7 @@ class GeneralViewModel @Inject constructor(
     }
 
     // 批v153: v151 convention — best-effort persist; a full disk must not crash the
-    // process from a settings toggle. (Older bare setters below are the documented
-    // pre-v151 legacy; new code doesn't extend that pattern.)
+    // process from a settings toggle. (R4: the remaining bare setters are wrapped too.)
     private fun launchPersist(block: suspend () -> Unit) {
         viewModelScope.launch {
             try {
@@ -224,26 +223,26 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setWorkbenchAttentionExpandedDefault(expanded)
     }
 
-    fun setActivityDeviceSwipe(enabled: Boolean) {
-        viewModelScope.launch { appSettingsStore.setActivityDeviceSwipe(enabled) }
+    fun setActivityDeviceSwipe(enabled: Boolean) = launchPersist {
+        appSettingsStore.setActivityDeviceSwipe(enabled)
     }
 
     // ---- Floating ball + font scale (batch v126; device-local prefs) ----
 
-    fun setFloatBallEnabled(enabled: Boolean) {
-        viewModelScope.launch { appSettingsStore.setFloatBallEnabled(enabled) }
+    fun setFloatBallEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setFloatBallEnabled(enabled)
     }
 
-    fun setFloatBallSize(size: String) {
-        viewModelScope.launch { appSettingsStore.setFloatBallSize(size) }
+    fun setFloatBallSize(size: String) = launchPersist {
+        appSettingsStore.setFloatBallSize(size)
     }
 
     fun setInboxNewIdeaStyle(style: String) = launchPersist {
         appSettingsStore.setInboxNewIdeaStyle(style)
     }
 
-    fun setFontScale(scale: Float) {
-        viewModelScope.launch { appSettingsStore.setFontScale(scale) }
+    fun setFontScale(scale: Float) = launchPersist {
+        appSettingsStore.setFontScale(scale)
     }
 
     // ---- New-session default folder (batch v134; per-server device-local prefs) ----
