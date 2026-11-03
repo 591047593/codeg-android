@@ -2,6 +2,8 @@ package app.codeg.android.core.model
 
 import app.codeg.android.core.data.DispatchPipeline
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
