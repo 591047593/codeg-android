@@ -243,7 +243,7 @@ private fun FolderRow(
                     fontSize = 12.sp,
                     color = colors.textTertiary,
                     maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 folder.gitBranch?.let { BranchPill(it) }

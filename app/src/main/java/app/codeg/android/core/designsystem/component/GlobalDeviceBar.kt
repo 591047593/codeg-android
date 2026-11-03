@@ -121,7 +121,7 @@ fun GlobalDeviceBar(
             if (showAll) {
                 item(key = "chip-all") {
                     DeviceChip(
-                        selected = allSelected,
+                        isSelected = allSelected,
                         leading = { iconTint -> Icon(Icons.Rounded.Dns, null, tint = iconTint, modifier = Modifier.size(14.dp)) },
                         onClick = onSelectAll,
                     ) {
@@ -152,7 +152,7 @@ fun GlobalDeviceBar(
                 val server = servers[i]
                 val selected = !allSelected && server.id == selectedId
                 DeviceChip(
-                    selected = selected,
+                    isSelected = selected,
                     dimmed = !server.includeInAll,
                     leading = { iconTint ->
                         Box(
@@ -262,7 +262,9 @@ fun GlobalDeviceBar(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DeviceChip(
-    selected: Boolean,
+    // 参数名刻意避开 selected：否则下方 semantics lambda 的左值会解析到
+    // 参数（val）本身，报 "'val' cannot be reassigned"。
+    isSelected: Boolean,
     leading: @Composable (Color) -> Unit,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
@@ -272,10 +274,6 @@ private fun DeviceChip(
     val colors = CodegTheme.colors
     val shape = RoundedCornerShape(50)
     val longClickLabel = stringResource(R.string.device_skip_in_all)
-    // 捕获成局部（第3轮收口修正）：下面 lambda 里写 `selected = selected` 时，
-    // RHS 会解析到 SemanticsPropertyReceiver 的同名扩展属性而非外层参数——读取
-    // 一个未设置的语义属性在开 TalkBack 构建节点时直接抛异常。
-    val isSelected = selected
     // 批v151 polish (mandate 图二): a 40dp visual chip inside a ≥48dp touch box —
     // the old ~30dp pill read as cramped little cards. Selected state is the solid
     // accent container + trailing check (filter-chip convention) instead of a tint.
@@ -299,19 +297,19 @@ private fun DeviceChip(
             modifier = Modifier
                 .heightIn(min = 40.dp)
                 .clip(shape)
-                .background(if (selected) colors.accent else Color.Transparent)
+                .background(if (isSelected) colors.accent else Color.Transparent)
                 .border(
-                    width = if (selected) 0.dp else 1.dp,
-                    color = if (selected) Color.Transparent else colors.surfaceStroke,
+                    width = if (isSelected) 0.dp else 1.dp,
+                    color = if (isSelected) Color.Transparent else colors.surfaceStroke,
                     shape = shape,
                 )
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            leading(if (selected) colors.onAccent else colors.textTertiary)
+            leading(if (isSelected) colors.onAccent else colors.textTertiary)
             content()
-            if (selected) {
+            if (isSelected) {
                 Icon(
                     Icons.Rounded.Check,
                     contentDescription = null,

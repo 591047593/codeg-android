@@ -98,18 +98,17 @@ fun GeneralContent(
                             "corner" to R.string.inbox_idea_style_corner,
                             "centerWide" to R.string.inbox_idea_style_center,
                         ).forEach { (id, labelRes) ->
-                            val selected = appSettings.inboxNewIdeaStyle == id
-                            // 局部捕获（第3轮收口修正）：semantics lambda 内 RHS 的
-                            // `selected` 会解析到 receiver 的同名扩展属性而非本参数。
-                            val isSelected = selected
+                            // 局部变量刻意叫 isSelected：若叫 selected，下方
+                            // semantics lambda 的左值会解析到局部变量报编译错。
+                            val isSelected = appSettings.inboxNewIdeaStyle == id
                             Text(
                                 stringResource(labelRes),
                                 fontSize = 13.sp,
-                                color = if (selected) colors.onAccent else colors.textSecondary,
+                                color = if (isSelected) colors.onAccent else colors.textSecondary,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (selected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
+                                        if (isSelected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
                                     )
                                     .clickable { viewModel.setInboxNewIdeaStyle(id) }
                                     // 触达对齐第1轮标准（第2轮审查修正）：同批新 chip
