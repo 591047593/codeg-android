@@ -14,6 +14,8 @@ import app.codeg.android.core.datastore.ConversationSelectorStore
 import app.codeg.android.core.datastore.DeviceAgentPrefsStore
 import app.codeg.android.core.datastore.DraftFolderPrefsStore
 import app.codeg.android.core.datastore.DraftStore
+import app.codeg.android.core.datastore.SessionProject
+import app.codeg.android.core.datastore.SessionRef
 import app.codeg.android.core.datastore.SelectorPrefs
 import app.codeg.android.core.datastore.SelectorPrefsStore
 import app.codeg.android.core.datastore.resolveSelectorPrefs
@@ -255,6 +257,95 @@ class SessionDetailViewModel @Inject constructor(
 
     // endregion
 
+    /**
+     * The pickers a NEW task's composer offers on [p]: top-level open folders and
+     * installed/enabled agents, plus the default folder/agent picks. Factored out
+     * of [load] so switching devices mid-draft reloads exactly the same sources
+     * (批v154) instead of duplicating the resolution rules.
+     */
+    private suspend fun loadDraftSources(p: ServerProfile, c: CodegClient) {
+        val open = runCatching { c.listOpenFolders() }.getOrDefault(emptyList())
+        val topLevel = FolderVisibility.filterTopLevel(open)
+            .sortedByDescending { it.lastOpenedAt ?: Instant.MIN }
+        val agents = runCatching { c.acpListAgents() }.getOrDefault(emptyList())
+            .filter { it.available && it.enabled }
+            .sortedBy { it.sortOrder }
+            .map { it.agentType }
+            .distinct()
+            .ifEmpty { AgentType.entries.filter { it != AgentType.UNKNOWN } }
+            // Per-device visibility (v123): applied AFTER the ifEmpty fallback —
+            // inside the chain the fallback would re-admit hidden agents when a
+            // server reports no enabled ones. May legitimately yield empty.
+            .let { filterHiddenAgents(it, deviceAgentPrefs.hiddenNow(profileId = p.id)) }
+        // v134 folder memory: arg → pin → last used → most recent, each remembered
+        // id validated against the picker-visible top-level set. Folder ids are
+        // device-local, so a device switch re-resolves from THIS device's memory.
+        val folderPrefs = runCatching { draftFolderPrefs.foldersNow(profileId = p.id) }.getOrNull()
+        folder = resolveDraftFolder(
+            allFolders = allFolders,
+            topLevel = topLevel,
+            folderIdArg = folderIdArg,
+            pinnedFolderId = folderPrefs?.pinnedFolderId,
+            lastUsedFolderId = folderPrefs?.lastUsedFolderId,
+        )
+        agent = folder?.defaultAgentType?.takeIf { it in agents }
+            ?: agents.firstOrNull()
+            ?: AgentType.CLAUDE_CODE
+        currentBranch = folder?.gitBranch
+        _ui.update {
+            it.copy(
+                loading = false,
+                serverName = p.name,
+                serverId = p.id,
+                agent = agent,
+                folderName = folder?.let { f -> FolderVisibility.displayName(f, allFolders) },
+                folderPath = folder?.path,
+                selectedFolderId = folder?.id,
+                currentBranch = currentBranch,
+                isDraftEditable = true,
+                availableFolders = topLevel,
+                availableAgents = agents,
+            )
+        }
+    }
+
+    /**
+     * 批v154 设备解耦：a NEW task may target ANY device — the device chip in the
+     * composer opens this. The launch device used to be baked in by
+     * [load]'s one `selectedProfile.first()` read, which is why every new task
+     * created from a device's session list was pinned there.
+     *
+     * Only a draft can move: an existing conversation id is server-local, so a
+     * live session's device stays read-only. The app-wide selection follows the
+     * pick (the device bar, the next new task and the Activity feed then address
+     * the device the session is actually born on).
+     */
+    fun selectDevice(serverId: String) {
+        val current = profile
+        if (!_ui.value.isNew || hasStartedFirstSend || serverId == current?.id) return
+        viewModelScope.launch {
+            try {
+                val p = repository.profiles.first().firstOrNull { it.id == serverId } ?: return@launch
+                val c = repository.client(p)
+                if (c == null) {
+                    _ui.update { it.copy(notice = appContext.getString(R.string.session_device_no_token, p.name)) }
+                    return@launch
+                }
+                runCatching { repository.select(p.id) }
+                profile = p
+                client = c
+                connectionId = null
+                externalId = null
+                allFolders = runCatching { c.listFolders() }.getOrDefault(emptyList())
+                loadDraftSources(p, c)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { it.copy(notice = e.displayMessage()) }
+            }
+        }
+    }
+
     /** Returns the reload's [Job] so callers that must observe completion (the Fork
      *  latch) can hook it; ordinary callers ignore it. */
     fun load(): Job {
@@ -283,6 +374,7 @@ class SessionDetailViewModel @Inject constructor(
                             loading = false,
                             summary = detail.summary,
                             serverName = p.name,
+                            serverId = p.id,
                             turns = detail.turns,
                             sessionStats = detail.sessionStats,
                             externalId = detail.summary.externalId,
@@ -295,6 +387,8 @@ class SessionDetailViewModel @Inject constructor(
                             error = null,
                         )
                     }
+                    // 批v154: the chip's selection mirrors the SERVER membership.
+                    observeProjects(p.id)
                     // Reattach only when a turn is GENUINELY executing:
                     // in_flight_user_turn_id is sourced from the live connection's
                     // pending user message (set on UserMessage, cleared on
@@ -310,54 +404,27 @@ class SessionDetailViewModel @Inject constructor(
                     // 消费armed 的首条指令并发送。只在真有轮次在跑时让位（live 轮
                     // 由 isInFlight 守卫挡下）；指令总是先取出（consume-once），
                     // 绝不让它从一个更晚的无关访问里复活。
-                    sessionAutoStart.take(p.id, id)?.let { prompt ->
-                        if (!liveTurn) send(prompt, withAttachments = false)
+                    sessionAutoStart.takePending(p.id, id)?.let { armed ->
+                        if (!liveTurn) {
+                            // 批v154: files dispatched with the idea ride on the same
+                            // first send — uploaded on the target device by the
+                            // dispatch pipeline, so they arrive as workspace paths.
+                            send(
+                                armed.prompt,
+                                withAttachments = false,
+                                extraFiles = armed.files.map { f ->
+                                    FileAttachment(
+                                        id = "dispatch-${UUID.randomUUID()}",
+                                        name = f.name,
+                                        size = 0,
+                                        absolutePath = f.absolutePath,
+                                    )
+                                },
+                            )
+                        }
                     }
                 } else {
-                    // New task: load the draft pickers' sources (top-level open folders +
-                    // installed/enabled agents) and pick sensible defaults — honoring a
-                    // preselected folder (e.g. a worktree a branch switch opened).
-                    val open = runCatching { c.listOpenFolders() }.getOrDefault(emptyList())
-                    val topLevel = FolderVisibility.filterTopLevel(open)
-                        .sortedByDescending { it.lastOpenedAt ?: Instant.MIN }
-                    val agents = runCatching { c.acpListAgents() }.getOrDefault(emptyList())
-                        .filter { it.available && it.enabled }
-                        .sortedBy { it.sortOrder }
-                        .map { it.agentType }
-                        .distinct()
-                        .ifEmpty { AgentType.entries.filter { it != AgentType.UNKNOWN } }
-                        // Per-device visibility (v123): applied AFTER the ifEmpty fallback —
-                        // inside the chain the fallback would re-admit hidden agents when a
-                        // server reports no enabled ones. May legitimately yield empty.
-                        .let { filterHiddenAgents(it, deviceAgentPrefs.hiddenNow(profileId = p.id)) }
-                    // v134 folder memory: arg → pin → last used → most recent, each
-                    // remembered id validated against the picker-visible top-level set.
-                    val folderPrefs = runCatching { draftFolderPrefs.foldersNow(profileId = p.id) }.getOrNull()
-                    folder = resolveDraftFolder(
-                        allFolders = allFolders,
-                        topLevel = topLevel,
-                        folderIdArg = folderIdArg,
-                        pinnedFolderId = folderPrefs?.pinnedFolderId,
-                        lastUsedFolderId = folderPrefs?.lastUsedFolderId,
-                    )
-                    agent = folder?.defaultAgentType?.takeIf { it in agents }
-                        ?: agents.firstOrNull()
-                        ?: AgentType.CLAUDE_CODE
-                    currentBranch = folder?.gitBranch
-                    _ui.update {
-                        it.copy(
-                            loading = false,
-                            serverName = p.name,
-                            agent = agent,
-                            folderName = folder?.let { f -> FolderVisibility.displayName(f, allFolders) },
-                            folderPath = folder?.path,
-                            selectedFolderId = folder?.id,
-                            currentBranch = currentBranch,
-                            isDraftEditable = true,
-                            availableFolders = topLevel,
-                            availableAgents = agents,
-                        )
-                    }
+                    loadDraftSources(p, c)
                 }
                 // Slash commands for the composer popup: live snapshot → conversation
                 // snapshot → agent catalog. Runs for an idle existing session (no live
@@ -371,6 +438,63 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    // region Projects (批v154 添加到项目)
+
+    /** Projects offered by the composer's "add to project" sheet. */
+    val sessionProjects: StateFlow<List<SessionProject>> = projectRepo.projects
+    val projectMembers: StateFlow<Map<String, List<SessionRef>>> = projectRepo.members
+
+    /** Projects the composer keeps in sync with the transcript (a tapped row is
+     *  the target, so `projectIds` must follow the SERVER's membership, not a
+     *  stale local selection). */
+    fun observeProjects(serverId: String) {
+        projectsJob?.cancel()
+        val id = conversationId ?: return
+        projectsJob = viewModelScope.launch {
+            runCatching {
+                projectRepo.members.collect { members ->
+                    val mine = members.filterValues { refs ->
+                        refs.any { it.serverId == serverId && it.conversationId == id }
+                    }.keys
+                    _ui.update { if (it.projectIds == mine) it else it.copy(projectIds = mine) }
+                }
+            }
+        }
+    }
+
+    /** Add/remove the draft (or the created session) from a project. Before the
+     *  conversation exists the pick is remembered and written on creation. */
+    fun toggleDraftProject(projectId: String, member: Boolean) {
+        _ui.update {
+            it.copy(projectIds = if (member) it.projectIds + projectId else it.projectIds - projectId)
+        }
+        val sid = profile?.id ?: return
+        val id = conversationId ?: return
+        val ref = SessionRef(sid, id)
+        viewModelScope.launch {
+            runCatching { projectRepo.setMembership(projectId, ref, member) }
+        }
+    }
+
+    /** Create a project from the composer's sheet and join it in one step. */
+    fun createDraftProject(name: String, onCreated: (SessionProject) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                val project = projectRepo.create(name)
+                toggleDraftProject(project.id, true)
+                onCreated(project)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Sheet keeps its input; the project simply wasn't created.
+            }
+        }
+    }
+
+    private var projectsJob: Job? = null
+
+    // endregion
+
     // region Send / cancel
 
     fun send(text: String) = send(text, withAttachments = true)
@@ -382,10 +506,16 @@ class SessionDetailViewModel @Inject constructor(
      * consumes the composer's pending attachments, so images the user was staging
      * survive.
      */
-    private fun send(text: String, withAttachments: Boolean) {
+    private fun send(
+        text: String,
+        withAttachments: Boolean,
+        /** Files an app-generated prompt brings along (批v154 dispatch payload) —
+         *  already on the target device, so nothing to upload here. */
+        extraFiles: List<FileAttachment> = emptyList(),
+    ) {
         val trimmed = text.trim()
         val attachments = if (withAttachments) _ui.value.attachments else emptyList()
-        val fileAttachments = if (withAttachments) _ui.value.fileAttachments else emptyList()
+        val fileAttachments = (if (withAttachments) _ui.value.fileAttachments else emptyList()) + extraFiles
         if ((trimmed.isEmpty() && attachments.isEmpty() && fileAttachments.isEmpty()) || _ui.value.isInFlight) return
         // A fork is mid-flight: the session row is about to be re-pointed, so a send
         // now would land on the wrong session (or race the re-point entirely).
@@ -606,7 +736,22 @@ class SessionDetailViewModel @Inject constructor(
         // v134 folder memory: the accepted default is still a choice — record it so
         // the next new task keeps defaulting here even if the user never opened the picker.
         rememberFolderChoice(f)
+        // 批v154: the project picks made on the draft become real memberships now
+        // that the session has an id. Best-effort — a failed write must not fail
+        // the send (the session exists; the chip retries on the next tap).
+        linkDraftProjects(id)
         _ui.update { it.copy(isNew = false) }
+    }
+
+    /** Persist the composer's project picks for a just-created session. */
+    private suspend fun linkDraftProjects(conversationId: Int) {
+        val ids = _ui.value.projectIds
+        if (ids.isEmpty()) return
+        val serverId = profile?.id ?: return
+        val ref = SessionRef(serverId, conversationId)
+        ids.forEach { projectId ->
+            runCatching { projectRepo.setMembership(projectId, ref, true) }
+        }
     }
 
     private suspend fun resolveConnection(c: CodegClient): String {
@@ -3143,6 +3288,13 @@ data class SessionDetailUiState(
     val summary: ConversationSummary? = null,
     /** The connected server's display name — the "which device am I on" chip. */
     val serverName: String? = null,
+    /** 批v154: the device this composer targets. A NEW task follows the device
+     *  chip (the launch device no longer locks it); an existing session is pinned
+     *  to the device that owns it — conversation ids are server-local. */
+    val serverId: String? = null,
+    /** 批v154: projects this draft will join on creation / this session belongs
+     *  to. The chip row edits it in place; creation writes the memberships. */
+    val projectIds: Set<String> = emptySet(),
     val folderName: String? = null,
     val folderPath: String? = null,
     val selectedFolderId: Int? = null,

@@ -47,11 +47,15 @@ data class AggregateSection(
  * keys) or null for no filter; when present only member rows survive — this is
  * the project-filter application point, so switching projects never refetches.
  * [readMarks] drives the unread dots (same convention as the Activity feed).
+ * [hiddenServerIds] is the device multi-select filter (批v154) — a pure VIEW filter,
+ * so re-checking a device never refetches; rows from hidden devices are dropped
+ * before the pinned bucket so a hidden device can't leave a stray pin behind.
  */
 fun buildAggregateSessionSections(
     perServer: List<Pair<ServerProfile, List<ConversationSummary>>>,
     memberKeys: Set<String>? = null,
     readMarks: Map<String, Long> = emptyMap(),
+    hiddenServerIds: Set<String> = emptySet(),
 ): List<AggregateSection> {
     fun rowsOf(profile: ServerProfile, convs: List<ConversationSummary>): List<AggregateRow> =
         convs.map { conv ->
@@ -67,10 +71,12 @@ fun buildAggregateSessionSections(
             )
         }
 
-    val filtered = perServer.map { (profile, convs) ->
-        val rows = rowsOf(profile, convs)
-        if (memberKeys == null) rows else rows.filter { it.refKey in memberKeys }
-    }
+    val filtered = perServer
+        .filter { (profile, _) -> profile.id !in hiddenServerIds }
+        .map { (profile, convs) ->
+            val rows = rowsOf(profile, convs)
+            if (memberKeys == null) rows else rows.filter { it.refKey in memberKeys }
+        }
 
     val out = ArrayList<AggregateSection>(filtered.size + 1)
 

@@ -80,6 +80,39 @@ class SessionAutoStartTest {
         assertNull(s.take("srv1", 42))
     }
 
+    // ---- 批v154 attachments: a dispatch may carry files, not just text ----
+
+    @Test
+    fun `files ride with the prompt and come back through takePending`() {
+        val s = SessionAutoStart()
+        val files = listOf(UploadedAttachment("spec.pdf", "/work/uploads/spec.pdf"))
+        s.arm("srv1", 42, "看看这个", files)
+        val pending = s.takePending("srv1", 42)!!
+        assertEquals("看看这个", pending.prompt)
+        assertEquals(files, pending.files)
+        // Consumed: the next visit must not re-send either part.
+        assertNull(s.takePending("srv1", 42))
+    }
+
+    @Test
+    fun `files alone arm a dispatch`() {
+        val s = SessionAutoStart()
+        val files = listOf(UploadedAttachment("a.png", "/work/uploads/a.png"))
+        s.arm("srv1", 7, "  ", files)
+        assertEquals(files, s.takePending("srv1", 7)?.files)
+    }
+
+    @Test
+    fun `a stale slot drops its files as well`() {
+        val s = SessionAutoStart()
+        var now = 1_000_000L
+        s.clock = { now }
+        s.arm("srv1", 42, "prompt", listOf(UploadedAttachment("a.png", "/work/uploads/a.png")))
+        now += SessionAutoStart.STALE_MS + 1
+        assertNull(s.takePending("srv1", 42))
+        assertNull(s.takePending("srv1", 42))
+    }
+
     @Test
     fun `staleness is judged per slot not per visit`() {
         val s = SessionAutoStart()

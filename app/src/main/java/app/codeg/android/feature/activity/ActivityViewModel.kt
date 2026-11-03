@@ -10,6 +10,7 @@ import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.AGG_SKELETON_DELAY_MS
 import app.codeg.android.core.data.FOLDER_LOOKUP_TIMEOUT_MS
+import app.codeg.android.core.data.LIVE_PROBE_TIMEOUT_MS
 import app.codeg.android.core.data.SINGLE_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.aggregateDeviceSignature
 import app.codeg.android.core.data.failedNames
@@ -404,8 +405,21 @@ class ActivityViewModel @Inject constructor(
     ): List<ActivityRow> {
         val conversations = c.listConversations(sortBy = "updated").take(200)
         val folders = foldersFor(c, server)
+        // 批v154: corroborate the persisted `status` flag against the LIVE
+        // connection table. A row stuck in `in_progress` after a server restart or
+        // a missed TurnComplete write used to sit in 「正在运行」 forever; the pet
+        // snapshot lists only connections that are actually prompting / waiting on
+        // a permission. Null (probe failed) keeps the old status-only behavior —
+        // never hide a session that may really be running.
+        val liveIds = withTimeoutOrNull(LIVE_PROBE_TIMEOUT_MS) { c.liveConversationIds() }
         return conversations.map { conv ->
-            ActivityRow(conv, server.id, server.name, folders[conv.folderId])
+            ActivityRow(
+                conversation = conv,
+                serverId = server.id,
+                serverName = server.name,
+                folderName = folders[conv.folderId],
+                live = conv.status.isLive && (liveIds == null || conv.id in liveIds),
+            )
         }
     }
 
@@ -686,6 +700,9 @@ data class ActivityRow(
     val serverName: String,
     val folderName: String? = null,
     val unread: Boolean = false,
+    /** Genuinely running (live connection corroborated), not just `status.isLive`
+     *  — see `CodegClient.liveConversationIds` (批v154). */
+    val live: Boolean = conversation.status.isLive,
 ) {
     /** Cross-device identity (batch v132) — conversation ids are server-local. */
     val refKey: String get() = "$serverId:${conversation.id}"
@@ -714,10 +731,10 @@ fun buildActivitySections(
     conversations: List<ActivityRow>,
     readMarks: Map<String, Long> = emptyMap(),
 ): List<ActivitySection> {
-    val running = conversations.filter { it.conversation.status.isLive }
+    val running = conversations.filter { it.live }
         .sortedByDescending { it.conversation.updatedAt }
     val cutoff = Instant.now().minus(Duration.ofHours(24))
-    val recent = conversations.filter { !it.conversation.status.isLive && it.conversation.updatedAt.isAfter(cutoff) }
+    val recent = conversations.filter { !it.live && it.conversation.updatedAt.isAfter(cutoff) }
         .sortedByDescending { it.conversation.updatedAt }
         .map { row ->
             val mark = readMarks["${row.serverId}:${row.conversation.id}"]

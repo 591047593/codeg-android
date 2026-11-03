@@ -41,6 +41,13 @@ const val AGG_SKELETON_DELAY_MS: Long = 600L
  *  a slow `/folders` must not cost the device's rows (batch v137 review #2). */
 const val FOLDER_LOOKUP_TIMEOUT_MS: Long = 800L
 
+/**
+ * Liveness snapshot (`pet_list_active_sessions`) shares the same reasoning:
+ * it only REFINES rows the feed already has, so a slow or missing answer degrades
+ * to the persisted `status` flag instead of costing the device its rows.
+ */
+const val LIVE_PROBE_TIMEOUT_MS: Long = 2_000L
+
 /** Names of the devices that failed this round, in feed order. */
 fun List<DeviceLoad>.failedNames(): List<String> =
     filter { it.status == DeviceLoadStatus.FAILED }.map { it.name }

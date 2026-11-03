@@ -29,6 +29,12 @@ class SessionAutoStart @Inject constructor() {
         val conversationId: Int,
         val prompt: String,
         val armedAtEpochMs: Long,
+        /**
+         * 批v154 附件：派发时随指令上传到目标设备工作目录的文件。
+         * 路径由服务端 `upload_workspace_file` 返回的绝对路径组成，会话详情页
+         * 把它拼成 [FileAttachment] 挂在首条消息上（同手动附件走同一条发送链）。
+         */
+        val files: List<UploadedAttachment> = emptyList(),
     )
 
     /** 可注入时钟：单测把时间拨快，生产用墙钟（10 分钟窗对 NTP 跳变不敏感）。 */
@@ -36,12 +42,20 @@ class SessionAutoStart @Inject constructor() {
 
     private var pending: Pending? = null
 
-    /** Arm only with a real prompt — an empty instruction must never fire a send. */
+    /**
+     * Arm only with real payload — an empty instruction (no text, no files) must
+     * never fire a send. Files ride along: a dispatch of only images still counts.
+     */
     @Synchronized
-    fun arm(serverId: String, conversationId: Int, prompt: String) {
+    fun arm(
+        serverId: String,
+        conversationId: Int,
+        prompt: String,
+        files: List<UploadedAttachment> = emptyList(),
+    ) {
         val trimmed = prompt.trim()
-        if (trimmed.isEmpty()) return
-        pending = Pending(serverId, conversationId, trimmed, clock())
+        if (trimmed.isEmpty() && files.isEmpty()) return
+        pending = Pending(serverId, conversationId, trimmed, clock(), files)
     }
 
     /**
@@ -52,12 +66,16 @@ class SessionAutoStart @Inject constructor() {
      * [STALE_MS] is consumed AND dropped: stale never fires.
      */
     @Synchronized
-    fun take(serverId: String, conversationId: Int): String? {
+    fun take(serverId: String, conversationId: Int): String? = takePending(serverId, conversationId)?.prompt
+
+    /** Same consume-once contract as [take], but hands back the armed files too. */
+    @Synchronized
+    fun takePending(serverId: String, conversationId: Int): Pending? {
         val p = pending ?: return null
         if (p.serverId != serverId || p.conversationId != conversationId) return null
         pending = null
         if (clock() - p.armedAtEpochMs > STALE_MS) return null
-        return p.prompt
+        return p
     }
 
     companion object {

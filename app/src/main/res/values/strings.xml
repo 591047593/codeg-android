@@ -84,6 +84,15 @@
     <string name="sessions_agg_empty_message">Recent sessions from every device will appear here.</string>
     <string name="sessions_project_empty_title">No sessions in this project</string>
     <string name="sessions_project_empty_message">Long-press a session, then “Add to project”.</string>
+    <!-- 批v154：全部视图按设备筛选 + 派发/想法附件 -->
+    <string name="sessions_device_filter">Filter by device</string>
+    <string name="sessions_device_filter_show_all">Show all</string>
+    <string name="sessions_devices_hidden_title">All devices hidden</string>
+    <string name="sessions_devices_hidden_message">Every device is unchecked in the filter — check one to see its sessions.</string>
+    <string name="attach_add_image">Image</string>
+    <string name="attach_add_file">File</string>
+    <string name="attach_remove">Remove attachment</string>
+    <string name="attach_count">%1$d attached</string>
     <string name="session_rename">Rename</string>
     <string name="rename_title_hint">Session title</string>
     <string name="session_add_project">Add to project</string>
@@ -710,6 +719,9 @@
     <string name="compose_expand">Expand</string>
     <string name="compose_edit_fullscreen">Edit prompt</string>
     <string name="compose_ctx_device">Device</string>
+    <string name="compose_ctx_project">Project</string>
+    <string name="session_device_no_token">No token for %1$s — add one under Servers first.</string>
+    <string name="session_switch_device">Switch device</string>
     <string name="compose_ctx_folder">Folder</string>
     <string name="compose_ctx_agent">Agent</string>
     <string name="common_close">Close</string>

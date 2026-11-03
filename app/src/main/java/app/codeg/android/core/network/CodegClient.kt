@@ -277,6 +277,38 @@ class CodegClient(
     }
 
     /**
+     * Conversation ids that have a GENUINELY live turn on this device, or null when
+     * the probe itself failed.
+     *
+     * 批v154 (正在运行修复): the persisted `status` flag alone is not trustworthy —
+     * every conversation row is BORN `in_progress` (server `create_inner`) and a
+     * server restart / missed `TurnComplete` write can strand a finished session
+     * there forever, which is exactly how completed sessions sat in the Activity
+     * tab's 「正在运行」 section. `pet_list_active_sessions` reports the LIVE
+     * connection table (prompting / awaiting a permission / errored) — the same
+     * signal the desktop pet paints from, one request per device per poll.
+     *
+     * Null (not empty) on failure: an old server without the command, or a flaky
+     * transport, must fall back to the status flag rather than hide a session that
+     * really is running.
+     */
+    suspend fun liveConversationIds(): Set<Int>? = try {
+        val root = CodegJson.response.parseToJsonElement(
+            send("pet_list_active_sessions", encode(EmptyBody)),
+        )
+        val sessions = (root as? JsonObject)?.get("sessions") as? JsonArray
+        sessions?.mapNotNull { row ->
+            ((row as? JsonObject)?.get("conversationId") as? JsonPrimitive)
+                ?.content
+                ?.toIntOrNull()
+        }?.toSet() ?: emptySet()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
      * Inject [text] into a running turn's steering channel (web "live feedback").
      * Valid only while a turn is in flight — the server rejects idle calls with a
      * 400 `invalid_input` whose message reads `no active turn`.

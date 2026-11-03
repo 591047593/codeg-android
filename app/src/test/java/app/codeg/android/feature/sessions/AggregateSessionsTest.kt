@@ -41,6 +41,32 @@ class AggregateSessionsTest {
     // ---- buildAggregateSessionSections ----
 
     @Test
+    fun `hidden devices drop out of both the pinned bucket and their own section`() {
+        val sections = buildAggregateSessionSections(
+            listOf(
+                deviceA to listOf(conv(1, 5), conv(2, 30, pinnedMin = 10)),
+                deviceB to listOf(conv(3, 25), conv(4, 40, pinnedMin = 60)),
+            ),
+            hiddenServerIds = setOf("b"),
+        )
+
+        // No "b" section, and b's pinned row must not leak into the pinned bucket.
+        assertEquals(listOf("a"), sections.map { it.serverId })
+        val pinned = sections.first { it.kind == AggregateKind.PINNED }
+        assertEquals(listOf(2), pinned.rows.map { it.conversation.id })
+    }
+
+    @Test
+    fun `hiding every device yields no sections (the screen shows its own empty state)`() {
+        val sections = buildAggregateSessionSections(
+            listOf(deviceA to listOf(conv(1, 5)), deviceB to listOf(conv(2, 6))),
+            hiddenServerIds = setOf("a", "b"),
+        )
+        assertTrue(sections.isEmpty())
+    }
+
+
+    @Test
     fun `pinned bucket spans devices and sorts by pinnedAt, device sections sort by updatedAt`() {
         val sections = buildAggregateSessionSections(
             listOf(

@@ -34,7 +34,8 @@ class ActivitySectionsUnreadTest {
         status: ConversationStatus,
         updated: Instant,
         serverId: String = "srv",
-    ) = ActivityRow(conv(id, status, updated), serverId, "Server")
+        live: Boolean = status.isLive,
+    ) = ActivityRow(conv(id, status, updated), serverId, "Server", live = live)
 
     private val now = Instant.now()
 
@@ -80,5 +81,20 @@ class ActivitySectionsUnreadTest {
         assertEquals(listOf("running", "recent"), sections.map { it.id })
         assertTrue(sections[0].rows.none { it.unread })
         assertTrue(sections[1].rows.single().unread) // srv2 row has no mark
+    }
+
+    @Test
+    fun `stale in-progress row drops out of running once liveness says otherwise`() {
+        // 批v154: the server can leave a conversation at IN_PROGRESS after a client
+        // went away; only a live connection put it in Running.
+        val sections = buildActivitySections(
+            listOf(
+                row(1, ConversationStatus.IN_PROGRESS, now.minusSeconds(30), live = false),
+                row(2, ConversationStatus.IN_PROGRESS, now.minusSeconds(60), live = true),
+            ),
+        )
+        val running = sections.first { it.id == "running" }
+        assertEquals(listOf(2), running.rows.map { it.conversation.id })
+        assertEquals(listOf(1), sections.first { it.id == "recent" }.rows.map { it.conversation.id })
     }
 }

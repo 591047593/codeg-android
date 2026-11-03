@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -14,11 +15,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -32,11 +39,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,7 +57,9 @@ import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.data.DispatchTargets
+import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.designsystem.component.AgentChipRow
+import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
 import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.OptionListSheet
 import app.codeg.android.core.designsystem.component.PickerField
@@ -56,6 +69,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.FolderDetail
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -81,6 +95,10 @@ interface DispatchFormHost {
     val formUi: StateFlow<DispatchFormUi>
     val settings: StateFlow<AppSettings>
 
+    /** 批v154: copies picked files into app-private storage. The form only stages
+     *  LOCAL copies; [DispatchService] uploads them to the chosen device. */
+    val attachmentStager: app.codeg.android.core.data.AttachmentStager
+
     fun loadTarget(serverId: String)
     fun loadBranches(serverId: String, folder: FolderDetail)
 
@@ -100,6 +118,9 @@ data class DispatchFormUi(
     val branchFolderKey: String? = null,
 )
 
+/** Cap per dispatch (image + file picks share it). */
+private const val MAX_DISPATCH_ATTACHMENTS = 10
+
 /** Everything the form submits, resolved. The host owns guards beyond this. */
 data class DispatchFormSubmit(
     val ideaId: String? = null,
@@ -113,6 +134,8 @@ data class DispatchFormSubmit(
     val scheduleLocalMillis: Long?,
     val sessionMode: Boolean,
     val autoStart: Boolean = true,
+    /** 批v154 — files to upload to the target device before the create. */
+    val attachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
 )
 
 /**
@@ -147,6 +170,9 @@ fun DispatchForm(
     initialDescription: String = "",
     /** Ledger ref of an accepted submit — the screen renders the result dialog. */
     onResult: (DispatchRef) -> Unit = {},
+    /** 批v154: files already owned by the source (an idea's attachments). The form
+     *  shows them as removable chips; it only DELETES copies it staged itself. */
+    initialAttachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
 ) {
     val colors = CodegTheme.colors
     val targets by host.targets.collectAsStateWithLifecycle()
@@ -164,6 +190,42 @@ fun DispatchForm(
     var description by rememberSaveable { mutableStateOf(initialDescription) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var scheduleMillis by rememberSaveable { mutableStateOf(0L) }
+    // 批v154 attachments. A plain remember (not saveable): the staged model is not
+    // Bundle-able, and the sheet closes on rotation anyway — the private copies
+    // simply outlive the chip list. Locally staged copies are ours to delete on
+    // removal; the ones handed in by the host (an idea's attachments) are not.
+    val attachments = remember {
+        androidx.compose.runtime.mutableStateListOf<LocalAttachment>().apply {
+            addAll(initialAttachments)
+        }
+    }
+    var stagingAttachments by remember { mutableStateOf(false) }
+    var showDescFullscreen by rememberSaveable { mutableStateOf(false) }
+    val stagedOwners = remember { mutableSetOf<String>() }
+    val attachmentScope = rememberCoroutineScope()
+    // Stage picked uris off the main thread; the private copy is what the idea /
+    // dispatch persists (a SAF grant dies with the screen).
+    fun stage(uris: List<android.net.Uri>, images: Boolean) {
+        if (uris.isEmpty()) return
+        stagingAttachments = true
+        attachmentScope.launch {
+            val staged = uris.mapNotNull { uri ->
+                host.attachmentStager.stage(uri, null, null, images)
+            }
+            val room = (MAX_DISPATCH_ATTACHMENTS - attachments.size).coerceAtLeast(0)
+            val accepted = staged.take(room)
+            staged.drop(room).forEach(host.attachmentStager::discard)
+            attachments.addAll(accepted)
+            accepted.forEach { stagedOwners += it.id }
+            stagingAttachments = false
+        }
+    }
+    val pickDispatchImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_DISPATCH_ATTACHMENTS),
+    ) { uris -> stage(uris, images = true) }
+    val pickDispatchFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> stage(uris, images = false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
@@ -397,9 +459,88 @@ fun DispatchForm(
             onValueChange = { description = it },
             label = { Text(stringResource(R.string.inbox_desc_hint)) },
             minLines = 3,
+            // 批v154: long descriptions get the same near-fullscreen editor as the
+            // composer — a 3-line box on a phone hides the tail while typing.
+            trailingIcon = {
+                IconButton(onClick = { showDescFullscreen = true }) {
+                    Icon(
+                        Icons.Rounded.OpenInFull,
+                        contentDescription = stringResource(R.string.compose_edit_fullscreen),
+                        tint = colors.textSecondary,
+                    )
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
-        if (sessionMode && description.isBlank()) {
+        // 批v154 附件：图片 / 任意文件 → 应用私有目录落盘，派发时上传到目标设备。
+        if (stagingAttachments) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Text(
+                    stringResource(R.string.common_loading),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary,
+                    modifier = Modifier.padding(start = 6.dp),
+                )
+            }
+        }
+        if (attachments.isNotEmpty()) {
+            attachments.forEach { att ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                ) {
+                    Icon(
+                        if (att.isImage) Icons.Rounded.Image else Icons.Rounded.AttachFile,
+                        contentDescription = null,
+                        tint = colors.textSecondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        att.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(start = 6.dp),
+                    )
+                    IconButton(
+                        onClick = {
+                            attachments.removeAll { it.id == att.id }
+                            if (att.id in stagedOwners) {
+                                stagedOwners -= att.id
+                                host.attachmentStager.discard(att)
+                            }
+                        },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.attach_remove),
+                            tint = colors.textTertiary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(
+                onClick = { pickDispatchImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !stagingAttachments && attachments.size < MAX_DISPATCH_ATTACHMENTS,
+            ) {
+                Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.attach_add_image), modifier = Modifier.padding(start = 4.dp))
+            }
+            TextButton(
+                onClick = { pickDispatchFiles.launch(arrayOf("*/*")) },
+                enabled = !stagingAttachments && attachments.size < MAX_DISPATCH_ATTACHMENTS,
+            ) {
+                Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
+            }
+        }
+        if (sessionMode && description.isBlank() && attachments.isEmpty()) {
             Text(
                 stringResource(R.string.dispatch_session_desc_required),
                 style = MaterialTheme.typography.labelSmall,
@@ -473,7 +614,7 @@ fun DispatchForm(
         val scheduleNotSetNow = !sessionMode && scheduled && scheduleMillis <= 0L
         val scheduleInPastNow = !sessionMode && scheduled && scheduleMillis in 1..clockTick
         val canDispatch = device != null && folderId != null && title.isNotBlank() &&
-            (!sessionMode || description.isNotBlank()) &&
+            (!sessionMode || description.isNotBlank() || attachments.isNotEmpty()) &&
             !ui.dispatching && !scheduleNotSetNow && !scheduleInPastNow
         PrimaryButton(
             text = stringResource(if (sessionMode) R.string.dispatch_button_session else R.string.dispatch_button_task),
@@ -500,6 +641,7 @@ fun DispatchForm(
                         baseBranch = if (sessionMode) null else effectiveBranch,
                         scheduleLocalMillis = if (!sessionMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
                         sessionMode = sessionMode,
+                        attachments = attachments.toList(),
                     ),
                 ) { ref ->
                     result = ref
@@ -508,6 +650,15 @@ fun DispatchForm(
             },
             enabled = canDispatch,
             loading = ui.dispatching,
+        )
+    }
+
+    if (showDescFullscreen) {
+        FullscreenTextEditorDialog(
+            text = description,
+            onTextChange = { description = it },
+            onDismiss = { showDescFullscreen = false },
+            label = stringResource(R.string.inbox_desc_hint),
         )
     }
 

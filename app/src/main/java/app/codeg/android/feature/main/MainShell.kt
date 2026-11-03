@@ -1201,6 +1201,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onBack = { nav.popBackStack() },
                     onOpenSession = { folderId -> nav.navigate("$ROUTE_NEW_TASK?folderId=$folderId") },
                     onOpenFolder = { folderId -> nav.navigate("project/$folderId") },
+                    onOpenManageProjects = { nav.navigate(ROUTE_FOLDERS) },
+                    servers = servers,
                 )
             }
             composable(
@@ -1216,6 +1218,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onBack = { nav.popBackStack() },
                     onOpenSession = { folderId -> nav.navigate("$ROUTE_NEW_TASK?folderId=$folderId") },
                     onOpenFolder = { folderId -> nav.navigate("project/$folderId") },
+                    onOpenManageProjects = { nav.navigate(ROUTE_FOLDERS) },
+                    servers = servers,
                 )
             }
             composable(
@@ -1240,6 +1244,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onBack = { nav.popBackStack() },
                     onOpenSession = { folderId -> nav.navigate("$ROUTE_NEW_TASK?folderId=$folderId") },
                     onOpenFolder = { folderId -> nav.navigate("project/$folderId") },
+                    onOpenManageProjects = { nav.navigate(ROUTE_FOLDERS) },
+                    servers = servers,
                     seedText = entry.arguments?.getString("handoff"),
                 )
             }

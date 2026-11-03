@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -64,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.FocusItem
 import app.codeg.android.core.datastore.ChatListDisplayStore
 import app.codeg.android.core.datastore.ServerProfile
@@ -72,6 +78,7 @@ import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.LoadingView
 import app.codeg.android.core.designsystem.component.deviceBadgeColor
+import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.colorFromHex
 import app.codeg.android.core.model.ConversationSummary
@@ -737,9 +744,13 @@ private fun AggregateChatsList(
     val projects by viewModel.sessionProjects.collectAsStateWithLifecycle()
     val members by viewModel.projectMembers.collectAsStateWithLifecycle()
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
+    // 批v154: multi-select device filter — a view filter, so toggling it never refetches.
+    val hiddenDevices by viewModel.hiddenDevices.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     val listState = rememberLazyListState()
+
+    var showDeviceFilter by rememberSaveable { mutableStateOf(false) }
 
     var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
     var pendingDelete by remember { mutableStateOf<AggregateRow?>(null) }
@@ -815,6 +826,19 @@ private fun AggregateChatsList(
             TopAppBar(
                 title = { Text(stringResource(R.string.activity_all)) },
                 actions = {
+                    // 批v154: device multi-select filter, next to the project
+                    // bookmark. Accent tint = some device is unchecked; hidden
+                    // with a single device (nothing to filter) UNLESS something
+                    // is unchecked — otherwise the only way back would be a wipe.
+                    if (hiddenDevices.isNotEmpty() || ui.deviceStates.size > 1) {
+                        IconButton(onClick = { showDeviceFilter = true }) {
+                            Icon(
+                                Icons.Rounded.FilterList,
+                                contentDescription = stringResource(R.string.sessions_device_filter),
+                                tint = if (hiddenDevices.isEmpty()) colors.textSecondary else colors.accent,
+                            )
+                        }
+                    }
                     IconButton(onClick = onManageProjects) {
                         Icon(
                             Icons.Rounded.Bookmark,
@@ -900,6 +924,14 @@ private fun AggregateChatsList(
                                     icon = Icons.Rounded.Dns,
                                     title = stringResource(R.string.all_devices_skipped_title),
                                     message = stringResource(R.string.all_devices_skipped_message),
+                                )
+                                // 批v154: the device filter unchecked every device — say
+                                // so instead of claiming there are no sessions anywhere.
+                                ui.deviceStates.isNotEmpty() &&
+                                    ui.deviceStates.all { it.serverId in hiddenDevices } -> EmptyState(
+                                    icon = Icons.Rounded.FilterList,
+                                    title = stringResource(R.string.sessions_devices_hidden_title),
+                                    message = stringResource(R.string.sessions_devices_hidden_message),
                                 )
                                 ui.totalRows == 0 -> EmptyState(
                                     icon = Icons.Rounded.Forum,
@@ -1037,6 +1069,87 @@ private fun AggregateChatsList(
             },
             onDismiss = { addToTarget = null },
         )
+    }
+
+    if (showDeviceFilter) {
+        DeviceFilterSheet(
+            devices = ui.deviceStates,
+            hidden = hiddenDevices,
+            onToggle = viewModel::setDeviceVisible,
+            onShowAll = viewModel::showAllDevices,
+            onDismiss = { showDeviceFilter = false },
+        )
+    }
+}
+
+/**
+ * Multi-select device filter for the 全部 aggregate (批v154). Every device is
+ * checked by default (the store keeps the HIDDEN ids, so a newly paired device is
+ * visible automatically); unchecking one removes its section from the list.
+ * Devices come from the fetch round's [deviceStates] — including a FAILED one,
+ * which must stay listed so the user can re-check it after it comes back.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeviceFilterSheet(
+    devices: List<DeviceLoad>,
+    hidden: Set<String>,
+    onToggle: (String, Boolean) -> Unit,
+    onShowAll: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .sheetContentScrollLock()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.sessions_device_filter),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onShowAll, enabled = hidden.isNotEmpty()) {
+                    Text(stringResource(R.string.sessions_device_filter_show_all))
+                }
+            }
+            if (devices.isEmpty()) {
+                Text(
+                    stringResource(R.string.common_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textTertiary,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
+            }
+            devices.forEach { device ->
+                val checked = device.serverId !in hidden
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onToggle(device.serverId, !checked) }
+                        .heightIn(min = 48.dp)
+                        .padding(vertical = 2.dp),
+                ) {
+                    Checkbox(checked = checked, onCheckedChange = { onToggle(device.serverId, it) })
+                    Text(
+                        device.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
