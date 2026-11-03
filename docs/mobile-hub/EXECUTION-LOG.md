@@ -127,3 +127,17 @@
 - 根因③（兜底）：send() 新增发送前聚合体积守卫（>1.73M base64 字符给「请先移除部分图片」提示而非裸 413），防恢复的草稿或未来调用方绕过选择期聚合闸。
 - 门禁：本地零编译。Verify 首跑暴露一处空安全编译错（when(exceptionOrNull()) 无 null 分支，else 内可空接收者）→ fold 重写修复（67a9610）；二跑 ServerStoreTest 既有用例超时抖动假红（7b66be9 同源，与本次改动无关）→ rerun 绿。
 - 发版：tag v1.0.1-fengx.40（versionCode 42），Release 绿（run 41354466127），双 APK+sha256 挂 Release+TG 直链。单测 AttachmentPrepRouteTest 8 例（prepRoute 路由/LADDER 单调不变量/autoRenamedFileName）。
+
+## 批v151：工作台折叠 / 设备条打磨+三屏手势 / 弹层误关根修 / 想法按钮样式 / 悬浮球+5 / 全局新建会话 / 搜索「全部」聚合（2026-11-02→03）
+- 背景：主人十条口述+10 张真机截图；流程=施工图（子代理审查后修订）→ 六特性实施 → 批内对抗审查 → 多维审查（主人 11-03 改口 30 轮→**3 轮**，最多并发 2 子代理）→ GH Actions 发版推 TG。
+- P1 工作台折叠（5d98b91）：总览(统计+快捷)与需要处理两区独立折叠，WorkbenchDisplayStore 跨启动记忆（乐观内存态+异步落盘，读失败保展开态），折叠轨全宽可点+a11y onClickLabel+Role；feed 机制零改动。
+- P2 设备条/目录卡+三屏手势（25260f4）：chips 40dp 视觉/48dp 触达+15sp+选中实底对勾（filter-chip 惯例）；FolderRow 56dp/44dp 图标；手势切设备挂 chats/folders/search 推入屏（WITH_ALL×2+DEVICE_ONLY，Tab 判定推入屏 no-op）；搜索全部=searchAll 旗标+按设备扇出（10s 上限/200 条/每台）+recency 合并纯函数+失败横幅+行操作三重禁用。
+- P3 弹层误关根修（cd6e829）：SheetDragLock 改双向 post 全消费（内容正反向都正常滚、sheet 容器收不到内容剩余，拖拽关闭只走固定头）+ sheetContentScrollLock 修饰符；7 卡重构固定头+内部滚动（QuickIdea/Handoff/任务详情/会话详情/AgentOptions 主+分支页/加项目/项目筛选）、4 卡挂锁（计划进度/插入/目录 TOC/切分支）、DispatchSheet 补固定标题头；合规 3 张语义自动升级。
+- P4 想法按钮样式（e6e4786）：AppSettingsStore 新增 inbox_new_idea_style（corner 默认/centerWide，未知值回退）；centerWide 用 Scaffold bottomBar 槽放半屏宽 56dp accent 胶囊（左右手都够得着），两样式同开 IdeaEditorDialog。
+- P5 悬浮球+5 动作（0c6a565）：tabInbox/tabTasks/quickNewSession/toggleAllDevices/refreshActivity，目录 25→30，默认绑定零变更（v150 政策），计数闸+新增不变量测试。
+- P6 全局新建会话 sheet（f70896b）：QuickNewSessionSheet 复用 DispatchForm+QuickActionViewModel（会话模式预选，设备后选目录联动），CONFIRMED 会话跳回执直跳会话（remoteTodoId=会话 id，owning-device dance 同收件箱），迟到回调 AtomicInteger token 拦截；quickTask/quickNewSession 互斥开。
+- 对抗审查（0684113，3 代理并行 14 项全收）：CRITICAL 全模式搜索空态门控读错列表（改读 allResults+deviceStates）；MAJOR 胶囊双 nav-inset（consumeWindowInsets）；迟到 quickNewSession 回调整支拦截；聚合搜索重启带设备签名；工作台乐观切换回放窗口；全军覆没轮不记搜索史等。
+- 三轮多维审查（370b83a→7b36f43→93d2876）：第 1 轮 7 领域 15 文件（48dp 触达家族、onAccent 阈值 0.6→0.4、WorkbenchViewModel persist 补 catch、runAggregateSearch 结构化取消+epoch 重验、RecentSearchesStore 头部短路、distinctBy 防撞 key、InboxViewModel PENDING 在途守卫+探针确认补 SessionAutoStart.arm、handoffTo 返回 Boolean+互斥开、EN 引号转义）；第 2 轮（搜索 submit/clearRecent 裸写盘补 catch、五旗标 rememberSaveable、openAggregateRow 幽灵设备守卫、设置 chip 48dp、横幅孤儿 @Composable 去重；EN/zh 1187 条对账零缺失、默认绑定逐键一致）；第 3 轮（MAJOR：DeviceChip semantics{selected=…} 在 TalkBack 下读未设属性崩溃→局部捕获；姊妹 sheet 标题条补齐 48dp；F1 全部扇出等待期进度态 search_all_searching 双语）。
+- Verify 首跑（41595649199）抓 10 编译错/6 文件——v151 实施八提交此前从未过编译闸：①semantics 左值遮蔽×2（lambda 内左值解析到外层同名 val 参数/局部报 'val' cannot be reassigned——改名 isSelected 根修，第 3 轮的「局部捕获」方案只修了 RHS 读取不修 LHS 赋值）②缺 import×3（rememberSaveable/MaterialTheme/withTimeoutOrNull）③RecentList 丢 @Composable（第 2 轮横幅去重时误删，初始提交既有函数）④TextOverflow.MiddleEllipsis（compose BOM 2024.12.01=ui 1.7.5 无此枚举）换 Ellipsis。f4402a4 修复 → Verify 41597244583 绿。
+- 发版：tag v1.0.1-fengx.42（versionCode 44），Release 41598141540 绿，双 APK+sha256 挂 Release+TG 直链。
+- 遗留（已文档化，非阻塞）：全仓裸写盘类 20 处（AppViewModel 等，非 v151 引入）、详情屏 remember 旗标、dispatchError 中文行（文件既有惯例）、折叠标题计数徽标 LOW。
