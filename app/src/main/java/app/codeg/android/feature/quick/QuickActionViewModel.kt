@@ -2,6 +2,7 @@ package app.codeg.android.feature.quick
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.core.data.AttachmentStager
 import app.codeg.android.core.data.DispatchOutcome
 import app.codeg.android.core.data.DispatchService
 import app.codeg.android.core.data.DispatchTargetLoader
@@ -45,6 +46,8 @@ class QuickActionViewModel @Inject constructor(
     private val dispatchStore: DispatchStore,
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
+    /** 批v154: the shared form stages picked files here. */
+    override val attachmentStager: AttachmentStager,
     appSettingsStore: AppSettingsStore,
 ) : ViewModel(), DispatchFormHost {
 
@@ -209,6 +212,7 @@ class QuickActionViewModel @Inject constructor(
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,
+                        attachments = submit.attachments,
                     ),
                 )
                 when (outcome) {

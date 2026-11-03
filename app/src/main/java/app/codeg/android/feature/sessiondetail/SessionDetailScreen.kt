@@ -35,10 +35,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
@@ -52,16 +50,13 @@ import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.FolderSpecial
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -81,43 +76,36 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import android.view.WindowManager
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
 import app.codeg.android.core.data.HandoffSource
+import app.codeg.android.core.datastore.ServerProfile
+import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.EmptyState
+import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.OptionListSheet
 import app.codeg.android.core.designsystem.component.sheetContentScrollLock
@@ -129,6 +117,7 @@ import app.codeg.android.core.model.ContentBlock
 import app.codeg.android.core.model.PlanEntry
 import app.codeg.android.feature.handoff.HandoffSheet
 import app.codeg.android.feature.handoff.HandoffViewModel
+import app.codeg.android.feature.sessions.AddToProjectSheet
 import app.codeg.android.feature.sessiondetail.interactive.AskQuestionCard
 import app.codeg.android.feature.sessiondetail.interactive.PermissionRequestCard
 import app.codeg.android.feature.sessiondetail.interactive.PlanApprovalCard
@@ -162,6 +151,11 @@ fun SessionDetailScreen(
     /** Jump to the session's project (folder) detail screen — batch v125. */
     onOpenFolder: (Int) -> Unit = {},
     seedText: String? = null,
+    /** Pairings for the composer's device switch (批v154) — a new task may be
+     *  born on any device, not just the one it was launched from. */
+    servers: List<ServerProfile> = emptyList(),
+    /** Opens the project manager from the "add to project" sheet. */
+    onOpenManageProjects: () -> Unit = {},
     viewModel: SessionDetailViewModel = hiltViewModel(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -505,6 +499,8 @@ fun SessionDetailScreen(
                         SessionContextChips(
                             ui = ui,
                             viewModel = viewModel,
+                            servers = servers,
+                            onOpenManageProjects = onOpenManageProjects,
                             onOpenOptions = { showOptions = true },
                             onOpenContextUsage = { showContextUsage = true },
                             onOpenSessionDetails = { showSessionDetails = true },
@@ -646,20 +642,22 @@ fun SessionDetailScreen(
     ui.docPreview?.let { preview ->
         DocPreviewDialog(state = preview, onDismiss = viewModel::dismissDocPreview)
     }
-    if (showFullscreenEditor) FullscreenEditorDialog(
+    if (showFullscreenEditor) FullscreenTextEditorDialog(
         text = draft,
         onTextChange = {
             draft = it
             viewModel.saveDraft(it)
         },
         onDismiss = { showFullscreenEditor = false },
+        label = stringResource(R.string.compose_edit_fullscreen),
         onSend = {
             showFullscreenEditor = false
             viewModel.send(draft)
             draft = ""
         },
-        isInFlight = ui.isInFlight,
-        canSend = (draft.isNotBlank() || ui.attachments.isNotEmpty()) && !ui.forking,
+        // Parity with the compact composer: no send while a turn is in flight or
+        // a fork is being created (the dialog used to take these as separate flags).
+        sendEnabled = (draft.isNotBlank() || ui.attachments.isNotEmpty()) && !ui.isInFlight && !ui.forking,
     )
 }
 
@@ -723,124 +721,6 @@ private fun MessageTocSheet(
                     )
                 }
             }
-        }
-    }
-}
-
-/** Near-fullscreen editor for long prompts, sharing the composer's [text] state — edits
- *  apply live underneath, and closing (back / close / send) lands exactly where the
- *  compact field would have. Header: close · char count · send.
- *
- *  IME behaviour (batch v121): the dialog window must NOT react to the keyboard —
- *  `ADJUST_NOTHING` stops the window-level pan that used to fight `imePadding()` and
- *  make the editor bounce twice as the IME appeared. The single animation source is
- *  the `imePadding()` on the Surface. Focus is requested on the field so the keyboard
- *  opens onto it (never STATE_VISIBLE without focus — first keystrokes would drop).
- *  androidx only re-stamps the dialog's soft-input mode on API < 31, so one set is
- *  stable on the main flavor (minSdk 31); the legacy flavor (minSdk 28) keeps the
- *  stock resize behaviour. Scrolling lives in an outer `verticalScroll` Box rather
- *  than the field's internal scroll: the cursor's bring-into-view requests bubble to
- *  that container, so tapping near the bottom keeps the viewport there instead of
- *  snapping back to the first line.
- */
-@Composable
-private fun FullscreenEditorDialog(
-    text: String,
-    onTextChange: (String) -> Unit,
-    onDismiss: () -> Unit,
-    onSend: () -> Unit,
-    isInFlight: Boolean,
-    canSend: Boolean,
-) {
-    val colors = CodegTheme.colors
-    Dialog(
-        onDismissRequest = onDismiss,
-        // decorFitsSystemWindows=false lets the content window see the IME insets, so
-        // imePadding below actually lifts the field above the keyboard (with the default
-        // `true` the dialog pans instead and the prompt tail hides under it).
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        // The dialog window itself must hold still while the IME animates: pan/resize
-        // here doubles the motion against imePadding(). (`.parent` — the DialogLayout,
-        // not the inner compose view, implements DialogWindowProvider.)
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        LaunchedEffect(dialogWindow) {
-            dialogWindow?.setSoftInputMode(
-                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING,
-            )
-        }
-        val scroll = rememberScrollState()
-        val focusRequester = remember { FocusRequester() }
-        Surface(
-            color = colors.bg,
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-        ) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilledTonalIconButton(
-                        onClick = onDismiss,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = colors.textPrimary.copy(alpha = 0.06f),
-                            contentColor = colors.textSecondary,
-                        ),
-                    ) {
-                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close))
-                    }
-                    Text(
-                        text = stringResource(R.string.compose_edit_fullscreen) + " · " + text.length,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = colors.textSecondary,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                    )
-                    FilledIconButton(
-                        onClick = onSend,
-                        enabled = canSend && !isInFlight,
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = colors.accent,
-                            contentColor = colors.onAccent,
-                        ),
-                    ) {
-                        Icon(Icons.Rounded.ArrowUpward, contentDescription = stringResource(R.string.compose_send))
-                    }
-                }
-                HorizontalDivider(thickness = Dp.Hairline, color = colors.surfaceStroke)
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .verticalScroll(scroll),
-                ) {
-                    BasicTextField(
-                        value = text,
-                        onValueChange = onTextChange,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = colors.textPrimary,
-                            textDirection = TextDirection.Content,
-                        ),
-                        cursorBrush = SolidColor(colors.accent),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .focusRequester(focusRequester),
-                    )
-                }
-            }
-        }
-        // Focus first, then bring the text tail into view (batch v123): opening on a
-        // long draft used to land the viewport at the top while the cursor sat at the
-        // end, so the first IME frame scrolled the tail in — the "jerk and bounce" on
-        // open. Animate after the first layout pass with the field focused, when the
-        // scroll container's height is real.
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-            withFrameNanos { }
-            scroll.animateScrollTo(scroll.maxValue)
         }
     }
 }
@@ -1048,6 +928,8 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
 private fun SessionContextChips(
     ui: SessionDetailUiState,
     viewModel: SessionDetailViewModel,
+    servers: List<ServerProfile>,
+    onOpenManageProjects: () -> Unit,
     onOpenOptions: () -> Unit,
     onOpenContextUsage: () -> Unit,
     onOpenSessionDetails: () -> Unit,
@@ -1058,6 +940,11 @@ private fun SessionContextChips(
     val agentDescription = stringResource(R.string.compose_ctx_agent)
     // 批v150：文件夹选择从锚定菜单换成统一 OptionListSheet（大列表可搜索）。
     var folderSheet by rememberSaveable { mutableStateOf(false) }
+    // 批v154：设备切换（草稿专用）与「添加到项目」。
+    var deviceSheet by rememberSaveable { mutableStateOf(false) }
+    var projectSheet by rememberSaveable { mutableStateOf(false) }
+    val projects by viewModel.sessionProjects.collectAsStateWithLifecycle()
+    val projectMembers by viewModel.projectMembers.collectAsStateWithLifecycle()
 
     LazyRow(
         Modifier.fillMaxWidth(),
@@ -1194,15 +1081,30 @@ private fun SessionContextChips(
                 }
             }
         }
-        // Device chip: read-only. A session is pinned to its server; switching devices
-        // happens on the Servers tab, not mid-composer.
+        // 添加到项目 (批v154): the same sheet the session list's long-press opens,
+        // here in the composer — picks queue on the draft and land on creation;
+        // a live session writes through immediately.
+        item(key = "ctx-project") {
+            ContextChip(
+                icon = Icons.Rounded.FolderSpecial,
+                label = projectChipLabel(ui.projectIds, projects),
+                contentDescription = stringResource(R.string.compose_ctx_project),
+                enabled = true,
+                onClick = { projectSheet = true },
+            )
+        }
+        // Device chip (批v154): a DRAFT can still move — the launch device used to be
+        // baked into the composer, so every new task was born wherever its session
+        // list lived. Once the conversation exists the id is server-local and the
+        // chip goes read-only.
         if (ui.serverName != null) {
             item(key = "ctx-device") {
                 ContextChip(
                     icon = Icons.Rounded.Dns,
                     label = ui.serverName,
                     contentDescription = stringResource(R.string.compose_ctx_device),
-                    enabled = false,
+                    enabled = ui.isNew && ui.isDraftEditable && servers.size > 1,
+                    onClick = { deviceSheet = true },
                 )
             }
         }
@@ -1230,6 +1132,53 @@ private fun SessionContextChips(
             onSelect = { opt -> ui.availableFolders.firstOrNull { it.id.toString() == opt.id }?.let(viewModel::selectFolder) },
             onDismiss = { folderSheet = false },
         )
+    }
+
+    if (deviceSheet) {
+        // Same visual language as the new-task form's device chips; the current
+        // device is checked and tapping another moves the draft there.
+        OptionListSheet(
+            title = stringResource(R.string.session_switch_device),
+            options = servers.map {
+                PickerOption(
+                    id = it.id,
+                    label = it.name,
+                    note = if (it.id == ui.serverId) stringResource(R.string.compose_ctx_device) else null,
+                )
+            },
+            selectedId = ui.serverId,
+            onSelect = { opt -> viewModel.selectDevice(opt.id) },
+            onDismiss = { deviceSheet = false },
+        )
+    }
+
+    if (projectSheet) {
+        // A draft has no id yet, so membership only queues locally; created
+        // sessions write straight through to the project store.
+        AddToProjectSheet(
+            targetTitle = ui.summary?.trimmedTitle ?: stringResource(R.string.session_new_task),
+            projects = projects,
+            memberOf = ui.projectIds,
+            memberCount = { p -> projectMembers[p.id].orEmpty().size },
+            onToggle = viewModel::toggleDraftProject,
+            onCreate = { name, onCreated -> viewModel.createDraftProject(name, onCreated) },
+            onManage = {
+                projectSheet = false
+                onOpenManageProjects()
+            },
+            onDismiss = { projectSheet = false },
+        )
+    }
+}
+
+/** Chip label: the project's name when unambiguous, else a count. */
+@Composable
+private fun projectChipLabel(ids: Set<String>, projects: List<SessionProject>): String {
+    val names = projects.filter { it.id in ids }.map { it.name }
+    return when {
+        names.isEmpty() -> stringResource(R.string.compose_ctx_project)
+        names.size == 1 -> names.first()
+        else -> names.first() + " +" + (names.size - 1)
     }
 }
 

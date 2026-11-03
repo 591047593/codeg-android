@@ -43,6 +43,8 @@ class DispatchService @Inject constructor(
     // (SessionDetailViewModel.take) shipped in v149 but nothing ever armed the
     // station — session-mode dispatches opened a blank conversation.
     private val sessionAutoStart: SessionAutoStart,
+    // 批v154: the private copies of dispatched files are freed on CONFIRMED.
+    private val attachmentStager: AttachmentStager,
 ) {
     data class SendRequest(
         val ideaId: String? = null,
@@ -70,6 +72,10 @@ class DispatchService @Inject constructor(
         /** On a hard failure, put this ref back as UNKNOWN — a re-dispatch must
          * never destroy the only trace of the original ambiguous request. */
         val restoreOnHardFail: DispatchRef? = null,
+        /** 批v154 附件：随派发一起上传到目标设备工作目录的本地文件（收件箱想法
+         * 附件 / 派发单附件）。上传发生在 create 之前——失败即干净失败，不会留下
+         * 一个"任务建了但附件没到"的半成品。 */
+        val attachments: List<LocalAttachment> = emptyList(),
     )
 
     /**
@@ -120,6 +126,9 @@ class DispatchService @Inject constructor(
                 it.title == cap(title.trim(), 120)
         }
 
+    /** Where dispatched attachments land inside the target workspace. */
+    private val DISPATCH_UPLOAD_DIR = "uploads"
+
     /** PENDING entries younger than this are considered in flight, not dead. */
     private val PENDING_SWEEP_AGE_MS = 120_000L
 
@@ -156,10 +165,29 @@ class DispatchService @Inject constructor(
             scheduleLocalMillis = req.scheduleLocalMillis,
             autoStart = req.autoStart,
             sessionMode = req.sessionMode,
+            attachments = req.attachments,
         )
         if (client == null) {
             restoreOnHardFail(req.restoreOnHardFail)
             return DispatchOutcome.HardFailed("设备不可用或 Token 缺失")
+        }
+        // 批v154: upload the attachments FIRST. They must exist on the target device
+        // before the task/conversation is created — uploading afterwards would leave
+        // a created row whose prompt points at nothing. A failure here is a clean
+        // hard failure (the ledger has not reserved the title yet, nothing exists).
+        val uploaded = if (req.attachments.isEmpty()) {
+            emptyList()
+        } else {
+            try {
+                uploadAttachments(client, req)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                restoreOnHardFail(req.restoreOnHardFail)
+                return DispatchOutcome.HardFailed(
+                    "附件上传失败：" + (e.message ?: "未知错误"),
+                )
+            }
         }
         // Atomic check-and-reserve: the VM-level gates can both pass for the
         // same title from two surfaces (TOCTOU across VMs) — re-check under a
@@ -186,7 +214,10 @@ class DispatchService @Inject constructor(
             runCatching { client.createConversation(req.folderId, agent, request.title) }
         } else {
             val config = DispatchPipeline.taskConfig(
-                description = req.description.trim(),
+                // Task mode has no attachment channel, so the uploaded paths ride
+                // inside the description itself (session mode hands them to
+                // SessionAutoStart instead — the composer appends its own note).
+                description = req.description.trim() + attachmentNote(uploaded),
                 agentTypeWire = req.agentTypeWire,
                 baseBranch = req.baseBranch,
             )
@@ -203,7 +234,7 @@ class DispatchService @Inject constructor(
                     if (req.sessionMode) {
                         confirm(request, remoteId, profile, null, false).also { outcome ->
                             if (outcome is DispatchOutcome.Confirmed) {
-                                sessionAutoStart.arm(req.serverId, remoteId, req.description)
+                                sessionAutoStart.arm(req.serverId, remoteId, req.description, uploaded)
                             }
                         }
                     } else confirm(request, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
@@ -246,6 +277,67 @@ class DispatchService @Inject constructor(
         )
     }
 
+    /**
+     * Upload every attachment into `<folder>/uploads/` and return the absolute
+     * paths the prompt will point at. One 409 retry under an auto-renamed name
+     * (the server refuses to overwrite, and a prior attempt may have landed the
+     * bytes before the client saw an error). Throws on the first real failure —
+     * a partial attachment set must never be dispatched silently.
+     */
+    private suspend fun uploadAttachments(
+        client: app.codeg.android.core.network.CodegClient,
+        req: SendRequest,
+    ): List<UploadedAttachment> {
+        val folders = client.listFolders()
+        val root = folders.firstOrNull { it.id == req.folderId }?.path
+            ?: throw IllegalStateException("目标项目路径未找到，附件未上传")
+        return req.attachments.map { att ->
+            val file = java.io.File(att.localPath)
+            if (!file.canRead()) throw IllegalStateException("${att.name}：本地文件不可读")
+            suspend fun attempt(fileName: String): UploadedAttachment {
+                val res = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    client.uploadWorkspaceFile(root, DISPATCH_UPLOAD_DIR, fileName, file.length()) {
+                        file.inputStream()
+                    }
+                }
+                return UploadedAttachment(
+                    name = res.name.ifBlank { fileName },
+                    absolutePath = root.trimEnd('/') + "/" + res.path.trimStart('/'),
+                )
+            }
+            try {
+                attempt(att.name)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val conflict = e is ApiError.Server &&
+                    (e.status == 409 || e.serverMessage.contains("already exists", ignoreCase = true))
+                if (!conflict) throw IllegalStateException("${att.name}：${e.displayMessage()}")
+                attempt(renamed(att.name))
+            }
+        }
+    }
+
+    /** `a.png` → `a-2.png` (second attempt only; never overwrites). */
+    private fun renamed(name: String): String {
+        val dot = name.lastIndexOf('.')
+        return if (dot <= 0) "$name-2" else name.substring(0, dot) + "-2" + name.substring(dot)
+    }
+
+    /**
+     * Machine-facing note appended to a TASK description (task mode has no
+     * attachment channel): every uploaded file's absolute path, so the agent can
+     * just read it. Empty when nothing was attached.
+     */
+    fun attachmentNote(files: List<UploadedAttachment>): String {
+        if (files.isEmpty()) return ""
+        return buildString {
+            append("\n\n📎 附件已上传到目标设备的工作目录：\n")
+            files.forEach { append("- ").append(it.absolutePath).append('\n') }
+            append("请直接读取上述文件。")
+        }
+    }
+
     private suspend fun restoreOnHardFail(ref: DispatchRef?) {
         // The old entry was removed by the caller before re-sending; put it back.
         ref?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
@@ -278,6 +370,10 @@ class DispatchService @Inject constructor(
     ): DispatchOutcome {
         val ref = request.copy(remoteTodoId = todoId, state = DispatchState.CONFIRMED)
         putIfPresent(ref)
+        // 批v154: CONFIRMED means the create landed, and every attachment was
+        // uploaded BEFORE it — the private copies are now disposable. Unresolved
+        // refs (PENDING/UNKNOWN) keep theirs so a redispatch can re-upload.
+        ref.attachments.forEach(attachmentStager::discard)
         var scheduleNote: String? = null
         if (scheduleLocalMillis != null) {
             val client = repository.client(profile)

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,7 +30,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,14 +72,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.launch
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.data.AttachmentStager
+import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.datastore.INBOX_IDEA_STYLE_CENTER_WIDE
 import app.codeg.android.core.designsystem.component.EmptyState
+import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
+import app.codeg.android.core.designsystem.component.holdDialogWindowStill
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
@@ -219,9 +237,10 @@ fun InboxScreen(
     if (creating || editing != null) {
         IdeaEditorDialog(
             initial = editing,
+            stager = viewModel.attachmentStager,
             onDismiss = { creating = false; editingId = null },
-            onSave = { title, desc ->
-                viewModel.saveIdea(editing?.id, title, desc, source = editing)
+            onSave = { title, desc, attachments ->
+                viewModel.saveIdea(editing?.id, title, desc, source = editing, attachments = attachments)
                 creating = false
                 editingId = null
             },
@@ -405,6 +424,27 @@ private fun IdeaCard(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
+            // 批v154: attachments are invisible until the editor opens otherwise —
+            // a small count keeps the card honest about what a dispatch will carry.
+            if (idea.attachments.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.AttachFile,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(12.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        stringResource(R.string.attach_count, idea.attachments.size),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                    )
+                }
+            }
             if (unresolved != null) {
                 val inFlight = unresolved.state == DispatchState.PENDING
                 Row(
@@ -552,40 +592,242 @@ private fun UnknownRefCard(
 @Composable
 private fun IdeaEditorDialog(
     initial: IdeaEntry?,
+    stager: AttachmentStager,
     onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, List<LocalAttachment>) -> Unit,
 ) {
     var title by rememberSaveable(initial?.id ?: "new") { mutableStateOf(initial?.title.orEmpty()) }
     var description by rememberSaveable(initial?.id ?: "new") { mutableStateOf(initial?.description.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(if (initial == null) R.string.inbox_new else R.string.inbox_edit)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text(stringResource(R.string.inbox_title_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text(stringResource(R.string.inbox_desc_hint)) },
-                    minLines = 3,
-                    modifier = Modifier.fillMaxWidth(),
+    // 批v154: attachments live in app-private storage; the editor owns only the
+    // list. Copies staged HERE are deleted on cancel — the idea's own are not.
+    val attachments = remember {
+        androidx.compose.runtime.mutableStateListOf<LocalAttachment>().apply {
+            addAll(initial?.attachments.orEmpty())
+        }
+    }
+    val stagedOwners = remember { mutableSetOf<String>() }
+    var staging by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun stage(uris: List<android.net.Uri>, images: Boolean) {
+        if (uris.isEmpty()) return
+        staging = true
+        scope.launch {
+            val staged = uris.mapNotNull { uri -> stager.stage(uri, null, null, images) }
+            val room = (MAX_IDEA_ATTACHMENTS - attachments.size).coerceAtLeast(0)
+            val accepted = staged.take(room)
+            staged.drop(room).forEach(stager::discard)
+            attachments.addAll(accepted)
+            accepted.forEach { stagedOwners += it.id }
+            staging = false
+        }
+    }
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_IDEA_ATTACHMENTS),
+    ) { uris -> stage(uris, images = true) }
+    val pickFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> stage(uris, images = false) }
+
+    fun close() {
+        // Cancel drops only what this dialog staged — idea copies stay with the row.
+        attachments.filter { it.id in stagedOwners }.forEach(stager::discard)
+        onDismiss()
+    }
+
+    // 批v154: this used to be an AlertDialog. Its window pans under the IME, so
+    // the description field (3 lines, near the bottom) went behind the keyboard
+    // and the card could not scroll. Same recipe as the composer: a full-width
+    // bottom sheet-like Dialog that DOESN'T move its window (ADJUST_NOTHING),
+    // sized by imePadding alone, with a scroll container and a near-fullscreen
+    // editor for long descriptions.
+    Dialog(
+        onDismissRequest = { close() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        holdDialogWindowStill()
+        val colors = CodegTheme.colors
+        Box(
+            Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Surface(
+                color = colors.bgElevated,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(if (initial == null) R.string.inbox_new else R.string.inbox_edit),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { close() }) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.common_close),
+                                tint = colors.textSecondary,
+                            )
+                        }
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            label = { Text(stringResource(R.string.inbox_title_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            label = { Text(stringResource(R.string.inbox_desc_hint)) },
+                            minLines = 4,
+                            maxLines = 10,
+                            trailingIcon = {
+                                IconButton(onClick = { fullscreen = true }) {
+                                    Icon(
+                                        Icons.Rounded.OpenInFull,
+                                        contentDescription = stringResource(R.string.compose_edit_fullscreen),
+                                        tint = colors.textSecondary,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        AttachmentChips(
+                            attachments = attachments,
+                            staging = staging,
+                            onRemove = { att ->
+                                attachments.remove(att)
+                                if (att.id in stagedOwners) {
+                                    stagedOwners -= att.id
+                                    stager.discard(att)
+                                }
+                            },
+                            onPickImages = {
+                                pickImages.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
+                            onPickFiles = { pickFiles.launch(arrayOf("*/*")) },
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = { close() }) { Text(stringResource(android.R.string.cancel)) }
+                        TextButton(
+                            onClick = {
+                                // Ownership moves to the idea row.
+                                stagedOwners.clear()
+                                onSave(title, description, attachments.toList())
+                            },
+                            enabled = !staging && (title.isNotBlank() || description.isNotBlank() || attachments.isNotEmpty()),
+                        ) { Text(stringResource(R.string.common_save)) }
+                    }
+                }
+            }
+        }
+    }
+
+    if (fullscreen) {
+        FullscreenTextEditorDialog(
+            text = description,
+            onTextChange = { description = it },
+            onDismiss = { fullscreen = false },
+            label = stringResource(R.string.inbox_desc_hint),
+        )
+    }
+}
+
+/** Attachment rows + the two pickers inside the idea editor. */
+@Composable
+private fun AttachmentChips(
+    attachments: List<LocalAttachment>,
+    staging: Boolean,
+    onRemove: (LocalAttachment) -> Unit,
+    onPickImages: () -> Unit,
+    onPickFiles: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    if (staging) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                stringResource(R.string.common_loading),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+            )
+        }
+    }
+    attachments.forEach { att ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
+        ) {
+            Icon(
+                if (att.isImage) Icons.Rounded.Image else Icons.Rounded.AttachFile,
+                contentDescription = null,
+                tint = colors.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                att.name,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = 6.dp),
+            )
+            IconButton(onClick = { onRemove(att) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.attach_remove),
+                    tint = colors.textTertiary,
+                    modifier = Modifier.size(16.dp),
                 )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(title, description) }) { Text(stringResource(R.string.common_save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
-        },
-    )
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(
+            onClick = onPickImages,
+            enabled = !staging && attachments.size < MAX_IDEA_ATTACHMENTS,
+        ) {
+            Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(stringResource(R.string.attach_add_image), modifier = Modifier.padding(start = 4.dp))
+        }
+        TextButton(
+            onClick = onPickFiles,
+            enabled = !staging && attachments.size < MAX_IDEA_ATTACHMENTS,
+        ) {
+            Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
+        }
+    }
 }
+
+/** Cap per idea / per dispatch. */
+private const val MAX_IDEA_ATTACHMENTS = 10
 
 /**
  * The unified dispatch panel — now a THIN host (批v150 §1.5 宿主 A): the shared
@@ -635,6 +877,7 @@ private fun DispatchSheet(
                 ideaId = idea.id,
                 initialTitle = idea.title,
                 initialDescription = idea.description,
+                initialAttachments = idea.attachments,
                 onResult = onResult,
             )
         }

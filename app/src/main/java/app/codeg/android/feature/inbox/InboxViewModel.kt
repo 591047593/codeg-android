@@ -2,11 +2,13 @@ package app.codeg.android.feature.inbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.core.data.AttachmentStager
 import app.codeg.android.core.data.DispatchOutcome
 import app.codeg.android.core.data.DispatchPipeline
 import app.codeg.android.core.data.DispatchService
 import app.codeg.android.core.data.DispatchTargetLoader
 import app.codeg.android.core.data.DispatchTargets
+import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.SessionAutoStart
 import app.codeg.android.core.datastore.DispatchRef
@@ -49,6 +51,9 @@ class InboxViewModel @Inject constructor(
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
     private val sessionAutoStart: SessionAutoStart,
+    /** 批v154 附件：SAF 选择 → 应用私有目录落盘（想法要跨重启/跨设备存活）。
+     *  派发表单也通过这个接口自己收附件（同一套存储布局）。 */
+    override val attachmentStager: AttachmentStager,
     appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel(), app.codeg.android.feature.dispatch.DispatchFormHost {
 
@@ -168,11 +173,27 @@ class InboxViewModel @Inject constructor(
         }
     }
 
-    fun saveIdea(id: String?, title: String, description: String, source: IdeaEntry? = null) {
-        if (title.isBlank() && description.isBlank()) return
+    fun saveIdea(
+        id: String?,
+        title: String,
+        description: String,
+        source: IdeaEntry? = null,
+        /** 批v154: files staged by the editor (already copied to private storage). */
+        attachments: List<LocalAttachment>? = null,
+    ) {
+        val existing = source ?: id?.let { key -> _ui.value.ideas.firstOrNull { it.id == key } }
+        if (title.isBlank() && description.isBlank() && attachments.isNullOrEmpty() &&
+            existing?.attachments.isNullOrEmpty() != false
+        ) {
+            return
+        }
         val now = System.currentTimeMillis()
-        val entry = (source ?: id?.let { existing -> _ui.value.ideas.firstOrNull { it.id == existing } })
-            ?.copy(title = title.trim(), description = description.trim(), updatedAt = now)
+        // Removing an attachment from the editor must free its private copy too;
+        // compute the dropped set before the entry is rebuilt.
+        val kept = attachments ?: existing?.attachments.orEmpty()
+        val dropped = existing?.attachments.orEmpty().filter { old -> kept.none { it.id == old.id } }
+        val entry = existing
+            ?.copy(title = title.trim(), description = description.trim(), updatedAt = now, attachments = kept)
             ?: IdeaEntry(
                 id = UUID.randomUUID().toString(),
                 title = title.trim(),
@@ -180,10 +201,14 @@ class InboxViewModel @Inject constructor(
                 createdAt = now,
                 updatedAt = now,
                 sourceServerId = null,
+                attachments = kept,
             )
         viewModelScope.launch {
             try {
                 ideaStore.upsert(entry)
+                // Only after the row is durable — a failed save must not delete
+                // bytes a still-persisted entry points at.
+                dropped.forEach(attachmentStager::discard)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -206,8 +231,11 @@ class InboxViewModel @Inject constructor(
         )
 
     fun deleteIdea(id: String) = viewModelScope.launch {
+        val doomed = _ui.value.ideas.firstOrNull { it.id == id }
         try {
             ideaStore.delete(id)
+            // 批v154: the row is gone, so its private copies are unreachable.
+            doomed?.attachments?.forEach(attachmentStager::discard)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -303,6 +331,8 @@ class InboxViewModel @Inject constructor(
          * redispatch so a failed re-send never destroys the only trace of the
          * original ambiguous request. */
         restoreOnHardFail: DispatchRef? = null,
+        /** 批v154: files to ride along (uploaded on the target device before create). */
+        attachments: List<LocalAttachment> = emptyList(),
     ) {
         if (_ui.value.dispatching) {
             // A redispatch whose old ref was ALREADY removed must not lose it on
@@ -359,6 +389,7 @@ class InboxViewModel @Inject constructor(
                         autoStart = autoStart,
                         sessionMode = sessionMode,
                         restoreOnHardFail = restoreOnHardFail,
+                        attachments = attachments,
                     ),
                 )
                 when (outcome) {
@@ -372,6 +403,9 @@ class InboxViewModel @Inject constructor(
                         if (idea != null) {
                             try {
                                 ideaStore.delete(idea.id)
+                                // 批v154: the files now live on the target device —
+                                // free the private copies with their only owner.
+                                idea.attachments.forEach(attachmentStager::discard)
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (_: Exception) {
@@ -438,6 +472,9 @@ class InboxViewModel @Inject constructor(
             onDone = onDone,
             autoStart = submit.autoStart,
             sessionMode = submit.sessionMode,
+            // 批v154: files picked in the form ride along; the pipeline uploads
+            // them to the target device before creating anything.
+            attachments = submit.attachments,
         )
     }
 
@@ -647,6 +684,10 @@ class InboxViewModel @Inject constructor(
                 sessionMode = ref.sessionMode,
                 onDone = {},
                 restoreOnHardFail = ref,
+                // 批v154: the ledger snapshot's local copies are the only way to
+                // re-upload the same files — the target-side paths from the first
+                // attempt belong to a device we can't assume anything about.
+                attachments = ref.attachments.filter { java.io.File(it.localPath).canRead() },
             )
         }
     }

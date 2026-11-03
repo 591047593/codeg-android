@@ -29,6 +29,8 @@ data class IdeaEntry(
     val sourceServerId: String? = null,
     val sourceProjectId: Int? = null,
     val sourceSessionId: String? = null,
+    /** 批v154: files copied into app-private storage; uploaded on dispatch. */
+    val attachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
 )
 
 @Singleton
@@ -100,6 +102,9 @@ data class DispatchRef(
     /** 批v149 会话模式：remoteTodoId 实为会话 id，探针走会话列表而非任务列表，
      * 成功反馈与重派语义随之切换。默认 false 保持旧账本行按任务解读。 */
     val sessionMode: Boolean = false,
+    /** 批v154 附件快照：重派时按同一批本地文件重新上传（落点路径属于目标设备
+     *  工作区，不能跨设备复用，所以只记本地副本）。 */
+    val attachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
 )
 
 @Singleton

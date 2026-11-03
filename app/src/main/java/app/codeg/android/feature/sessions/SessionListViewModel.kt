@@ -18,6 +18,7 @@ import app.codeg.android.core.data.participating
 import app.codeg.android.core.data.retrying
 import app.codeg.android.core.data.retryableIds
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.datastore.AggregateDeviceFilterStore
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.ChatListDisplayStore
 import app.codeg.android.core.datastore.ServerProfile
@@ -68,6 +69,8 @@ class SessionListViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     /** Per-server hidden/collapsed section prefs, read+written by the Chats screen. */
     val chatListDisplayStore: ChatListDisplayStore,
+    /** Device multi-select filter for the "全部" aggregate (批v154). */
+    private val aggregateDeviceFilter: AggregateDeviceFilterStore,
     /** Floating-ball session cycling (batch v132) — the Chats list registers here. */
     val focusHub: app.codeg.android.core.data.SessionFocusHub,
 ) : ViewModel() {
@@ -277,12 +280,49 @@ class SessionListViewModel @Inject constructor(
             repository.chatsAll,
             projectRepo.activeMemberKeys,
             appSettingsStore.sessionReadMarks,
-        ) { agg, all, memberKeys, marks ->
-            buildAggregateSessionSections(agg.servers, memberKeys.takeIf { all }, marks)
+            aggregateDeviceFilter.hiddenDevices,
+        ) { agg, all, memberKeys, marks, hidden ->
+            buildAggregateSessionSections(
+                agg.servers,
+                memberKeys.takeIf { all },
+                marks,
+                hiddenServerIds = hidden,
+            )
         }
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Devices the 全部 list currently hides (multi-select filter, 批v154). */
+    val hiddenDevices: StateFlow<Set<String>> =
+        aggregateDeviceFilter.hiddenDevices
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Check/uncheck one device in the 全部 list (pure view filter, no refetch). */
+    fun setDeviceVisible(serverId: String, visible: Boolean) {
+        viewModelScope.launch {
+            try {
+                aggregateDeviceFilter.setVisible(serverId, visible)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A DataStore write failure keeps the previous filter; the sheet
+                // reflects store truth on the next emission.
+            }
+        }
+    }
+
+    /** Check every device again (clears the filter). */
+    fun showAllDevices() {
+        viewModelScope.launch {
+            try {
+                aggregateDeviceFilter.showAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     /** One progressive fan-out over every participating device (batch v137: 3s
      *  per-device deadline, results committed the moment they settle instead of
