@@ -171,20 +171,50 @@ class SearchViewModel @Inject constructor(
         // 重跑（单设备搜索不读 includeInAll）。
         viewModelScope.launch {
             var lastSig: String? = null
+            var lastAll: Boolean? = null
             combine(
                 repository.searchAll,
                 repository.visibleProfiles.map { it.aggregateDeviceSignature() }.distinctUntilChanged(),
             ) { all, sig -> all to sig }
                 .collectLatest { (all, sig) ->
                     val sigChanged = lastSig != null && sig != lastSig
+                    val modeChanged = lastAll != null && all != lastAll
                     lastSig = sig
+                    lastAll = all
                     _ui.update {
                         // Leaving All also drops the aggregate slices — they must never
                         // resurface if All is re-entered before a fresh round lands.
+                        // 批v153: it also drops the single-device slices — inside All the
+                        // switched-branch wipe is skipped (allMode guard), so they can
+                        // still belong to a device left minutes ago; pin/rename/delete
+                        // would fire a server-local id at the WRONG device before the
+                        // fresh round below lands. serverId rides along so the delete
+                        // dialog's remember key re-arms on the change.
                         if (all) it.copy(allMode = true)
-                        else it.copy(allMode = false, allResults = emptyList(), deviceStates = emptyList())
+                        else it.copy(
+                            allMode = false,
+                            allResults = emptyList(),
+                            deviceStates = emptyList(),
+                            results = emptyList(),
+                            folderNames = emptyMap(),
+                            serverId = currentProfile?.id,
+                        )
                     }
-                    if (!sigChanged || all) runSearch(_query.value, ++searchEpoch)
+                    // 批v153: a mode flip must always answer the visible query — the sig
+                    // clause alone skips the leave-All round when the device signature
+                    // changed in the same emission (e.g. a device was deleted while in
+                    // All), leaving a wiped list that no round ever replaces.
+                    if (!sigChanged || all || modeChanged) runSearch(_query.value, ++searchEpoch)
+                    if (!all && modeChanged) {
+                        // 批v153: folder labels are server-local and were not maintained
+                        // while in All (the profile collector skips them for the fan-out);
+                        // re-resolve for the device now on screen. The suspension sits in
+                        // collectLatest's cancellation domain — a newer emission voids it.
+                        client?.let { c ->
+                            val names = resolveFolderNames(c)
+                            _ui.update { it.copy(folderNames = names) }
+                        }
+                    }
                     // 直接 await（第1轮性能审查修正）：startSearch 的 viewModelScope
                     // launch 会逃出 collectLatest 的取消域——快速连切 All/单设备会让
                     // N 设备轮次堆跑到超时；await 后新一轮 emission 结构性取消旧轮。

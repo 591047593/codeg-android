@@ -112,17 +112,29 @@ class ServerRepository @Inject constructor(
 
     /** One-shot 段位 request (批v152): the workbench stat cards and the 需要处理
      *  preview ask the board to open on a specific segment. The board CONSUMES it
-     *  (reads then clears) so a later tab switch doesn't re-apply a stale jump. */
-    private val _taskSegmentRequest = MutableStateFlow<TaskSegment?>(null)
+     *  (reads then clears) so a later tab switch doesn't re-apply a stale jump.
+     *  批v153: each request carries its issue time — a tap the user never followed
+     *  into the board must not hijack a much later plain visit. */
+    private val _taskSegmentRequest = MutableStateFlow<Pair<TaskSegment, Long>?>(null)
 
-    fun requestTaskSegment(segment: TaskSegment) { _taskSegmentRequest.value = segment }
+    fun requestTaskSegment(segment: TaskSegment) {
+        _taskSegmentRequest.value = segment to android.os.SystemClock.elapsedRealtime()
+    }
 
     // compareAndSet loop instead of a plain read+write: the board and a stat-card
     // tap can race across threads, and a stale segment must not be re-applied.
     fun consumeTaskSegment(): TaskSegment? {
         while (true) {
             val current = _taskSegmentRequest.value ?: return null
-            if (_taskSegmentRequest.compareAndSet(current, null)) return current
+            if (_taskSegmentRequest.compareAndSet(current, null)) {
+                // 批v153: freshness window — a stat-card tap and the board entry it
+                // causes are near-instant; anything older is an abandoned request.
+                return if (android.os.SystemClock.elapsedRealtime() - current.second <= 10_000) {
+                    current.first
+                } else {
+                    null
+                }
+            }
         }
     }
 

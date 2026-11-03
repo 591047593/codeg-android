@@ -127,7 +127,9 @@ enum class HomeTab(
     companion object {
         /** Tabs in the user's saved order; unsaved/unknown routes keep enum order. */
         fun orderedBy(savedOrder: List<String>): List<HomeTab> {
-            val known = savedOrder.mapNotNull { route -> entries.firstOrNull { it.route == route } }
+            // 批v153: dedupe — a corrupted persisted order must not render duplicate
+            // bar entries (the writer can't produce them; the storage layer can).
+            val known = savedOrder.distinct().mapNotNull { route -> entries.firstOrNull { it.route == route } }
             val rest = entries.filterNot { known.contains(it) }
             return known + rest
         }
@@ -293,7 +295,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // Routes whose list registers a focus ring for the ball cycle/open gestures —
     // the four tabs' surfaces plus the Chats push (Activity and Chats are the only
     // registering lists; Folders/Search/Settings never did).
-    val listRoutes = remember(homeTabs) { tabRoutes + ROUTE_CHATS }
+    // 批v153: keyed off ALL tab routes like barBearingRoutes above — the visible-only
+    // set silently degraded the ball's cycle/open ring on hidden-tab screens (they
+    // fell back to the last-owner path instead of the list in front of the user).
+    // CHATS needed the explicit + back when v150 demoted it; it's a real tab again.
+    val listRoutes = remember { HomeTab.entries.map { it.route }.toSet() }
     val selectedProfile by appViewModel.selectedProfile.collectAsStateWithLifecycle()
     // Aggregate "All devices" mode (Activity tab), owned by ServerRepository so the
     // ActivityViewModel can react without ViewModel-to-ViewModel injection.
@@ -502,11 +508,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // the same promise as entering those tabs from the bar/ball (mandate B2). This
     // is an ENTRY rule, not a route-keyed effect: a route-triggered "default to All"
     // would yank the user back to 全部 every time he returns from a conversation, a
-    // rotation or a device add. rememberSaveable keeps the one-shot across config
-    // changes; once burned, any manual device choice stands for the session.
-    var launchDefaultApplied by rememberSaveable { mutableStateOf(false) }
+    // rotation or a device add. 批v153: the one-shot lives on the AppViewModel — a
+    // rememberSaveable flag also survives process death, which silently skipped the
+    // rule on the most common "reopen the app" path; a VM field burns once per
+    // process, re-applies after a restore, still stands down across rotation.
     androidx.compose.runtime.LaunchedEffect(servers.size) {
-        if (launchDefaultApplied || servers.isEmpty()) return@LaunchedEffect
+        if (appViewModel.launchDeviceDefaultApplied || servers.isEmpty()) return@LaunchedEffect
         if (servers.size >= 2) {
             when (startTab) {
                 HomeTab.CHATS -> appViewModel.setChatsAll(true)
@@ -514,7 +521,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 else -> {}
             }
         }
-        launchDefaultApplied = true
+        appViewModel.launchDeviceDefaultApplied = true
     }
 
     val onTab: (HomeTab) -> Unit = { tab ->
@@ -549,7 +556,12 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 else -> {}
             }
         }
-        if (tab in homeTabs) onTab(tab) else pushSurface(tab.route)
+        // 批v153: a hidden tab's route may already sit on the stack — the hidden
+        // start tab the user is on right now, or one pushed earlier. Popping to it
+        // (a no-op when it IS the current destination) keeps re-entry from stacking
+        // a second identical screen; false = route nowhere on the stack → push.
+        if (tab in homeTabs) onTab(tab)
+        else if (!nav.popBackStack(tab.route, inclusive = false)) pushSurface(tab.route)
     }
 
     // Horizontal swipe between the bottom tabs: drag left → next tab, right →
@@ -1321,7 +1333,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             QuickNewSessionSheet(
                 onConfirmedSession = { ref ->
                     val convId = ref.remoteTodoId
-                    if (quickNewSessionSeq.get() == openToken && convId != null) {
+                    // 批v153: the token alone misses one path — the sheet closed (and not
+                    // reopened) while the dispatch was in flight leaves the sequence
+                    // untouched, so a late CONFIRMED would yank the user (possibly
+                    // mid-quickTask) to the created conversation. Demand the live flag.
+                    if (showQuickNewSession && quickNewSessionSeq.get() == openToken && convId != null) {
                         showQuickNewSession = false
                         val accepted = handoffTo(ref.serverId) { openConversationAndMark(ref.serverId, convId) }
                         if (!accepted) quickActionViewModel.confirmCreated(ref)

@@ -122,8 +122,27 @@ class QuickActionViewModel @Inject constructor(
         val key = "$serverId:${folder.path}"
         _formUi.value = _formUi.value.copy(branchesLoading = true, branchesError = false, branchFolderKey = key)
         viewModelScope.launch {
-            val profile = repository.profiles.first().firstOrNull { it.id == serverId }
-            val client = profile?.let { repository.client(it) }
+            // 批v153: the two data-source reads used to run bare — a failed
+            // DataStore/Keystore read (disk full/corrupt) would crash the process
+            // from a sheet the v151 ball made reachable. Mirror dispatch()'s
+            // containment; the network call below keeps its own runCatching, and a
+            // null profile/client lands in the existing branchesError path.
+            val profile = try {
+                repository.profiles.first().firstOrNull { it.id == serverId }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            val client = profile?.let {
+                try {
+                    repository.client(it)
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+            }
             val list = client?.let { c ->
                 runCatching { c.gitListAllBranches(folder.path) }
                     .onFailure { e -> android.util.Log.w("QuickActionViewModel", "git_list_all_branches failed: ${e.message}") }

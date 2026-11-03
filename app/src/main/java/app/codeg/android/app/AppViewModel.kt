@@ -274,6 +274,11 @@ class AppViewModel @Inject constructor(
 
     fun setTasksAll(all: Boolean) = serverRepository.setTasksAll(all)
 
+    // 批v153: one-shot cold-start "enter on All" flag (consumed by MainShell's
+    // launch effect). Plain field on the activity-scoped VM: survives rotation,
+    // resets on process death so the entry rule re-applies on a restored start tab.
+    var launchDeviceDefaultApplied = false
+
     /** One-shot segment jump for the task board (stat cards / 需要处理 preview). */
     fun requestTaskSegment(segment: TaskSegment) = serverRepository.requestTaskSegment(segment)
 

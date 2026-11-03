@@ -195,19 +195,33 @@ class GeneralViewModel @Inject constructor(
         viewModelScope.launch { appSettingsStore.setStartTab(route) }
     }
 
+    // 批v153: v151 convention — best-effort persist; a full disk must not crash the
+    // process from a settings toggle. (Older bare setters below are the documented
+    // pre-v151 legacy; new code doesn't extend that pattern.)
+    private fun launchPersist(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     /** 批v152: show/hide a bottom tab (Settings itself is force-kept by the store). */
-    fun setTabHidden(route: String, hidden: Boolean) {
-        viewModelScope.launch { appSettingsStore.setTabHidden(route, hidden) }
+    fun setTabHidden(route: String, hidden: Boolean) = launchPersist {
+        appSettingsStore.setTabHidden(route, hidden)
     }
 
     /** 批v152: cold-start default for the workbench 总览区. */
-    fun setWorkbenchOverviewDefaultExpanded(expanded: Boolean) {
-        viewModelScope.launch { appSettingsStore.setWorkbenchOverviewExpandedDefault(expanded) }
+    fun setWorkbenchOverviewDefaultExpanded(expanded: Boolean) = launchPersist {
+        appSettingsStore.setWorkbenchOverviewExpandedDefault(expanded)
     }
 
     /** 批v152: cold-start default for the workbench 需要处理区. */
-    fun setWorkbenchAttentionDefaultExpanded(expanded: Boolean) {
-        viewModelScope.launch { appSettingsStore.setWorkbenchAttentionExpandedDefault(expanded) }
+    fun setWorkbenchAttentionDefaultExpanded(expanded: Boolean) = launchPersist {
+        appSettingsStore.setWorkbenchAttentionExpandedDefault(expanded)
     }
 
     fun setActivityDeviceSwipe(enabled: Boolean) {
@@ -224,8 +238,8 @@ class GeneralViewModel @Inject constructor(
         viewModelScope.launch { appSettingsStore.setFloatBallSize(size) }
     }
 
-    fun setInboxNewIdeaStyle(style: String) {
-        viewModelScope.launch { appSettingsStore.setInboxNewIdeaStyle(style) }
+    fun setInboxNewIdeaStyle(style: String) = launchPersist {
+        appSettingsStore.setInboxNewIdeaStyle(style)
     }
 
     fun setFontScale(scale: Float) {
