@@ -187,16 +187,16 @@ class GeneralViewModel @Inject constructor(
 
     private fun reload() = load()
 
-    fun setHomeTabOrder(routes: List<String>) {
-        viewModelScope.launch { appSettingsStore.setHomeTabOrder(routes) }
+    fun setHomeTabOrder(routes: List<String>) = launchPersist {
+        appSettingsStore.setHomeTabOrder(routes)
     }
 
-    fun setStartTab(route: String) {
-        viewModelScope.launch { appSettingsStore.setStartTab(route) }
+    fun setStartTab(route: String) = launchPersist {
+        appSettingsStore.setStartTab(route)
     }
 
     // 批v153: v151 convention — best-effort persist; a full disk must not crash the
-    // process from a settings toggle. (R4: the remaining bare setters are wrapped too.)
+    // process from a settings toggle. (R5: every DataStore setter in this file is wrapped.)
     private fun launchPersist(block: suspend () -> Unit) {
         viewModelScope.launch {
             try {

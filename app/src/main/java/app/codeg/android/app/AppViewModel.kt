@@ -158,24 +158,37 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch { serverRepository.setIncludeInAll(id, include) }
     }
 
-    fun setHomeTabOrder(routes: List<String>) {
-        viewModelScope.launch { appSettingsStore.setHomeTabOrder(routes) }
+    // 批v153 R5：与 GeneralViewModel.launchPersist 同约定——磁盘满不能让设置
+    // 开关崩进程。CE 照抛（规范），其余异常吞（best-effort persist）。
+    private fun launchPersist(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
     }
 
-    fun setStartTab(route: String) {
-        viewModelScope.launch { appSettingsStore.setStartTab(route) }
+    fun setHomeTabOrder(routes: List<String>) = launchPersist {
+        appSettingsStore.setHomeTabOrder(routes)
     }
 
-    fun setActivityDeviceSwipe(enabled: Boolean) {
-        viewModelScope.launch { appSettingsStore.setActivityDeviceSwipe(enabled) }
+    fun setStartTab(route: String) = launchPersist {
+        appSettingsStore.setStartTab(route)
+    }
+
+    fun setActivityDeviceSwipe(enabled: Boolean) = launchPersist {
+        appSettingsStore.setActivityDeviceSwipe(enabled)
     }
 
     // ---- Appearance + floating-ball passthroughs (batch v126) ----
     // The ball's theme/font actions fire from MainShell, which owns this VM; the
     // Settings screens have their own VMs but land on the same store.
 
-    fun setThemeMode(mode: ThemeMode) {
-        viewModelScope.launch { appSettingsStore.setThemeMode(mode) }
+    fun setThemeMode(mode: ThemeMode) = launchPersist {
+        appSettingsStore.setThemeMode(mode)
     }
 
     fun toggleThemeMode() {
@@ -186,8 +199,8 @@ class AppViewModel @Inject constructor(
         setThemeMode(next)
     }
 
-    fun setAccent(accentId: String) {
-        viewModelScope.launch { appSettingsStore.setAccent(accentId) }
+    fun setAccent(accentId: String) = launchPersist {
+        appSettingsStore.setAccent(accentId)
     }
 
     /** Step to the next accent in palette order (wraps). */
@@ -199,24 +212,24 @@ class AppViewModel @Inject constructor(
         setAccent(all[index].id)
     }
 
-    fun setFontScale(scale: Float) {
-        viewModelScope.launch { appSettingsStore.setFontScale(scale) }
+    fun setFontScale(scale: Float) = launchPersist {
+        appSettingsStore.setFontScale(scale)
     }
 
-    fun setFloatBallEnabled(enabled: Boolean) {
-        viewModelScope.launch { appSettingsStore.setFloatBallEnabled(enabled) }
+    fun setFloatBallEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setFloatBallEnabled(enabled)
     }
 
-    fun setFloatBallSize(size: String) {
-        viewModelScope.launch { appSettingsStore.setFloatBallSize(size) }
+    fun setFloatBallSize(size: String) = launchPersist {
+        appSettingsStore.setFloatBallSize(size)
     }
 
     /** Ball position as (fx, fy) screen fractions; null until the first drag. */
     val floatBallPos: StateFlow<Pair<Float, Float>?> = appSettingsStore.floatBallPos
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun setFloatBallPos(fx: Float, fy: Float) {
-        viewModelScope.launch { appSettingsStore.setFloatBallPos(fx, fy) }
+    fun setFloatBallPos(fx: Float, fy: Float) = launchPersist {
+        appSettingsStore.setFloatBallPos(fx, fy)
     }
 
     /** Gesture→action bindings, sanitized against the gesture/action catalogs on
@@ -226,8 +239,8 @@ class AppViewModel @Inject constructor(
         .map { FloatingBallCatalog.sanitize(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, FloatingBallCatalog.DEFAULT_BINDINGS)
 
-    fun setFloatBallBindings(bindings: Map<String, String?>) {
-        viewModelScope.launch { appSettingsStore.setFloatBallBindings(FloatingBallCatalog.sanitize(bindings)) }
+    fun setFloatBallBindings(bindings: Map<String, String?>) = launchPersist {
+        appSettingsStore.setFloatBallBindings(FloatingBallCatalog.sanitize(bindings))
     }
 
     /** Raw read marks ("<serverId>:<conversationId>" → openedAt), for the ball's
@@ -236,9 +249,10 @@ class AppViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Stamp a session as read (device-local read marks — see AppSettingsStore).
-     *  Fire-and-forget: a navigation always follows, the write must never gate it. */
-    fun markSessionRead(key: String) {
-        viewModelScope.launch { appSettingsStore.markSessionRead(key) }
+     *  Fire-and-forget: a navigation always follows, the write must never gate it
+     *  (launchPersist keeps that — errors are swallowed, not propagated). */
+    fun markSessionRead(key: String) = launchPersist {
+        appSettingsStore.markSessionRead(key)
     }
 
     /** Per-depth quick-switch rings (v136). Process-local walking cursors, not prefs —

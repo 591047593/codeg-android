@@ -165,7 +165,8 @@ class SearchViewModel @Inject constructor(
         }
         // 批v151 All-mode toggle: entering leaves the current rows on screen until the
         // fan-out replaces them (no wipe → no flash); leaving clears the aggregate
-        // rows and re-runs single-device search on the visible query.
+        // rows AND the single-device slices (R1: inside All they may belong to a
+        // device left minutes ago) and re-runs single-device search on the query.
         // 重启条件还带聚合范围签名（审查修正）：停在 All 时"跳过全部/改名"要立即
         // 重新扇出，同 Chats/Activity 聚合的 deviceSig 规则；单模式下签名变化不
         // 重跑（单设备搜索不读 includeInAll）。

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Bolt
@@ -300,8 +301,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         HomeTab.entries.map { it.route }.toSet() + setOf(ROUTE_FOLDERS, ROUTE_SEARCH)
     }
     // Routes whose list registers a focus ring for the ball cycle/open gestures —
-    // the four tabs' surfaces plus the Chats push (Activity and Chats are the only
-    // registering lists; Folders/Search/Settings never did).
+    // every tab surface (Activity and Chats are the only registering lists;
+    // Folders/Search/Settings never did).
     // 批v153: keyed off ALL tab routes like barBearingRoutes above — the visible-only
     // set silently degraded the ball's cycle/open ring on hidden-tab screens (they
     // fell back to the last-owner path instead of the list in front of the user).
@@ -513,7 +514,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         if (servers.size < 2) appViewModel.exitAggregate()
     }
 
-    // 批v152: a cold start on 会话 / 任务板 should land on the ALL-devices view —
+    // 批v152/批v153: a cold start on 动态 / 会话 / 任务板 should land on the ALL-devices view —
     // the same promise as entering those tabs from the bar/ball (mandate B2). This
     // is an ENTRY rule, not a route-keyed effect: a route-triggered "default to All"
     // would yank the user back to 全部 every time he returns from a conversation, a
@@ -570,8 +571,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         }
         // 批v153: a hidden tab's route may already sit on the stack — the hidden
         // start tab the user is on right now, or one pushed earlier. Popping to it
-        // (a no-op when it IS the current destination) keeps re-entry from stacking
-        // a second identical screen; false = route nowhere on the stack → push.
+        // keeps re-entry from stacking a second identical screen. R5 (反编译
+        // navigation 2.8.5 核实)：false 同时覆盖两种情形——route 不在栈里（push
+        // 兜底进面）与 route 就是栈顶（pushSurface 的 launchSingleTop 把它抵消
+        // 成 no-op），两分支都不会叠出第二张同名屏。
         if (tab in homeTabs) onTab(tab)
         else if (!nav.popBackStack(tab.route, inclusive = false)) pushSurface(tab.route)
     }
