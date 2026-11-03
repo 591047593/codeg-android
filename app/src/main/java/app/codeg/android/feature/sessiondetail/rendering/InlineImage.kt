@@ -55,10 +55,13 @@ fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifie
     }
     // rememberSaveable: rotation/proc-death used to silently close the viewer.
     var viewerOpen by rememberSaveable { mutableStateOf(false) }
+    // Local copy: a delegated property can't be smart-cast, so the null check
+    // below would refuse to compile against `bitmap` directly.
+    val decoded = bitmap
     Column(modifier.fillMaxWidth()) {
-        if (bitmap != null) {
+        if (decoded != null) {
             Image(
-                bitmap = bitmap,
+                bitmap = decoded,
                 contentDescription = caption,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

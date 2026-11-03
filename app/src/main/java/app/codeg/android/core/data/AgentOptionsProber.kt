@@ -2,6 +2,7 @@ package app.codeg.android.core.data
 
 import app.codeg.android.core.model.AgentOptionsSnapshot
 import app.codeg.android.core.model.AgentType
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +39,9 @@ class AgentOptionsProber @Inject constructor(
         return catalog.getOrProbe(key) {
             val profile = repository.profiles.first().firstOrNull { it.id == serverId }
                 ?: return@getOrProbe null
-            val client = repository.client(profile)
+            // client() is nullable (token may be missing) — a missing token is
+            // just "probe unavailable", same as any other failure.
+            val client = repository.client(profile) ?: return@getOrProbe null
             runCatching { client.describeAgentOptions(agentType, workingDir) }.getOrNull()
         }.await()
     }
