@@ -274,14 +274,18 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // The start destination is bound once per shell lifetime: NavHost rebuilds (and
     // wipes) the whole graph when startDestination changes, so a runtime edit must
     // not feed through here — it takes effect on the next cold start.
-    val startTab = remember { resolveStartTab(appSettings.startTab, homeTabs) }
-    // 批v152 审查修正: the bar is also rendered on the NavHost start destination
-    // even when that tab was hidden at runtime (settings edits apply to the bar
-    // immediately but the start destination is bound for the shell's lifetime).
-    // Without this, Back from 设置 would land on the now-hidden start page with no
-    // bar and no in-screen back button — a dead end.
-    val showBottomBar = homeTabs.any { it.route == currentRoute } ||
-        currentRoute == startTab.route
+    // 批v153: rememberSaveable, not remember — the nav stack IS restored across
+    // activity recreation/process death (its bottom entry was resolved under the
+    // OLD start tab), so the anchor popUpTo keys on must restore with it; a plain
+    // remember re-resolves under current settings and, after a start-tab hide, no
+    // longer matches the restored stack bottom (bar taps then stack screens
+    // instead of switching until the next cold start).
+    val startTab = rememberSaveable { resolveStartTab(appSettings.startTab, homeTabs) }
+    // 批v152 审查修正 + 批v153: the bar renders on EVERY tab route, visible or
+    // not — a hidden tab pushed full-screen (ball action / workbench stat card)
+    // has no in-screen back header (board/inbox), so dropping its bar left only
+    // the system gesture as an exit. Hidden tabs are just not listed on the bar.
+    val showBottomBar = HomeTab.entries.any { it.route == currentRoute }
     val tabRoutes = remember(homeTabs) { homeTabs.map { it.route }.toSet() }
     // 批v150: the demoted list surfaces keep the app-global device bar. They have
     // no in-screen device selector, so without the bar here an aggregate chats

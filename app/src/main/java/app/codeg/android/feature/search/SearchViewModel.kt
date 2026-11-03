@@ -450,6 +450,11 @@ class SearchViewModel @Inject constructor(
             return
         }
         if (epoch != searchEpoch) return
+        // 批v153: claim the round BEFORE the first suspension — the screen's empty
+        // gate keys on `searching`, and visibleProfiles.first() can suspend on a
+        // DataStore read; entering All would otherwise flash the "all devices
+        // skipped" empty state for the frames before the flag landed.
+        _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
         val scope = try {
             repository.visibleProfiles.first().filter { it.includeInAll }
         } catch (e: CancellationException) {
@@ -459,9 +464,8 @@ class SearchViewModel @Inject constructor(
         } catch (_: Exception) {
             emptyList()
         }
-        // 悬挂点之后重验 epoch：first() 可取消，过期轮次不得再写 searching=true。
+        // 悬挂点之后重验 epoch：first() 可取消，过期轮次不得再写后续状态。
         if (epoch != searchEpoch) return
-        _ui.update { it.copy(searching = true, query = q, error = null, noDevice = false) }
         if (scope.isEmpty()) {
             if (epoch == searchEpoch) {
                 _ui.update { it.copy(allResults = emptyList(), deviceStates = emptyList(), searching = false) }

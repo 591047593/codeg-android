@@ -27,7 +27,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -111,14 +110,20 @@ class WorkbenchViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // catch 不拦 CancellationException（结构化取消照常）；DataStore 读取失败
-            // 保持展开态即可，与 stats 的 retryWhen 同一策略取向。
+            // 批v153: 中途 DataStore 读失败不再终止整条链——catch{} 会让两条折叠轨
+            // 从此点击失灵直到 VM 重建。与 stats 同款退避重试；delay 抛出的取消
+            // 照常穿透（结构化取消不受影响）。
             combine(_manual, appSettingsStore.settings) { manual, settings ->
                 manual ?: WorkbenchDisplay(
                     overviewCollapsed = !settings.workbenchOverviewExpandedDefault,
                     attentionCollapsed = !settings.workbenchAttentionExpandedDefault,
                 )
-            }.catch { }.collect { _display.value = it }
+            }
+                .retryWhen { _, attempt ->
+                    delay(if (attempt < 3) 1_000 else 5_000)
+                    true
+                }
+                .collect { _display.value = it }
         }
     }
 

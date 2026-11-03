@@ -90,10 +90,14 @@ private val HOME_TAB_ROUTES = listOf("activity", "chats", "inbox", "tasks", "set
  * upgraded bar matches the fresh-install default instead of a surprise tail slot.
  */
 internal fun migrateHomeTabOrder(saved: List<String>): List<String> {
-    if (saved.isEmpty() || "chats" in saved) return saved
-    val after = saved.indexOf("activity")
-    return if (after < 0) listOf("chats") + saved
-    else saved.toMutableList().apply { add(after + 1, "chats") }
+    // 批v153: dedupe like the other resolvers — a corrupted stored order must not
+    // leak duplicate routes into the bar (the writer can't produce them; the
+    // storage layer can). Same defense HomeTab.orderedBy got in v153 R1.
+    val clean = saved.distinct()
+    if (clean.isEmpty() || "chats" in clean) return clean
+    val after = clean.indexOf("activity")
+    return if (after < 0) listOf("chats") + clean
+    else clean.toMutableList().apply { add(after + 1, "chats") }
 }
 
 /** The order a cold start/bar renders: saved known routes first, then every tab
@@ -199,8 +203,14 @@ class AppSettingsStore @Inject constructor(
             // hidden, so the fallback list is non-empty). The running shell keeps
             // its bound start destination — its bar renders regardless (MainShell).
             if (hidden && prefs[START_TAB] == route) {
+                // 批v153: run the raw order through the read-side migration first —
+                // the bar renders migrateHomeTabOrder → ordered order, so the repoint
+                // must pick the first visible of the SAME sequence (a pre-v152 order
+                // would otherwise append 会话 last and repoint straight past it).
                 val visible = resolvedTabOrder(
-                    prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+                    migrateHomeTabOrder(
+                        prefs[TAB_ORDER]?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+                    ),
                 ).filterNot { it in next }
                 prefs[START_TAB] = visible.firstOrNull() ?: "settings"
             }

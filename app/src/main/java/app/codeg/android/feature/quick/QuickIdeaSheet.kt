@@ -129,7 +129,10 @@ fun QuickIdeaSheet(
 
     // 只有「本 sheet 里点了保存」才允许自动关闭：关闭后重开的新 sheet 不会被
     // 上一次在途保存的完成事件误关（保存是本次交互的事件，不是 VM 的常驻状态）。
-    var pendingSaveAt by remember { mutableStateOf<Int?>(null) }
+    // 批v153: rememberSaveable — a plain remember lost the baseline on rotation,
+    // so a save in flight during a config change never auto-closed the sheet and
+    // a second tap produced a duplicate idea (no dedupe downstream).
+    var pendingSaveAt by rememberSaveable { mutableStateOf<Int?>(null) }
     LaunchedEffect(savedSeq) {
         pendingSaveAt?.let { at -> if (savedSeq > at) onDismiss() }
     }
