@@ -28,6 +28,11 @@ data class DispatchTargets(
      *  agent field there is no fallback (a dispatch needs a folder), so the
      *  panel is blocked until the retry succeeds. */
     val foldersError: Boolean = false,
+    /** R5 P2-1: which device the folders/agents were loaded FOR. Surfaces that
+     *  consume [DispatchTargets] without a device selector (EditTaskSheet) must
+     *  reload when this differs from their row's device, or they'd show — and
+     *  write back — another device's agent list. */
+    val loadedForServerId: String? = null,
 )
 
 /**

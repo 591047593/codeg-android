@@ -48,6 +48,7 @@ import app.codeg.android.core.designsystem.component.CenteredActionMenu
 import app.codeg.android.core.designsystem.component.LivePulse
 import app.codeg.android.core.designsystem.component.statusColor
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.data.isLiveFresh
 import app.codeg.android.core.model.ConversationSummary
 import androidx.compose.ui.res.stringResource
 
@@ -79,6 +80,15 @@ fun SessionRow(
     unread: Boolean = false,
     /** Floating-ball "cycle session" feedback (batch v132): glowing border + tint. */
     highlighted: Boolean = false,
+    /**
+     * 批v155(R2D#1): "genuinely running" gate for the pulse AND the status dot.
+     * Default is the shared freshness rule — status.isLive + a heartbeat inside
+     * [RUNNING_STATUS_MAX_AGE] — because the power-off corpse (status frozen
+     * in_progress, no terminal write) must not pulse "running" in Chats/Search
+     * any more than in the feed. The Activity feed passes its probe-corroborated
+     * `row.live` explicitly.
+     */
+    live: Boolean = conversation.isLiveFresh(),
 ) {
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
@@ -135,13 +145,19 @@ fun SessionRow(
         ) {
             Box {
                 AgentAvatar(conversation.agentType, size = 26.dp)
+                // R2D#1: a demoted corpse (status in_progress, no heartbeat) shows
+                // the neutral tertiary dot instead of the live blue — the color is
+                // part of the "this is running NOW" lie the ghost fix removes.
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
                         .offset(x = 2.dp, y = 2.dp)
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(statusColor(conversation.status))
+                        .background(
+                            if (!live && conversation.status.isLive) colors.textTertiary
+                            else statusColor(conversation.status),
+                        )
                         .border(1.5.dp, colors.bg, CircleShape),
                 )
             }
@@ -188,7 +204,9 @@ fun SessionRow(
                 }
             }
 
-            if (conversation.status.isLive) {
+            // R2D#1: pulse follows the same liveness gate as the dot — a frozen
+            // corpse row in Last-24h / Chats / Search must not keep pulsing.
+            if (live) {
                 LivePulse()
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {

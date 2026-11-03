@@ -50,6 +50,8 @@ class InboxViewModel @Inject constructor(
     private val dispatchService: DispatchService,
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
+    /** 批v155: the dispatch form's 模型 row probes agent modes through this. */
+    private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
     private val sessionAutoStart: SessionAutoStart,
     /** 批v154 附件：SAF 选择 → 应用私有目录落盘（想法要跨重启/跨设备存活）。
      *  派发表单也通过这个接口自己收附件（同一套存储布局）。 */
@@ -230,6 +232,87 @@ class InboxViewModel @Inject constructor(
             sourceSessionId = sessionId,
         )
 
+    /**
+     * 批v155 想法一键插待办: persist the draft FIRST (an UNKNOWN outcome binds
+     * its resolution card to this idea id), then run the SAME dispatch pipeline
+     * the idea card's 派发 button uses — task mode, no auto-start (the created
+     * task parks in 待办), no schedule. On CONFIRMED the pipeline frees the
+     * draft with its attachments, exactly like a card dispatch — the idea never
+     * double-lives as a card AND a todo task.
+     */
+    fun quickInsertTodo(
+        ideaId: String,
+        title: String,
+        description: String,
+        attachments: List<LocalAttachment>,
+        serverId: String,
+        folderId: Int,
+        folderName: String,
+        agentType: AgentType?,
+        modeId: String?,
+        onDone: (DispatchRef) -> Unit,
+    ) {
+        if (_ui.value.dispatching) {
+            _ui.value = _ui.value.copy(dispatchError = "正在派发，请稍候")
+            return
+        }
+        viewModelScope.launch {
+            // dispatch() rejects a blank title; an untitled idea derives one from
+            // the description so one-tap insert never dead-ends. cap() (not take)
+            // — a raw take(40) can split an emoji surrogate pair in half.
+            val trimmedTitle = title.trim().ifBlank {
+                description.trim().lineSequence().firstOrNull { it.isNotBlank() }
+                    ?.let { app.codeg.android.core.data.DispatchService.cap(it, 40).trim() }
+                    .orEmpty()
+            }
+            val now = System.currentTimeMillis()
+            // 批v155(R2C#5): reusing an existing idea row (editor opened from that
+            // idea) must not wipe its provenance/createdAt — upsert replaces the
+            // row wholesale, so carry the origin fields over. R4 P3-1: the
+            // in-memory list may not have loaded yet — fall back to the store.
+            val prior = _ui.value.ideas.firstOrNull { it.id == ideaId }
+                ?: runCatching { ideaStore.ideas.first().firstOrNull { it.id == ideaId } }.getOrNull()
+            val entry = IdeaEntry(
+                id = ideaId,
+                title = trimmedTitle,
+                description = description.trim(),
+                createdAt = prior?.createdAt ?: now,
+                updatedAt = now,
+                sourceServerId = prior?.sourceServerId,
+                sourceProjectId = prior?.sourceProjectId,
+                sourceSessionId = prior?.sourceSessionId,
+                attachments = attachments,
+            )
+            try {
+                ideaStore.upsert(entry)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.value = _ui.value.copy(dispatchError = "想法保存失败（本地存储异常），未派发")
+                return@launch
+            }
+            dispatch(
+                idea = entry,
+                serverId = serverId,
+                folderId = folderId,
+                folderName = folderName,
+                agentType = agentType,
+                title = entry.title,
+                description = entry.description,
+                baseBranch = null,
+                modeId = modeId,
+                scheduleLocalMillis = null,
+                onDone = onDone,
+                autoStart = false,
+                sessionMode = false,
+                // 批v155(R2C#1 P1): without this the staged files were silently
+                // destroyed on CONFIRMED (ideaStore.delete + discard) without
+                // ever being uploaded — the task carried no file paths either.
+                attachments = attachments,
+            )
+        }
+    }
+
     fun deleteIdea(id: String) = viewModelScope.launch {
         val doomed = _ui.value.ideas.firstOrNull { it.id == id }
         try {
@@ -287,6 +370,14 @@ class InboxViewModel @Inject constructor(
 
     // endregion
 
+    /** 批v155: the shared form's 模型 row — cache-first probe, shared store. */
+    override suspend fun probeAgentOptions(
+        serverId: String,
+        agentType: app.codeg.android.core.model.AgentType,
+        workingDir: String?,
+    ): app.codeg.android.core.model.AgentOptionsSnapshot? =
+        agentOptionsProber.probe(serverId, agentType, workingDir)
+
     // region Dispatch
 
 
@@ -307,6 +398,12 @@ class InboxViewModel @Inject constructor(
                 agents = loaded.agents,
                 foldersLoading = loaded.foldersLoading,
                 error = loaded.error,
+                // 批v155(R2C#3): without these the form renders a failed
+                // list_folders / acp_list_agents as a silent "无项目/无 Agent"
+                // — no error row, no retry, no warning tick on the device chip.
+                agentsError = loaded.agentsError,
+                foldersError = loaded.foldersError,
+                loadedForServerId = serverId,
             )
         }
     }
@@ -320,6 +417,8 @@ class InboxViewModel @Inject constructor(
         title: String,
         description: String,
         baseBranch: String? = null,
+        /** 批v155: the form's 模型 row (agent mode), list-validated upstream. */
+        modeId: String? = null,
         scheduleLocalMillis: Long?,
         onDone: (ref: DispatchRef) -> Unit,
         /** Immediate dispatches start the task after create (idea path). */
@@ -385,6 +484,7 @@ class InboxViewModel @Inject constructor(
                         description = description,
                         agentTypeWire = agentType?.wire,
                         baseBranch = baseBranch,
+                        modeId = modeId,
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = autoStart,
                         sessionMode = sessionMode,
@@ -468,6 +568,7 @@ class InboxViewModel @Inject constructor(
             title = submit.title,
             description = submit.description,
             baseBranch = submit.baseBranch,
+            modeId = submit.modeId,
             scheduleLocalMillis = submit.scheduleLocalMillis,
             onDone = onDone,
             autoStart = submit.autoStart,
@@ -567,7 +668,20 @@ class InboxViewModel @Inject constructor(
                             // 探针确认的会话同样武装自动起跑（第1轮派发审查修正）：
                             // 与 DispatchService 的两条确认路同权——否则跳转时机已
                             // 过，用户得去设备里手动翻这条刚确认的会话。
-                            sessionAutoStart.arm(ref.serverId, matchId, ref.description)
+                            // 批v155(R2C#2): the uploaded remote paths ride the
+                            // ledger ref — arm WITHOUT them and the first prompt
+                            // never mentions files that are already on the device.
+                            sessionAutoStart.arm(
+                                ref.serverId,
+                                matchId,
+                                ref.description,
+                                ref.uploadedPaths.map {
+                                    app.codeg.android.core.data.UploadedAttachment(
+                                        name = it.substringAfterLast('/'),
+                                        absolutePath = it,
+                                    )
+                                },
+                            )
                         }
                     }
                     _ui.value = _ui.value.copy(

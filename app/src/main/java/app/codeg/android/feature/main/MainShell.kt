@@ -1180,7 +1180,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 )
             }
             composable(HomeTab.TASKS.route) {
-                TaskHubScreen()
+                TaskHubScreen(
+                    // 批v155: 查看会话 — same owning-device handoff dance as the
+                    // inbox tab (the session screen reads selectedProfile once).
+                    onOpenSession = { serverId, conversationId ->
+                        handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
+                    },
+                )
             }
 
             composable(

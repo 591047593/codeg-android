@@ -3,6 +3,7 @@ package app.codeg.android.feature.projects
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.isLiveFresh
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.FolderDetail
@@ -139,6 +140,8 @@ data class ProjectsUiState(
     val error: String? = null,
 ) {
     val isBusy: Boolean get() = loading || refreshing
+    // R2D#2: freshness-gated like every other "running" surface — the power-off
+    // corpse must not inflate the project card's 运行中 count forever.
     fun runningCount(folderId: Int): Int =
-        conversations.count { it.folderId == folderId && it.status.isLive }
+        conversations.count { it.folderId == folderId && it.isLiveFresh() }
 }

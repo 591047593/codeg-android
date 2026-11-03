@@ -46,7 +46,9 @@ object AttachmentPrep {
     private const val JPEG_QUALITY = 75
     const val MAX_BYTES = 4_000_000
     const val MAX_TOTAL_BYTES = 1_300_000
-    const val MAX_COUNT = 10
+
+    /** 批v155: count cap unified across every surface (was a local 10). */
+    val MAX_COUNT = app.codeg.android.core.data.AttachmentLimits.MAX_IMAGES
 
     /** Per-image byte budget after prep — see the object KDoc. */
     const val TARGET_BYTES = 550_000
@@ -55,12 +57,15 @@ object AttachmentPrep {
      * Step-down re-encode ladder: (longest side px, JPEG quality). Monotonic;
      * the last step yields ≲100 KB even for noise-heavy photos. Pure data so
      * the schedule is unit-testable without Android graphics.
+     * 批v155: the 512/35 rung serves the shrunken per-image targets a 20-image
+     * batch needs to fit the same aggregate ceiling (see [fromUri]).
      */
     internal val LADDER = listOf(
         PrepStep(MAX_DIMENSION, JPEG_QUALITY),
         PrepStep(1280, 60),
         PrepStep(1024, 50),
         PrepStep(768, 40),
+        PrepStep(512, 35),
     )
 
     /**
@@ -75,12 +80,20 @@ object AttachmentPrep {
             else -> 0
         }
 
-    suspend fun fromUri(uri: Uri, resolver: ContentResolver): Attachment? = withContext(Dispatchers.Default) {
+    /**
+     * [targetBytes] overrides the per-image budget: the composer passes a
+     * count-aware value so a large batch fits the aggregate ceiling (批v155).
+     */
+    suspend fun fromUri(
+        uri: Uri,
+        resolver: ContentResolver,
+        targetBytes: Int = TARGET_BYTES,
+    ): Attachment? = withContext(Dispatchers.Default) {
         val bytes = runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return@withContext null
         if (bytes.isEmpty()) return@withContext null
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
         val longest = max(bitmap.width, bitmap.height)
-        when (val start = prepRoute(bytes.size, longest)) {
+        when (val start = prepRoute(bytes.size, longest, targetBytes)) {
             -1 -> Attachment(
                 id = UUID.randomUUID().toString(),
                 base64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
@@ -98,7 +111,7 @@ object AttachmentPrep {
                     scaled.compress(Bitmap.CompressFormat.JPEG, step.jpegQuality, baos)
                     val encoded = baos.toByteArray()
                     if (encoded.isEmpty()) continue
-                    if (encoded.size <= TARGET_BYTES) { out = encoded; break }
+                    if (encoded.size <= targetBytes) { out = encoded; break }
                     if (out == null || encoded.size < out.size) out = encoded
                 }
                 val best = out

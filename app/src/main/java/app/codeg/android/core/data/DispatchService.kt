@@ -58,6 +58,11 @@ class DispatchService @Inject constructor(
          *  current branch, exactly the previous behavior. The server derives the
          *  task work branch from it at start. */
         val baseBranch: String? = null,
+        /** 批v155: the agent mode picked in the form's 模型 row, validated
+         *  against the probed options list by the form. null = mode-less (the
+         *  agent's default). Session mode ignores it — a live conversation's
+         *  mode is chosen inside the session. */
+        val modeId: String? = null,
         val scheduleLocalMillis: Long? = null,
         /** Immediate (non-scheduled) dispatches start the task right after
          * create — the server parks new tasks in todo forever, so without this
@@ -137,9 +142,14 @@ class DispatchService @Inject constructor(
      *  which is exactly the serialization scope we need). */
     private val gateMutex = kotlinx.coroutines.sync.Mutex()
 
-    /** Code-point-safe truncation (never splits an emoji surrogate pair). */
-    fun cap(text: String, max: Int): String =
-        if (text.length <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
+    /** Code-point-safe truncation (never splits an emoji surrogate pair).
+     *  Companion so call sites can invoke it as `DispatchService.cap(...)`
+     *  (R4 P1: it was an instance member but three VM/screen call sites in
+     *  批v155 address it statically — that compiled to nothing). */
+    companion object {
+        fun cap(text: String, max: Int): String =
+            if (text.length <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
+    }
 
     suspend fun send(req: SendRequest): DispatchOutcome {
         val now = System.currentTimeMillis()
@@ -193,12 +203,19 @@ class DispatchService @Inject constructor(
         // same title from two surfaces (TOCTOU across VMs) — re-check under a
         // mutex so only one send may move a title from "no unresolved ref" to
         // "PENDING" at a time.
+        // 批v155(R2C#2): anchor the uploaded remote paths onto the ledger ref so
+        // ANY later resolver (the probe below, the inbox probe, a redispatch)
+        // can arm the session's first prompt with files that already sit on the
+        // target device — the local copies die on confirm, the paths must not.
+        val anchored = if (uploaded.isEmpty()) request else request.copy(
+            uploadedPaths = uploaded.map { it.absolutePath },
+        )
         gateMutex.withLock {
-            if (hasUnresolvedDuplicate(req.serverId, req.folderId, request.title)) {
+            if (hasUnresolvedDuplicate(req.serverId, req.folderId, anchored.title)) {
                 restoreOnHardFail(req.restoreOnHardFail)
                 return DispatchOutcome.HardFailed("已存在同目标的未确认派发记录，请先处理后再派发，避免重复创建")
             }
-            dispatchStore.put(request)
+            dispatchStore.put(anchored)
         }
         // Unified "remote id" result: task mode maps the created row to its id,
         // session mode gets the conversation id straight from create_conversation
@@ -211,7 +228,7 @@ class DispatchService @Inject constructor(
             val agent = req.agentTypeWire?.let { app.codeg.android.core.model.AgentType.fromWire(it) }
                 ?.takeIf { it != app.codeg.android.core.model.AgentType.UNKNOWN }
                 ?: app.codeg.android.core.model.AgentType.CLAUDE_CODE
-            runCatching { client.createConversation(req.folderId, agent, request.title) }
+            runCatching { client.createConversation(req.folderId, agent, anchored.title) }
         } else {
             val config = DispatchPipeline.taskConfig(
                 // Task mode has no attachment channel, so the uploaded paths ride
@@ -219,9 +236,10 @@ class DispatchService @Inject constructor(
                 // SessionAutoStart instead — the composer appends its own note).
                 description = req.description.trim() + attachmentNote(uploaded),
                 agentTypeWire = req.agentTypeWire,
+                modeId = req.modeId,
                 baseBranch = req.baseBranch,
             )
-            runCatching { client.workTaskCreate(req.folderId, request.title, config)?.id }
+            runCatching { client.workTaskCreate(req.folderId, anchored.title, config)?.id }
         }
         return created.fold(
             onSuccess = { remoteId ->
@@ -232,14 +250,14 @@ class DispatchService @Inject constructor(
                     // handoff station on every CONFIRMED session create, or the
                     // conversation the UI jumps to opens permanently blank.
                     if (req.sessionMode) {
-                        confirm(request, remoteId, profile, null, false).also { outcome ->
+                        confirm(anchored, remoteId, profile, null, false).also { outcome ->
                             if (outcome is DispatchOutcome.Confirmed) {
                                 sessionAutoStart.arm(req.serverId, remoteId, req.description, uploaded)
                             }
                         }
-                    } else confirm(request, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
+                    } else confirm(anchored, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
                 } else {
-                    markUnknown(request)
+                    markUnknown(anchored)
                 }
             },
             onFailure = { e ->
@@ -251,7 +269,7 @@ class DispatchService @Inject constructor(
                         // wire, so the ledger trace MUST survive: deleting it (the
                         // old behavior) orphans a possibly-created task with no
                         // UNKNOWN card, no probe, and no duplicate guard.
-                        withContext(NonCancellable) { runCatching { markUnknown(request) } }
+                        withContext(NonCancellable) { runCatching { markUnknown(anchored) } }
                         throw e
                     }
                     // ApiError.Decoding after a successful send() means the server
@@ -259,14 +277,14 @@ class DispatchService @Inject constructor(
                     // well have happened. This is the ambiguous case; treating it
                     // as a hard failure deleted the ledger's only trace and
                     // invited a double create (批v146 对抗审查 #1).
-                    e is ApiError.Decoding -> probeOrMarkUnknown(request, profile)
+                    e is ApiError.Decoding -> probeOrMarkUnknown(anchored, profile, uploaded)
                     // Timeout-style failures are ambiguous: the task may exist.
                     // Self-heal: one immediate probe — if the request actually
                     // landed, the ledger resolves to CONFIRMED and the user
                     // never sees a 提交结果未知 card at all.
-                    isAmbiguous(e) -> probeOrMarkUnknown(request, profile)
+                    isAmbiguous(e) -> probeOrMarkUnknown(anchored, profile, uploaded)
                     else -> {
-                        dispatchStore.remove(request.requestId)
+                        dispatchStore.remove(anchored.requestId)
                         req.restoreOnHardFail?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
                         DispatchOutcome.HardFailed(
                             (e as? ApiError)?.displayMessage() ?: e.message ?: "派发失败",
@@ -439,6 +457,9 @@ class DispatchService @Inject constructor(
     private suspend fun probeOrMarkUnknown(
         request: DispatchRef,
         profile: app.codeg.android.core.datastore.ServerProfile,
+        // 批v155(R2C#2): the already-uploaded files — a probe-resolved session
+        // create arms its first prompt with them (same as the CONFIRMED path).
+        uploaded: List<UploadedAttachment> = emptyList(),
     ): DispatchOutcome {
         markUnknown(request)
         try {
@@ -470,7 +491,7 @@ class DispatchService @Inject constructor(
                     // staleness window in take() bounds it.
                     return confirm(request, id, profile, null, false).also { outcome ->
                         if (outcome is DispatchOutcome.Confirmed) {
-                            sessionAutoStart.arm(request.serverId, id, request.description)
+                            sessionAutoStart.arm(request.serverId, id, request.description, uploaded)
                         }
                     }
                 }

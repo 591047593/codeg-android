@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.CircularProgressIndicator
@@ -102,6 +103,11 @@ interface DispatchFormHost {
     fun loadTarget(serverId: String)
     fun loadBranches(serverId: String, folder: FolderDetail)
 
+    /** 批v155: the agent's mode list for the 模型 row — cache-first probe via
+     *  [app.codeg.android.core.data.AgentOptionsProber] (one CLI spawn per
+     *  server+agent+dir, shared across forms). null = probe failed. */
+    suspend fun probeAgentOptions(serverId: String, agentType: AgentType, workingDir: String?): app.codeg.android.core.model.AgentOptionsSnapshot?
+
     /** Fire the pipeline; [onDone] delivers the ledger ref (PENDING included). */
     fun dispatch(submit: DispatchFormSubmit, onDone: (DispatchRef) -> Unit)
 }
@@ -118,8 +124,8 @@ data class DispatchFormUi(
     val branchFolderKey: String? = null,
 )
 
-/** Cap per dispatch (image + file picks share it). */
-private const val MAX_DISPATCH_ATTACHMENTS = 10
+/** Cap per dispatch (image + file picks share it) — raised 10 → 20 in 批v155. */
+private val MAX_DISPATCH_ATTACHMENTS = app.codeg.android.core.data.AttachmentLimits.MAX_IMAGES
 
 /** Everything the form submits, resolved. The host owns guards beyond this. */
 data class DispatchFormSubmit(
@@ -131,6 +137,8 @@ data class DispatchFormSubmit(
     val title: String,
     val description: String,
     val baseBranch: String?,
+    /** 批v155: the picked agent mode (模型 row), list-validated by the form. */
+    val modeId: String? = null,
     val scheduleLocalMillis: Long?,
     val sessionMode: Boolean,
     val autoStart: Boolean = true,
@@ -168,6 +176,11 @@ fun DispatchForm(
      *  sheet is disposed between opens, so a plain init matches the old sheet. */
     initialTitle: String = "",
     initialDescription: String = "",
+    /** 批v155 任务板新建模式 (方案 A): task mode locked (no 执行方式 toggle),
+     *  branch row dropped — the server bases the worktree on the repo's current
+     *  HEAD and the APP never surfaces the worktree — and schedule row dropped
+     *  (定时 lives in the long-press menu after creation). */
+    newTaskMode: Boolean = false,
     /** Ledger ref of an accepted submit — the screen renders the result dialog. */
     onResult: (DispatchRef) -> Unit = {},
     /** 批v154: files already owned by the source (an idea's attachments). The form
@@ -185,11 +198,19 @@ fun DispatchForm(
     var folderId by rememberSaveable { mutableStateOf<Int?>(null) }
     var agent by rememberSaveable { mutableStateOf<AgentType?>(null) }
     var branch by rememberSaveable { mutableStateOf<String?>(null) }
-    var sessionMode by rememberSaveable { mutableStateOf(defaultSessionMode) }
+    var sessionMode by rememberSaveable { mutableStateOf(!newTaskMode && defaultSessionMode) }
     var title by rememberSaveable { mutableStateOf(initialTitle) }
     var description by rememberSaveable { mutableStateOf(initialDescription) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var scheduleMillis by rememberSaveable { mutableStateOf(0L) }
+    // 批v155 模型行（仅任务模式 + 具体 Agent）。modelId survives process death,
+    // the OPTIONS list does not — a restored id must revalidate against the
+    // fresh probe result before it can ride along on a submit.
+    var modelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var modelOptions by remember { mutableStateOf<List<app.codeg.android.core.model.SessionModeInfo>>(emptyList()) }
+    var modelLoading by remember { mutableStateOf(false) }
+    var modelFailed by remember { mutableStateOf(false) }
+    var modelSheet by remember { mutableStateOf(false) }
     // 批v154 attachments. A plain remember (not saveable): the staged model is not
     // Bundle-able, and the sheet closes on rotation anyway — the private copies
     // simply outlive the chip list. Locally staged copies are ours to delete on
@@ -201,6 +222,9 @@ fun DispatchForm(
     }
     var stagingAttachments by remember { mutableStateOf(false) }
     var showDescFullscreen by rememberSaveable { mutableStateOf(false) }
+    // 批v155 段3: which image attachment the fullscreen viewer shows (null = closed).
+    // rememberSaveable: rotation no longer closes the viewer (R2D#4).
+    var imageViewerIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val stagedOwners = remember { mutableSetOf<String>() }
     val attachmentScope = rememberCoroutineScope()
     // Stage picked uris off the main thread; the private copy is what the idea /
@@ -255,7 +279,39 @@ fun DispatchForm(
     LaunchedEffect(device, folderId, sessionMode) {
         branch = null
         val d = device
-        if (!sessionMode && d != null && folder != null) host.loadBranches(d, folder)
+        if (!sessionMode && !newTaskMode && d != null && folder != null) host.loadBranches(d, folder)
+    }
+    // 模型探测 (批v155): task mode + a concrete agent on a picked device+project
+    // → describeAgentOptions for the mode list. Cache-first on the prober, so a
+    // re-opened form answers instantly; a key change resets the picked id
+    // (a fresh list may differ) and re-resolves. Cancellation-safe: the store
+    // keeps the probe running, only the await is cancelled.
+    LaunchedEffect(sessionMode, device, agent, folder?.path) {
+        modelId = null
+        modelOptions = emptyList()
+        modelLoading = false
+        modelFailed = false
+        val d = device
+        val a = agent
+        val f = folder
+        if (sessionMode || d == null || a == null || f == null) return@LaunchedEffect
+        modelLoading = true
+        val snapshot = try {
+            host.probeAgentOptions(d, a, f.path)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        modelLoading = false
+        if (snapshot == null) {
+            modelFailed = true
+        } else {
+            modelOptions = snapshot.modes?.availableModes.orEmpty()
+            snapshot.modes?.currentModeId
+                ?.takeIf { current -> modelOptions.any { it.id == current } }
+                ?.let { modelId = it }
+        }
     }
     // Process-death restore (v146 invariant): saved device/folder/agent come back
     // but the loaded folders/agents died with the process — re-request once.
@@ -315,30 +371,33 @@ fun DispatchForm(
             .padding(top = 4.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // ① 执行方式（会话 / 任务卡）— doc1 §6.1 first field.
-        FormSectionLabel(stringResource(R.string.dispatch_mode))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeCard(
-                label = stringResource(R.string.dispatch_mode_session),
-                note = stringResource(R.string.dispatch_mode_session_note),
-                selected = sessionMode,
-                onClick = { sessionMode = true },
-                modifier = Modifier.weight(1f),
-            )
-            ModeCard(
-                label = stringResource(R.string.dispatch_mode_task),
-                note = stringResource(R.string.dispatch_mode_task_note),
-                selected = !sessionMode,
-                onClick = { sessionMode = false },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (sessionMode) {
-            Text(
-                stringResource(R.string.dispatch_session_note),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.textTertiary,
-            )
+        // ① 执行方式（会话 / 任务卡）— doc1 §6.1 first field. 任务板新建模式
+        // (批v155) locks task mode: no toggle, no session note.
+        if (!newTaskMode) {
+            FormSectionLabel(stringResource(R.string.dispatch_mode))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeCard(
+                    label = stringResource(R.string.dispatch_mode_session),
+                    note = stringResource(R.string.dispatch_mode_session_note),
+                    selected = sessionMode,
+                    onClick = { sessionMode = true },
+                    modifier = Modifier.weight(1f),
+                )
+                ModeCard(
+                    label = stringResource(R.string.dispatch_mode_task),
+                    note = stringResource(R.string.dispatch_mode_task_note),
+                    selected = !sessionMode,
+                    onClick = { sessionMode = false },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (sessionMode) {
+                Text(
+                    stringResource(R.string.dispatch_session_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary,
+                )
+            }
         }
 
         // ② 设备 chips — real profiles; load errors mark the chip (never fake
@@ -407,9 +466,40 @@ fun DispatchForm(
             onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
         )
 
+        // ⑤b 模型（仅任务模式 + 具体 Agent）— the agent's live mode list via
+        // describeAgentOptions (批v155). 自动 agent can't be probed (no concrete
+        // CLI), so the row hides; an agent without modes dispatches mode-less.
+        if (!sessionMode && agent != null) {
+            PickerField(
+                icon = Icons.Rounded.Tune,
+                label = stringResource(R.string.dispatch_model),
+                value = modelOptions.firstOrNull { it.id == modelId }
+                    ?.let { it.name.ifBlank { it.id } },
+                placeholder = stringResource(
+                    when {
+                        modelLoading -> R.string.dispatch_model_loading
+                        modelFailed -> R.string.dispatch_model_failed
+                        // R3 P3-6: no project selected → the probe hasn't run;
+                        // "无模型" reads as a verdict, not a pending state.
+                        folder == null -> R.string.dispatch_model_pending
+                        else -> R.string.dispatch_model_none
+                    },
+                ),
+                onClick = { if (modelOptions.isNotEmpty()) modelSheet = true },
+            )
+            if (modelFailed && !modelLoading) {
+                Text(
+                    stringResource(R.string.dispatch_model_failed_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary,
+                )
+            }
+        }
+
         // ⑤ 分支（仅任务模式）— real git_list_all_branches; failure keeps the
         // project default dispatchable (上游不支持的字段绝不假装支持).
-        if (!sessionMode) {
+        // 任务板新建模式不显示 (批v155 方案 A): base follows HEAD, worktree invisible.
+        if (!sessionMode && !newTaskMode) {
             PickerField(
                 icon = Icons.Rounded.AccountTree,
                 label = stringResource(R.string.dispatch_branch),
@@ -488,14 +578,34 @@ fun DispatchForm(
             attachments.forEach { att ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 40.dp)
+                        // 批v155 段3: image rows open the fullscreen viewer
+                        // across this form's images.
+                        .then(
+                            if (att.isImage) {
+                                Modifier.clickable {
+                                    imageViewerIndex = attachments.filter { it.isImage }
+                                        .indexOfFirst { it.id == att.id }
+                                        .takeIf { idx -> idx >= 0 }
+                                }
+                            } else Modifier,
+                        ),
                 ) {
-                    Icon(
-                        if (att.isImage) Icons.Rounded.Image else Icons.Rounded.AttachFile,
-                        contentDescription = null,
-                        tint = colors.textSecondary,
-                        modifier = Modifier.size(16.dp),
-                    )
+                    if (att.isImage) {
+                        app.codeg.android.core.designsystem.component.LocalImageThumbnail(
+                            path = att.localPath,
+                            modifier = Modifier.size(width = 52.dp, height = 36.dp),
+                        )
+                    } else {
+                        Icon(
+                            Icons.Rounded.AttachFile,
+                            contentDescription = null,
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                     Text(
                         att.name,
                         style = MaterialTheme.typography.bodySmall,
@@ -540,16 +650,32 @@ fun DispatchForm(
                 Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
             }
         }
-        if (sessionMode && description.isBlank() && attachments.isEmpty()) {
+        // R3 P2-1: task mode needs it too — the server's validate_draft rejects
+        // an empty prompt with 422 ("prompt is required"); a title-only create
+        // used to pass the gate and die server-side.
+        if (description.isBlank() && attachments.isEmpty()) {
             Text(
-                stringResource(R.string.dispatch_session_desc_required),
+                stringResource(
+                    if (sessionMode) R.string.dispatch_session_desc_required
+                    else R.string.dispatch_task_desc_required,
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textTertiary,
             )
         }
+        // 批v155 段3: the form's fullscreen image viewer (attachment rows above).
+        imageViewerIndex?.let { idx ->
+            app.codeg.android.core.designsystem.component.ImageViewerDialog(
+                images = attachments.filter { it.isImage }
+                    .map { app.codeg.android.core.designsystem.component.ImageViewerSource.File(it.localPath) },
+                initialIndex = idx,
+                onDismiss = { imageViewerIndex = null },
+            )
+        }
 
         // ⑦ 定时（仅任务模式）— 会话模式无定时（定时拉起的是 work_task）。
-        if (!sessionMode) {
+        // 任务板新建模式同样无定时 (批v155)：定时走卡片长按菜单。
+        if (!sessionMode && !newTaskMode) {
             FormSectionLabel(stringResource(R.string.dispatch_schedule))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = scheduled, onCheckedChange = { scheduled = it })
@@ -599,9 +725,10 @@ fun DispatchForm(
             folderName = folder?.name,
             agent = agent,
             folderDefaultAgent = folder?.defaultAgentType,
-            branch = if (!sessionMode && branch != null && branchFresh) branch else null,
-            followBranch = if (!sessionMode) folder?.gitBranch else null,
-            scheduledAt = if (!sessionMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
+            modelName = modelOptions.firstOrNull { it.id == modelId }?.let { it.name.ifBlank { it.id } },
+            branch = if (!sessionMode && !newTaskMode && branch != null && branchFresh) branch else null,
+            followBranch = if (!sessionMode && !newTaskMode) folder?.gitBranch else null,
+            scheduledAt = if (!sessionMode && !newTaskMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
         )
 
         // Suppressed once the result dialog is up: a schedule/auto-start note
@@ -613,8 +740,11 @@ fun DispatchForm(
         // ⑨ 底部主按钮 — 创建会话 / 创建任务 (doc1 §6.7). canDispatch gate (v146).
         val scheduleNotSetNow = !sessionMode && scheduled && scheduleMillis <= 0L
         val scheduleInPastNow = !sessionMode && scheduled && scheduleMillis in 1..clockTick
+        // R3 P2-1: validate_draft rejects an empty prompt in BOTH modes — the
+        // form must never dispatch a title-only request (session mode already
+        // required this; task mode used to slip through to a 422).
         val canDispatch = device != null && folderId != null && title.isNotBlank() &&
-            (!sessionMode || description.isNotBlank() || attachments.isNotEmpty()) &&
+            (description.isNotBlank() || attachments.isNotEmpty()) &&
             !ui.dispatching && !scheduleNotSetNow && !scheduleInPastNow
         PrimaryButton(
             text = stringResource(if (sessionMode) R.string.dispatch_button_session else R.string.dispatch_button_task),
@@ -629,6 +759,9 @@ fun DispatchForm(
                 val effectiveAgent = if (sessionMode) {
                     agent ?: folder?.defaultAgentType?.takeIf { it != AgentType.UNKNOWN }
                 } else agent
+                // 模型行只在任务模式出现；restored id 必须能在当前列表里找到
+                // 才放行（probe 未回来时宁可 mode-less，不发未校验的 mode_id）。
+                val effectiveModeId = modelOptions.firstOrNull { it.id == modelId }?.id
                 host.dispatch(
                     DispatchFormSubmit(
                         ideaId = ideaId,
@@ -638,8 +771,9 @@ fun DispatchForm(
                         agentType = effectiveAgent,
                         title = title,
                         description = description,
-                        baseBranch = if (sessionMode) null else effectiveBranch,
-                        scheduleLocalMillis = if (!sessionMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
+                        baseBranch = if (sessionMode || newTaskMode) null else effectiveBranch,
+                        modeId = if (sessionMode) null else effectiveModeId,
+                        scheduleLocalMillis = if (!sessionMode && !newTaskMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
                         sessionMode = sessionMode,
                         attachments = attachments.toList(),
                     ),
@@ -689,6 +823,15 @@ fun DispatchForm(
             selectedId = if (branch != null && branchFresh) branch else defaultId,
             onSelect = { option -> branch = if (option.id == defaultId) null else option.id },
             onDismiss = { branchSheet = false },
+        )
+    }
+    if (modelSheet) {
+        OptionListSheet(
+            title = stringResource(R.string.dispatch_model),
+            options = modelOptions.map { PickerOption(id = it.id, label = it.name.ifBlank { it.id }) },
+            selectedId = modelId,
+            onSelect = { option -> modelId = option.id },
+            onDismiss = { modelSheet = false },
         )
     }
     if (showDatePicker) {
@@ -783,6 +926,8 @@ private fun DispatchSummaryCard(
     folderName: String?,
     agent: AgentType?,
     folderDefaultAgent: AgentType?,
+    /** 批v155: the picked agent mode (模型 row), already resolved to a name. */
+    modelName: String? = null,
     branch: String?,
     followBranch: String?,
     scheduledAt: Long?,
@@ -811,6 +956,7 @@ private fun DispatchSummaryCard(
                 ?: folderDefaultAgent?.takeIf { it != AgentType.UNKNOWN }?.displayName,
         )
         if (!sessionMode) {
+            SummaryRow(stringResource(R.string.dispatch_model), modelName)
             SummaryRow(
                 stringResource(R.string.dispatch_branch),
                 branch ?: followBranch?.let { stringResource(R.string.dispatch_branch_follow, it) },

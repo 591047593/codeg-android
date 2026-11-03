@@ -48,6 +48,32 @@ const val FOLDER_LOOKUP_TIMEOUT_MS: Long = 800L
  */
 const val LIVE_PROBE_TIMEOUT_MS: Long = 2_000L
 
+/**
+ * 批v155 bugfix: how stale an `in_progress` row may be when the liveness probe
+ * is UNAVAILABLE (timeout/old server) and the feed must fall back to the
+ * persisted status flag alone. A genuinely running turn keeps writing messages,
+ * so its `updated_at` advances; a row frozen longer than this is a corpse —
+ * a turn killed mid-flight (server power-off / crash) never got its terminal
+ * status write and would otherwise sit in 「运行中」 forever, resurfacing every
+ * time one probe round flakes. Generous enough for a silent long tool call,
+ * far below the multi-hour ghosts this kills.
+ */
+val RUNNING_STATUS_MAX_AGE: java.time.Duration = java.time.Duration.ofMinutes(60)
+
+/**
+ * 批v155(R2D): the liveness rule for every surface WITHOUT a probe round (the
+ * feed's probe path lives in ActivityViewModel; chats/search/project counts
+ * don't have one). "Running" requires the persisted flag AND a heartbeat —
+ * a genuinely running turn writes messages, so `updated_at` advances; a row
+ * frozen longer than [RUNNING_STATUS_MAX_AGE] is the power-off corpse that
+ * never got its terminal status write. Cost of the gate: a running-but-silent
+ * >60min turn loses its pulse/count until its next message — the same
+ * trade-off the feed's probe-failed fallback already makes.
+ */
+fun app.codeg.android.core.model.ConversationSummary.isLiveFresh(
+    now: java.time.Instant = java.time.Instant.now(),
+): Boolean = status.isLive && updatedAt.isAfter(now.minus(RUNNING_STATUS_MAX_AGE))
+
 /** Names of the devices that failed this round, in feed order. */
 fun List<DeviceLoad>.failedNames(): List<String> =
     filter { it.status == DeviceLoadStatus.FAILED }.map { it.name }

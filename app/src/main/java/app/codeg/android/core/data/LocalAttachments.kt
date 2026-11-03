@@ -44,6 +44,16 @@ data class UploadedAttachment(
 )
 
 /**
+ * Attachment count cap shared by every picker surface (批v155: the three
+ * independent "10" constants unified and raised — composer, idea editor and
+ * the dispatch form all take [MAX_IMAGES] now). The composer's total-byte
+ * budget is separate and stays at its own constant.
+ */
+object AttachmentLimits {
+    const val MAX_IMAGES = 20
+}
+
+/**
  * Copies SAF picks into app-private storage (批v154). An idea's attachment must
  * outlive the picker's uri grant (which dies with the screen/process), so the
  * bytes are staged immediately and only the app-private path is persisted.

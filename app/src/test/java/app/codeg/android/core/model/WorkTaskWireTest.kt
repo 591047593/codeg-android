@@ -116,4 +116,105 @@ class WorkTaskWireTest {
         assertFalse("agentType" in config)
         assertFalse("baseBranch" in config)
     }
+
+    // ---- 批v155: reason / note / updateBody / mode_id / rawConfig accessors ----
+
+    @Test
+    fun `cancelBody carries camelCase reason and omits blank`() {
+        val withReason = WorkTaskWire.cancelBody(1, deleteWorktree = true, reason = "wrong base")
+        assertEquals("wrong base", withReason.text("reason"))
+        assertEquals("true", withReason.text("deleteWorktree"))
+        assertFalse("blank reason must be omitted", "reason" in WorkTaskWire.cancelBody(1, reason = "  "))
+        assertFalse("null reason must be omitted", "reason" in WorkTaskWire.cancelBody(1, reason = null))
+    }
+
+    @Test
+    fun `retry and requeue bodies carry camelCase note and omit blank`() {
+        assertEquals("go on", WorkTaskWire.retryBody(1, note = "go on").text("note"))
+        assertEquals("go on", WorkTaskWire.requeueBody(1, note = "go on").text("note"))
+        assertFalse("note" in WorkTaskWire.retryBody(1, note = null))
+        assertFalse("note" in WorkTaskWire.requeueBody(1, note = " "))
+        // the note must actually ride the camelCase retry/requeue bodies
+        listOf(WorkTaskWire.retryBody(1, note = "n"), WorkTaskWire.requeueBody(1, note = "n")).forEach {
+            assertTrue("note must ride the wire: $it", "note" in it)
+        }
+    }
+
+    @Test
+    fun `updateBody outer camelCase with snake_case nested draft`() {
+        val config = DispatchPipeline.taskConfig("edited")
+        val body = WorkTaskWire.updateBody(7, 3, "new title", config)
+        assertEquals(setOf("id", "draft"), body.keys)
+        assertEquals("7", body.text("id"))
+        val draft = body["draft"] as JsonObject
+        assertEquals("3", draft.text("folder_id"))
+        assertFalse("folderId" in draft)
+        assertEquals("new title", draft.text("title"))
+        assertTrue("config" in draft)
+    }
+
+    @Test
+    fun `taskConfig sends snake_case mode_id and passes config_values through`() {
+        val config = DispatchPipeline.taskConfig(
+            description = "d",
+            agentTypeWire = "codex",
+            modeId = "plan",
+            baseBranch = null,
+            configValues = mapOf("k" to "v"),
+        )
+        assertTrue("mode_id" in config)
+        assertEquals("plan", config.text("mode_id"))
+        assertFalse("modeId" in config)
+        val values = config["config_values"] as JsonObject
+        assertEquals("v", values.text("k"))
+        assertFalse("base_branch" in config)
+    }
+
+    @Test
+    fun `WorkTaskInfo config accessors read the raw config verbatim`() {
+        val raw = DispatchPipeline.taskConfig(
+            description = "line one\nline two",
+            agentTypeWire = "codex",
+            modeId = "plan",
+            baseBranch = "main",
+            configValues = mapOf("k" to "v", "empty" to ""),
+        )
+        val info = WorkTaskInfo.fromWire(
+            buildJsonObject {
+                put("id", 1)
+                put("title", "t")
+                put("status", "todo")
+                put("config", raw)
+            },
+        )!!
+        // configPromptText joins prompt_blocks[].text — NOT the truncated
+        // display_text the edit dialog must never round-trip.
+        assertEquals("line one\nline two", info.configPromptText)
+        assertEquals("plan", info.configModeId)
+        assertEquals("codex", info.configAgentType)
+        assertEquals("main", info.configBaseBranch)
+        assertEquals(mapOf("k" to "v"), info.configValues)
+    }
+
+    @Test
+    fun `WorkTaskInfo parses source_kind and drives fromPullRequest`() {
+        // R5 P1-1 guard: the forge_pr merge gate depends on this parse — a row
+        // without the key is hand-created, "forge_pr" is PR-sourced.
+        fun info(vararg pairs: Pair<String, Any>) = WorkTaskInfo.fromWire(
+            buildJsonObject {
+                put("id", 1)
+                put("title", "t")
+                put("status", "review")
+                pairs.forEach { (k, v) ->
+                    when (v) {
+                        is String -> put(k, v)
+                        else -> throw IllegalArgumentException()
+                    }
+                }
+            },
+        )!!
+        assertTrue(info("source_kind" to "forge_pr").fromPullRequest)
+        assertFalse(info("source_kind" to "forge_issue").fromPullRequest)
+        assertFalse(info().fromPullRequest)
+    }
 }

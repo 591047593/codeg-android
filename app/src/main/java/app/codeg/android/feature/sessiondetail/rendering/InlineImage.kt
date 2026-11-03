@@ -1,9 +1,8 @@
 package app.codeg.android.feature.sessiondetail.rendering
 
-import android.graphics.BitmapFactory
-import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -11,27 +10,51 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.codeg.android.core.designsystem.component.ImageViewerDialog
+import app.codeg.android.core.designsystem.component.ImageViewerSource
+import app.codeg.android.core.designsystem.component.decodeForViewer
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ImageData
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-/** Decodes a base64 [ImageData] and renders it (max height 320dp), with an optional caption. */
+/**
+ * Decodes a base64 [ImageData] and renders it (max height 320dp), with an
+ * optional caption. 批v155 段3: a tap opens the fullscreen viewer — the dialog
+ * state lives here (its own window, unconstrained by parent bounds), so the
+ * whole rendering stack needs no new callback threading.
+ *
+ * 批v155(R2D#3): the decode moved off the composition — it used to be a
+ * synchronous `remember {}` on the main thread, decoding a full-res screenshot
+ * (a base64 chat image is routinely 2-8 MP) mid-scroll; worst case jank, at
+ * the limit an ANR. Now: produceState + Dispatchers.Default + the same
+ * downsample the viewer uses (inline display caps at 320dp height, so 1440px
+ * is already 4x oversampled).
+ */
 @Composable
 fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifier) {
     val colors = CodegTheme.colors
-    val bitmap = remember(image.data) {
-        runCatching {
-            val bytes = Base64.decode(image.data, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        }.getOrNull()
+    val bitmap by produceState<ImageBitmap?>(null, image.data) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                decodeForViewer(ImageViewerSource.Base64(image.data), maxDim = 1440)
+            }.getOrNull()
+        }
     }
+    // rememberSaveable: rotation/proc-death used to silently close the viewer.
+    var viewerOpen by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
         if (bitmap != null) {
             Image(
@@ -41,7 +64,8 @@ fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifie
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 320.dp)
-                    .clip(RoundedCornerShape(10.dp)),
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { viewerOpen = true },
             )
         } else {
             Text(
@@ -63,5 +87,11 @@ fun InlineImage(image: ImageData, caption: String?, modifier: Modifier = Modifie
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
+    }
+    if (viewerOpen) {
+        ImageViewerDialog(
+            images = listOf(ImageViewerSource.Base64(image.data)),
+            onDismiss = { viewerOpen = false },
+        )
     }
 }

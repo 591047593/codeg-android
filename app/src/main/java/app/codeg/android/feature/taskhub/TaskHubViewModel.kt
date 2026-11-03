@@ -64,7 +64,15 @@ import javax.inject.Inject
 class TaskHubViewModel @Inject constructor(
     private val repository: ServerRepository,
     @ApplicationContext appContext: Context,
-) : ViewModel() {
+    // 批v155 宿主 C: the board's 新建任务 form rides the same dispatch pipeline
+    // (ledger double-create guard) as the inbox and the ball.
+    private val dispatchService: app.codeg.android.core.data.DispatchService,
+    private val targetLoader: app.codeg.android.core.data.DispatchTargetLoader,
+    private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
+    override val attachmentStager: app.codeg.android.core.data.AttachmentStager,
+    appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
+) : ViewModel(),
+    app.codeg.android.feature.dispatch.DispatchFormHost {
 
     data class TaskDetail(
         val events: List<WorkTaskEvent>? = null,
@@ -217,6 +225,28 @@ class TaskHubViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { pollLoop() }
+        // 批v155: same crash-recovery sweep as every dispatch surface — the board
+        // is now one (its 新建任务 form goes through the ledger).
+        viewModelScope.launch {
+            runCatching { dispatchService.sweepPendingToUnknown() }
+        }
+        // 宿主 C: the form's device chips come from the live visible profiles
+        // (same resubscribe loop as the ball's host — a DataStore failure
+        // degrades to a stale list, never a dead VM).
+        viewModelScope.launch {
+            while (currentCoroutineContext().isActive) {
+                try {
+                    repository.visibleProfiles.collect { profiles ->
+                        _formTargets.value = _formTargets.value.copy(profiles = profiles)
+                    }
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    delay(2_000)
+                }
+            }
+        }
         repository.profiles
             .map { list -> list.filter { it.visible && it.includeInAll } }
             .distinctUntilChanged()
@@ -438,8 +468,20 @@ class TaskHubViewModel @Inject constructor(
     private suspend fun deviceById(serverId: String): ServerProfile? =
         repository.profiles.first().firstOrNull { it.id == serverId }
 
-    private fun post(serverId: String, taskId: Int, block: suspend (CodegClient) -> Unit) {
-        if (_ui.value.busyKey != null) return
+    /** [onSettled] fires exactly once when the action resolves — 批v155(R2C#4):
+     *  the edit sheet holds itself open on a rejection (inline error, draft
+     *  intact) instead of closing and destroying the user's edits behind a
+     *  board-top banner they may never scroll to. */
+    private fun post(
+        serverId: String,
+        taskId: Int,
+        onSettled: (ok: Boolean, error: String?) -> Unit = { _, _ -> },
+        block: suspend (CodegClient) -> Unit,
+    ) {
+        if (_ui.value.busyKey != null) {
+            onSettled(false, "已有操作进行中，请稍候")
+            return
+        }
         // Reserve the slot synchronously (main thread): setting it inside the
         // coroutine would let a second tap slip past the gate before launch runs
         // and double-submit merge/cancel (v139 H2).
@@ -447,6 +489,8 @@ class TaskHubViewModel @Inject constructor(
         detailEpoch += 1
         val epoch = detailEpoch
         viewModelScope.launch {
+            var ok = true
+            var err: String? = null
             try {
                 val profile = deviceById(serverId) ?: error("设备不存在")
                 val client = repository.client(profile) ?: error("Token 缺失")
@@ -465,24 +509,52 @@ class TaskHubViewModel @Inject constructor(
                 generation += 1
                 fetchDevices(setOf(serverId))
             } catch (e: CancellationException) {
+                ok = false
                 throw e
             } catch (e: Exception) {
+                ok = false
+                err = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败"
                 _ui.update {
-                    it.copy(actionError = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败")
+                    it.copy(actionError = err)
                 }
             } finally {
                 _ui.update { it.copy(busyKey = null) }
+                onSettled(ok, err)
             }
         }
     }
 
     fun start(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskStart(taskId) }
 
-    fun cancel(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskCancel(taskId) }
+    /** 批v155: 取消 takes an optional reason (web parity); the reason rides the
+     *  server's event log. deleteWorktree matches web's checkbox (default off). */
+    fun cancel(serverId: String, taskId: Int, deleteWorktree: Boolean = false, reason: String? = null) =
+        post(serverId, taskId) { it.workTaskCancel(taskId, deleteWorktree, reason?.trim()?.takeIf(String::isNotEmpty)) }
 
-    fun retry(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskRetry(taskId) }
+    /** 批v155: 重试 takes an optional note (web parity). */
+    fun retry(serverId: String, taskId: Int, note: String? = null) =
+        post(serverId, taskId) { it.workTaskRetry(taskId, note?.trim()?.takeIf(String::isNotEmpty)) }
 
-    fun requeue(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskRequeue(taskId) }
+    /** 批v155: 重新排队 takes an optional note (web parity). */
+    fun requeue(serverId: String, taskId: Int, note: String? = null) =
+        post(serverId, taskId) { it.workTaskRequeue(taskId, note?.trim()?.takeIf(String::isNotEmpty)) }
+
+    /** 批v155: 定时运行 (todo only, web parity) — ISO-8601 UTC string. */
+    fun schedule(serverId: String, taskId: Int, scheduledAtIsoUtc: String?) =
+        post(serverId, taskId) { it.workTaskSchedule(taskId, scheduledAtIsoUtc) }
+
+    /** 批v155: 编辑任务 (todo/failed/canceled only, web parity) — the draft is a
+     *  FULL overwrite server-side: folder_id/title/config all resent.
+     *  [onSettled] (R2C#4): the sheet stays open on a rejection with the error
+     *  inline — never close on an unverified send. */
+    fun updateTask(
+        serverId: String,
+        taskId: Int,
+        folderId: Int,
+        title: String,
+        config: kotlinx.serialization.json.JsonObject,
+        onSettled: (ok: Boolean, error: String?) -> Unit = { _, _ -> },
+    ) = post(serverId, taskId, onSettled) { it.workTaskUpdate(taskId, folderId, title, config) }
 
     fun merge(serverId: String, taskId: Int, message: String? = null) =
         post(serverId, taskId) { client ->
@@ -515,6 +587,156 @@ class TaskHubViewModel @Inject constructor(
 
     fun deleteTask(serverId: String, taskId: Int) =
         post(serverId, taskId) { it.workTaskDelete(taskId) }
+
+    // endregion
+
+    // region DispatchFormHost (批v155 宿主 C) — the board's 新建任务 form.
+    // Same shape as the ball's host B: loader-driven targets, ledger-guarded
+    // send; the form is rendered in newTaskMode (task mode locked, no branch,
+    // no schedule — 方案 A: base follows HEAD, 定时 lives on the card menu).
+
+    override val settings: StateFlow<app.codeg.android.core.datastore.AppSettings> =
+        appSettingsStore.settings.stateIn(
+            viewModelScope, SharingStarted.Eagerly,
+            app.codeg.android.core.datastore.AppSettings.INITIAL,
+        )
+
+    private val _formTargets = MutableStateFlow(app.codeg.android.core.data.DispatchTargets())
+    override val targets: StateFlow<app.codeg.android.core.data.DispatchTargets> = _formTargets.asStateFlow()
+
+    private val _formUi = MutableStateFlow(app.codeg.android.feature.dispatch.DispatchFormUi())
+    override val formUi: StateFlow<app.codeg.android.feature.dispatch.DispatchFormUi> = _formUi.asStateFlow()
+
+    fun clearFormError() {
+        if (!_formUi.value.dispatching) {
+            _formUi.value = _formUi.value.copy(error = null)
+        }
+    }
+
+    private var formTargetSeq = 0
+
+    override fun loadTarget(serverId: String) {
+        val seq = ++formTargetSeq
+        viewModelScope.launch {
+            _formTargets.value = _formTargets.value.copy(
+                folders = emptyList(), agents = emptyList(), foldersLoading = true, error = null,
+                loadedForServerId = serverId,
+            )
+            val loaded = try {
+                targetLoader.load(serverId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Never a fresh DispatchTargets(): that would blank the device
+                // chips (profiles must survive a failed target load — the
+                // DispatchTargets loader contract, ui重构 §6.3).
+                app.codeg.android.core.data.DispatchTargets(
+                    profiles = _formTargets.value.profiles,
+                    error = "无法连接目标设备",
+                )
+            }
+            if (seq != formTargetSeq) return@launch
+            _formTargets.value = _formTargets.value.copy(
+                folders = loaded.folders,
+                agents = loaded.agents,
+                foldersLoading = loaded.foldersLoading,
+                error = loaded.error,
+                agentsError = loaded.agentsError,
+                foldersError = loaded.foldersError,
+                loadedForServerId = serverId,
+            )
+        }
+    }
+
+    private var formBranchSeq = 0
+
+    override fun loadBranches(serverId: String, folder: app.codeg.android.core.model.FolderDetail) {
+        // newTaskMode never shows the branch row; this stays implemented for the
+        // interface but must never be called in that mode.
+        val seq = ++formBranchSeq
+        val key = "$serverId:${folder.path}"
+        _formUi.value = _formUi.value.copy(branchesLoading = true, branchesError = false, branchFolderKey = key)
+        viewModelScope.launch {
+            val profile = deviceById(serverId)
+            val client = profile?.let { repository.client(it) }
+            val list = client?.let { c ->
+                runCatching { c.gitListAllBranches(folder.path) }
+                    .onFailure { e -> android.util.Log.w("TaskHubViewModel", "git_list_all_branches failed: ${e.message}") }
+                    .getOrNull()
+            }
+            if (seq != formBranchSeq) return@launch
+            _formUi.value = if (list == null) {
+                _formUi.value.copy(branchesLoading = false, branchesError = true, branches = emptyList())
+            } else {
+                _formUi.value.copy(
+                    branchesLoading = false,
+                    branchesError = false,
+                    branches = (list.local + list.remote).distinct(),
+                )
+            }
+        }
+    }
+
+    override suspend fun probeAgentOptions(
+        serverId: String,
+        agentType: app.codeg.android.core.model.AgentType,
+        workingDir: String?,
+    ): app.codeg.android.core.model.AgentOptionsSnapshot? =
+        agentOptionsProber.probe(serverId, agentType, workingDir)
+
+    override fun dispatch(
+        submit: app.codeg.android.feature.dispatch.DispatchFormSubmit,
+        onDone: (app.codeg.android.core.datastore.DispatchRef) -> Unit,
+    ) {
+        if (_formUi.value.dispatching) return
+        _formUi.value = _formUi.value.copy(dispatching = true, error = null)
+        viewModelScope.launch {
+            try {
+                val outcome = dispatchService.send(
+                    app.codeg.android.core.data.DispatchService.SendRequest(
+                        ideaId = submit.ideaId,
+                        serverId = submit.serverId,
+                        folderId = submit.folderId,
+                        folderName = submit.folderName,
+                        title = submit.title,
+                        description = submit.description,
+                        agentTypeWire = submit.agentType?.wire,
+                        modeId = submit.modeId,
+                        baseBranch = null,
+                        scheduleLocalMillis = submit.scheduleLocalMillis,
+                        autoStart = false,
+                        sessionMode = submit.sessionMode,
+                        attachments = submit.attachments,
+                    ),
+                )
+                when (outcome) {
+                    is app.codeg.android.core.data.DispatchOutcome.Confirmed -> {
+                        _formUi.value = _formUi.value.copy(dispatching = false)
+                        refresh()
+                        onDone(outcome.ref)
+                    }
+                    is app.codeg.android.core.data.DispatchOutcome.Unknown -> {
+                        _formUi.value = _formUi.value.copy(
+                            dispatching = false,
+                            error = "创建结果未知，请到收件箱「派发记录」确认，勿直接重发",
+                        )
+                        // The screen renders the UNKNOWN receipt dialog from this
+                        // ref (R1A: onDone must fire here too — the ledger ref is
+                        // the only evidence of the ambiguous request).
+                        onDone(outcome.ref)
+                    }
+                    is app.codeg.android.core.data.DispatchOutcome.HardFailed -> {
+                        // No onDone: the error is surfaced in the form itself.
+                        _formUi.value = _formUi.value.copy(dispatching = false, error = outcome.message)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _formUi.value = _formUi.value.copy(dispatching = false, error = e.message ?: "派发失败")
+            }
+        }
+    }
 
     // endregion
 

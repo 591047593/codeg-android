@@ -1362,4 +1362,42 @@
     <string name="dispatch_created_title">%1$s created</string>
     <string name="receipt_open_task_board">Go to task board</string>
     <string name="dispatch_created_body">“%2$s” on %1$s is in. Check the task board (or the session) for its live status.</string>
+
+    <!-- 批v155: task board alignment (web parity) + idea quick-insert + model row -->
+    <string name="dispatch_model">Model</string>
+    <string name="dispatch_model_loading">Detecting models…</string>
+    <string name="dispatch_model_failed">Detect failed</string>
+    <string name="dispatch_model_failed_note">Could not read this agent’s model list; the task will run with its default model.</string>
+    <string name="dispatch_model_none">No models</string>
+    <string name="inbox_insert_toggle">Add to task board</string>
+    <string name="inbox_insert_hint">Creates a task on the board in todo state — start it there when ready. The draft stays on this device until the target confirms.</string>
+    <string name="inbox_insert_submit">Create task</string>
+    <string name="task_new_title">New task</string>
+    <string name="task_open_session">View session</string>
+    <string name="task_action_edit">Edit</string>
+    <string name="task_action_schedule">Schedule</string>
+    <string name="task_detail_prompt">Task description</string>
+    <string name="task_cancel_reason_hint">Reason (optional)</string>
+    <string name="task_cancel_delete_worktree">Also delete its worktree and working branch</string>
+    <string name="task_note_hint">Note (optional)</string>
+    <string name="task_schedule_title">Schedule start</string>
+    <string name="task_schedule_current">Currently scheduled: %1$s</string>
+    <string name="task_schedule_chip_1h">In 1 hour</string>
+    <string name="task_schedule_chip_tonight">Tonight 20:00</string>
+    <string name="task_schedule_chip_tomorrow">Tomorrow 9:00</string>
+    <string name="task_schedule_chip_custom">Pick a time…</string>
+    <string name="task_schedule_clear">Clear schedule</string>
+    <string name="task_schedule_pick_time">Pick a time</string>
+    <string name="task_new_created_title">Task created</string>
+    <string name="task_new_created_msg">“%1$s” is on the board as a todo — it will not run until you start it.</string>
+    <string name="task_new_unknown_title">Result unknown</string>
+    <string name="task_new_unknown_msg">The device did not confirm the result. Check the dispatch records in the inbox — do not simply resend.</string>
+    <string name="task_edit_title">Edit task</string>
+    <string name="task_edit_note">Saving overwrites the title and description on the device; other settings are kept.</string>
+    <string name="task_edit_save">Save</string>
+    <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
+    <string name="dispatch_task_desc_required">Add a description (or attach files) — the server rejects an empty prompt.</string>
+    <string name="dispatch_model_pending">Pick a project to probe</string>
+    <!-- 批v155 R5 P3-2: viewer decode failure (corrupt/unreadable source) -->
+    <string name="image_viewer_failed">Couldn\'t load this image</string>
 </resources>

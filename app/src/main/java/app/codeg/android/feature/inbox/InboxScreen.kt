@@ -30,11 +30,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AddTask
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -82,17 +87,29 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.data.AttachmentStager
+import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.datastore.INBOX_IDEA_STYLE_CENTER_WIDE
+import app.codeg.android.core.designsystem.component.AgentChipRow
+import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
+import app.codeg.android.core.designsystem.component.ImageViewerDialog
+import app.codeg.android.core.designsystem.component.ImageViewerSource
+import app.codeg.android.core.designsystem.component.LocalImageThumbnail
+import app.codeg.android.core.designsystem.component.OptionListSheet
+import app.codeg.android.core.designsystem.component.PickerField
+import app.codeg.android.core.designsystem.component.PickerOption
+import app.codeg.android.core.designsystem.component.PrimaryButton
 import app.codeg.android.core.designsystem.component.holdDialogWindowStill
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.model.AgentOptionsSnapshot
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.SessionModeInfo
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -152,6 +169,9 @@ fun InboxScreen(
     // either thumb reaches it. Both open the same IdeaEditorDialog.
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val ideaStyle = settings.inboxNewIdeaStyle
+    // 批v155 段2: the idea editor's 一键插待办 reuses the dispatch target surface
+    // (device profiles + per-device folders/agents) and the model probe.
+    val targets by viewModel.target.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
@@ -238,11 +258,38 @@ fun InboxScreen(
         IdeaEditorDialog(
             initial = editing,
             stager = viewModel.attachmentStager,
+            // 批v155 段2: 一键插待办 needs the ledger's in-flight flag (button
+            // gating) and last error (inline in the insert section). The editor
+            // stays open through Unknown/HardFailed — only a CONFIRMED onDone
+            // closes it and shows the receipt dialog.
+            dispatching = ui.dispatching,
+            dispatchError = ui.dispatchError,
+            targets = targets,
+            loadTarget = viewModel::loadTarget,
+            probeAgentOptions = viewModel::probeAgentOptions,
             onDismiss = { creating = false; editingId = null },
             onSave = { title, desc, attachments ->
                 viewModel.saveIdea(editing?.id, title, desc, source = editing, attachments = attachments)
                 creating = false
                 editingId = null
+            },
+            onInsert = { payload ->
+                viewModel.quickInsertTodo(
+                    ideaId = payload.ideaId,
+                    title = payload.title,
+                    description = payload.description,
+                    attachments = payload.attachments,
+                    serverId = payload.serverId,
+                    folderId = payload.folderId,
+                    folderName = payload.folderName,
+                    agentType = payload.agentType,
+                    modeId = payload.modeId,
+                    onDone = { ref ->
+                        creating = false
+                        editingId = null
+                        dispatchResult = ref
+                    },
+                )
             },
         )
     }
@@ -428,10 +475,19 @@ private fun IdeaCard(
             }
             // 批v154: attachments are invisible until the editor opens otherwise —
             // a small count keeps the card honest about what a dispatch will carry.
+            // 批v155 段3: tapping it opens the idea's images in the viewer.
+            // rememberSaveable: rotation no longer closes the viewer (R2D#4).
+            var cardViewerIndex by rememberSaveable { mutableStateOf<Int?>(null) }
             if (idea.attachments.isNotEmpty()) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .then(
+                            if (idea.attachments.any { it.isImage }) {
+                                Modifier.clickable { cardViewerIndex = 0 }
+                            } else Modifier,
+                        ),
                 ) {
                     Icon(
                         Icons.Rounded.AttachFile,
@@ -446,6 +502,13 @@ private fun IdeaCard(
                         color = colors.textTertiary,
                     )
                 }
+            }
+            cardViewerIndex?.let {
+                ImageViewerDialog(
+                    images = idea.attachments.filter { it.isImage }
+                        .map { ImageViewerSource.File(it.localPath) },
+                    onDismiss = { cardViewerIndex = null },
+                )
             }
             if (unresolved != null) {
                 val inFlight = unresolved.state == DispatchState.PENDING
@@ -595,8 +658,20 @@ private fun UnknownRefCard(
 private fun IdeaEditorDialog(
     initial: IdeaEntry?,
     stager: AttachmentStager,
+    /** 批v155 段2: ledger in-flight flag — gates the insert submit button. */
+    dispatching: Boolean,
+    /** Last dispatch error, shown inline in the insert section (the section is
+     *  the only surface that can explain a failed insert while this dialog is up). */
+    dispatchError: String?,
+    targets: DispatchTargets,
+    loadTarget: (String) -> Unit,
+    probeAgentOptions: suspend (String, AgentType, String?) -> AgentOptionsSnapshot?,
     onDismiss: () -> Unit,
     onSave: (String, String, List<LocalAttachment>) -> Unit,
+    /** 批v155 段2: 一键插待办 — create the work task directly (待办, no auto
+     *  start). The caller owns closing the dialog via onDone, which fires on
+     *  CONFIRMED only. */
+    onInsert: (IdeaInsertPayload) -> Unit,
 ) {
     var title by rememberSaveable(initial?.id ?: "new") { mutableStateOf(initial?.title.orEmpty()) }
     var description by rememberSaveable(initial?.id ?: "new") { mutableStateOf(initial?.description.orEmpty()) }
@@ -729,6 +804,40 @@ private fun IdeaEditorDialog(
                             },
                             onPickFiles = { pickFiles.launch(arrayOf("*/*")) },
                         )
+                        // 批v155 段2: 一键插待办 — skip the save→dispatch two-step.
+                        // The content gate mirrors the save button: an empty idea
+                        // has nothing to insert. R3 P2-1: the inserted TASK must
+                        // also carry a prompt — validate_draft rejects an empty
+                        // one, and attachments-only with no title would dead-end
+                        // on the derived title (it comes from the description).
+                        InsertTodoSection(
+                            targets = targets,
+                            dispatching = dispatching,
+                            dispatchError = dispatchError,
+                            contentReady = (description.isNotBlank() || attachments.isNotEmpty()) &&
+                                (title.isNotBlank() || description.isNotBlank()),
+                            title = title,
+                            description = description,
+                            attachments = attachments.toList(),
+                            // Editing a draft reuses its row; a new idea gets a
+                            // fresh ledger binding (R1A #5).
+                            seedIdeaId = initial?.id,
+                            loadTarget = loadTarget,
+                            probeAgentOptions = probeAgentOptions,
+                            onInsert = { payload ->
+                                // Ownership of locally staged copies moves to the
+                                // dispatch pipeline (same rule as 保存): a confirmed
+                                // create discards them with the draft; cancel after a
+                                // failed insert must not delete files the upserted
+                                // idea still references. (If the VM's upsert itself
+                                // throws, the staged copies leak — accepted: a
+                                // DataStore IO failure is the rare double-failure
+                                // path, and discarding here could instead delete
+                                // files an intact original draft still points at.)
+                                stagedOwners.clear()
+                                onInsert(payload)
+                            },
+                        )
                     }
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -760,7 +869,295 @@ private fun IdeaEditorDialog(
     }
 }
 
-/** Attachment rows + the two pickers inside the idea editor. */
+/** Everything the idea editor's 一键插待办 resolved — mapped 1:1 onto
+ *  [InboxViewModel.quickInsertTodo] by the screen. */
+private data class IdeaInsertPayload(
+    val ideaId: String,
+    val title: String,
+    val description: String,
+    val attachments: List<LocalAttachment>,
+    val serverId: String,
+    val folderId: Int,
+    val folderName: String,
+    val agentType: AgentType?,
+    val modeId: String?,
+)
+
+/**
+ * 批v155 段2: the idea editor's 一键插待办. Collapsed it is one entry row;
+ * expanded it reveals the dispatch form's target selectors — 设备 chips →
+ * Agent chips → 项目 PickerField → 模型 PickerField (cache-first probe, same
+ * semantics as [app.codeg.android.feature.dispatch.DispatchForm]) — and a
+ * submit button. The task is created in 待办 (autoStart=false); the local
+ * draft is upserted first by the VM so an UNKNOWN ledger ref always binds to
+ * a persisted idea.
+ *
+ * State lives here (not saveable hoisted): the section dies with the dialog,
+ * and selections lost on collapse/expand are re-picked in one tap. The idea id
+ * reuses the draft's own id when editing one (R1A: a fresh UUID here would
+ * upsert a SECOND draft row — and a CONFIRMED create then discards the shared
+ * attachment directory out from under the original card); fresh per dialog
+ * instance only for new ideas, where the ledger binds UNKNOWN refs to it at
+ * submit time.
+ */
+@Composable
+private fun InsertTodoSection(
+    targets: DispatchTargets,
+    dispatching: Boolean,
+    dispatchError: String?,
+    /** Insert gate (R3 P2-1): a prompt exists (description or attachments) AND
+     *  a title that survives (given, or derivable from the description) —
+     *  stricter than the save button, which only stores a local draft. */
+    contentReady: Boolean,
+    /** Editor content, carried verbatim into the payload (the VM derives a
+     *  blank title from the description and upserts the draft before sending). */
+    title: String,
+    description: String,
+    attachments: List<LocalAttachment>,
+    /** The edited draft's id, or null for a brand-new idea. */
+    seedIdeaId: String?,
+    loadTarget: (String) -> Unit,
+    probeAgentOptions: suspend (String, AgentType, String?) -> AgentOptionsSnapshot?,
+    onInsert: (IdeaInsertPayload) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var device by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var agent by rememberSaveable { mutableStateOf<AgentType?>(null) }
+    // 模型 row states — same contract as DispatchForm: the picked id survives
+    // restore, the option list does not; an unvalidated id never rides a submit.
+    var modelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var modelOptions by remember { mutableStateOf<List<SessionModeInfo>>(emptyList()) }
+    var modelLoading by remember { mutableStateOf(false) }
+    var modelFailed by remember { mutableStateOf(false) }
+    var modelSheet by remember { mutableStateOf(false) }
+    var folderSheet by remember { mutableStateOf(false) }
+    val ideaId = remember { seedIdeaId ?: java.util.UUID.randomUUID().toString() }
+
+    val folder = targets.folders.firstOrNull { it.id == folderId }
+
+    // Process-death restore: saved ids come back but the loaded lists died —
+    // re-request once (same rule as DispatchForm).
+    LaunchedEffect(device) {
+        val d = device ?: return@LaunchedEffect
+        if (targets.folders.isEmpty() && !targets.foldersLoading && targets.error == null) {
+            loadTarget(d)
+        }
+    }
+    LaunchedEffect(targets.agents) {
+        val a = agent
+        if (a != null && targets.agents.isNotEmpty() && a !in targets.agents) agent = null
+    }
+    LaunchedEffect(targets.folders) {
+        val fid = folderId
+        if (fid != null && targets.folders.isNotEmpty() && targets.folders.none { it.id == fid }) {
+            folderId = null
+        }
+    }
+    // 模型探测 — task-only + concrete agent on a picked device+project. Cache-first
+    // on the prober, so a re-opened editor answers instantly; a key change resets
+    // the picked id (a fresh list may differ) and re-resolves. Cancellation-safe:
+    // the store keeps the probe running, only the await is cancelled.
+    LaunchedEffect(device, agent, folder?.path) {
+        modelId = null
+        modelOptions = emptyList()
+        modelLoading = false
+        modelFailed = false
+        val d = device
+        val a = agent
+        val f = folder
+        if (d == null || a == null || f == null) return@LaunchedEffect
+        modelLoading = true
+        val snapshot = try {
+            probeAgentOptions(d, a, f.path)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        modelLoading = false
+        if (snapshot == null) {
+            modelFailed = true
+        } else {
+            modelOptions = snapshot.modes?.availableModes.orEmpty()
+            snapshot.modes?.currentModeId
+                ?.takeIf { current -> modelOptions.any { it.id == current } }
+                ?.let { modelId = it }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(colors.bgElevated, RoundedCornerShape(12.dp))
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.AddTask,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                stringResource(R.string.inbox_insert_toggle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                tint = colors.textTertiary,
+            )
+        }
+        if (expanded) {
+            Text(
+                stringResource(R.string.inbox_insert_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+            )
+            DeviceChipRow(
+                devices = targets.profiles.map { PickerOption(id = it.id, label = it.name) },
+                selectedId = device,
+                loadingDeviceId = if (targets.foldersLoading) device else null,
+                errorDeviceIds = if (targets.error != null || targets.agentsError || targets.foldersError) {
+                    setOfNotNull(device)
+                } else emptySet(),
+                onSelect = { id ->
+                    if (id != device) {
+                        device = id
+                        folderId = null
+                        agent = null
+                        loadTarget(id)
+                    }
+                },
+            )
+            if (targets.foldersError || targets.error != null || targets.agentsError) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        targets.error
+                            ?: stringResource(
+                                if (targets.foldersError) R.string.dispatch_folders_failed
+                                else R.string.dispatch_agents_failed,
+                            ),
+                        color = colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { device?.let(loadTarget) }) {
+                        Text(stringResource(R.string.dispatch_retry))
+                    }
+                }
+            }
+            val autoAgentLabel = stringResource(R.string.dispatch_agent_auto)
+            AgentChipRow(
+                autoLabel = autoAgentLabel,
+                agents = targets.agents.map { PickerOption(id = it.name, label = it.displayName) },
+                selectedId = agent?.name,
+                onSelect = { name -> agent = AgentType.entries.firstOrNull { it.name == name } },
+            )
+            PickerField(
+                icon = Icons.Rounded.Folder,
+                label = stringResource(R.string.dispatch_project),
+                value = folder?.name,
+                placeholder = stringResource(
+                    when {
+                        targets.foldersLoading -> R.string.dispatch_defaults_loading
+                        targets.foldersError -> R.string.dispatch_folders_failed
+                        device == null -> R.string.dispatch_no_device
+                        else -> R.string.dispatch_no_folder
+                    },
+                ),
+                onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
+            )
+            // 模型（仅具体 Agent）— 自动 can't be probed (no concrete CLI), so the
+            // row hides; an agent without modes inserts mode-less.
+            if (agent != null) {
+                PickerField(
+                    icon = Icons.Rounded.Tune,
+                    label = stringResource(R.string.dispatch_model),
+                    value = modelOptions.firstOrNull { it.id == modelId }
+                        ?.let { it.name.ifBlank { it.id } },
+                    placeholder = stringResource(
+                        when {
+                            modelLoading -> R.string.dispatch_model_loading
+                            modelFailed -> R.string.dispatch_model_failed
+                            // R3 P3-6: no project selected → the probe hasn't
+                            // run; "无模型" reads as a verdict, not a pending state.
+                            folder == null -> R.string.dispatch_model_pending
+                            else -> R.string.dispatch_model_none
+                        },
+                    ),
+                    onClick = { if (modelOptions.isNotEmpty()) modelSheet = true },
+                )
+                if (modelFailed && !modelLoading) {
+                    Text(
+                        stringResource(R.string.dispatch_model_failed_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                    )
+                }
+            }
+            dispatchError?.let { error ->
+                Text(error, color = colors.danger, style = MaterialTheme.typography.bodySmall)
+            }
+            PrimaryButton(
+                text = stringResource(R.string.inbox_insert_submit),
+                onClick = {
+                    val d = device
+                    val f = folder
+                    if (d != null && f != null) {
+                        onInsert(
+                            IdeaInsertPayload(
+                                ideaId = ideaId,
+                                title = title,
+                                description = description,
+                                attachments = attachments,
+                                serverId = d,
+                                folderId = f.id,
+                                folderName = f.name,
+                                agentType = agent,
+                                modeId = modelOptions.firstOrNull { it.id == modelId }?.id,
+                            ),
+                        )
+                    }
+                },
+                enabled = contentReady && !dispatching && device != null && folder != null,
+                loading = dispatching,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (folderSheet) {
+        OptionListSheet(
+            title = stringResource(R.string.dispatch_project),
+            options = targets.folders.map { PickerOption(id = it.id.toString(), label = it.name, note = it.path) },
+            selectedId = folderId?.toString(),
+            onSelect = { option -> folderId = option.id.toIntOrNull() },
+            onDismiss = { folderSheet = false },
+        )
+    }
+    if (modelSheet) {
+        OptionListSheet(
+            title = stringResource(R.string.dispatch_model),
+            options = modelOptions.map { PickerOption(id = it.id, label = it.name.ifBlank { it.id }) },
+            selectedId = modelId,
+            onSelect = { option -> modelId = option.id },
+            onDismiss = { modelSheet = false },
+        )
+    }
+}
+
+/** Attachment rows + the two pickers inside the idea editor.
+ *  批v155 段3: image rows show a small thumbnail and open the fullscreen
+ *  viewer across the idea's images. */
 @Composable
 private fun AttachmentChips(
     attachments: List<LocalAttachment>,
@@ -770,6 +1167,8 @@ private fun AttachmentChips(
     onPickFiles: () -> Unit,
 ) {
     val colors = CodegTheme.colors
+    // rememberSaveable: rotation no longer closes the viewer (R2D#4).
+    var viewerIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     if (staging) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -784,14 +1183,32 @@ private fun AttachmentChips(
     attachments.forEach { att ->
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 36.dp)
+                .then(
+                    if (att.isImage) {
+                        Modifier.clickable {
+                            viewerIndex = attachments.filter { it.isImage }
+                                .indexOfFirst { it.id == att.id }
+                                .takeIf { idx -> idx >= 0 }
+                        }
+                    } else Modifier,
+                ),
         ) {
-            Icon(
-                if (att.isImage) Icons.Rounded.Image else Icons.Rounded.AttachFile,
-                contentDescription = null,
-                tint = colors.textSecondary,
-                modifier = Modifier.size(16.dp),
-            )
+            if (att.isImage) {
+                LocalImageThumbnail(
+                    path = att.localPath,
+                    modifier = Modifier.size(width = 52.dp, height = 34.dp),
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.AttachFile,
+                    contentDescription = null,
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             Text(
                 att.name,
                 style = MaterialTheme.typography.bodySmall,
@@ -826,10 +1243,17 @@ private fun AttachmentChips(
             Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
         }
     }
+    viewerIndex?.let { idx ->
+        ImageViewerDialog(
+            images = attachments.filter { it.isImage }.map { ImageViewerSource.File(it.localPath) },
+            initialIndex = idx,
+            onDismiss = { viewerIndex = null },
+        )
+    }
 }
 
-/** Cap per idea / per dispatch. */
-private const val MAX_IDEA_ATTACHMENTS = 10
+/** Cap per idea / per dispatch — 批v155 raised 10 → 20 (shared with DispatchForm). */
+private val MAX_IDEA_ATTACHMENTS = app.codeg.android.core.data.AttachmentLimits.MAX_IMAGES
 
 /**
  * The unified dispatch panel — now a THIN host (批v150 §1.5 宿主 A): the shared

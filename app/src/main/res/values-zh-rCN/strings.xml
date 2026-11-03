@@ -1348,4 +1348,42 @@
     <string name="dispatch_created_title">%1$s已创建</string>
     <string name="receipt_open_task_board">去任务板</string>
     <string name="dispatch_created_body">「%2$s」（%1$s）已提交成功，可到任务板或会话里查看实时状态。</string>
+
+    <!-- 批v155：任务板对齐网页版 + 想法一键插待办 + 模型行 -->
+    <string name="dispatch_model">模型</string>
+    <string name="dispatch_model_loading">正在探测模型…</string>
+    <string name="dispatch_model_failed">探测失败</string>
+    <string name="dispatch_model_failed_note">读不到该 Agent 的模型列表，任务将以默认模型运行。</string>
+    <string name="dispatch_model_none">无模型</string>
+    <string name="inbox_insert_toggle">添加到待办</string>
+    <string name="inbox_insert_hint">任务以待办状态挂上任务板，开始前不会运行；设备确认前草稿只存在本机。</string>
+    <string name="inbox_insert_submit">创建任务</string>
+    <string name="task_new_title">新建任务</string>
+    <string name="task_open_session">查看会话</string>
+    <string name="task_action_edit">编辑</string>
+    <string name="task_action_schedule">定时</string>
+    <string name="task_detail_prompt">任务描述</string>
+    <string name="task_cancel_reason_hint">原因（可选）</string>
+    <string name="task_cancel_delete_worktree">同时删除其工作树和工作分支（未合并改动不保留）</string>
+    <string name="task_note_hint">备注（可选）</string>
+    <string name="task_schedule_title">定时开始</string>
+    <string name="task_schedule_current">当前定时：%1$s</string>
+    <string name="task_schedule_chip_1h">1小时后</string>
+    <string name="task_schedule_chip_tonight">今晚20:00</string>
+    <string name="task_schedule_chip_tomorrow">明天9:00</string>
+    <string name="task_schedule_chip_custom">自选时间…</string>
+    <string name="task_schedule_clear">清除定时</string>
+    <string name="task_schedule_pick_time">选择时间</string>
+    <string name="task_new_created_title">任务已创建</string>
+    <string name="task_new_created_msg">「%1$s」已挂上任务板（待办）——在你手动开始前不会运行。</string>
+    <string name="task_new_unknown_title">结果未知</string>
+    <string name="task_new_unknown_msg">设备未确认创建结果。请到收件箱「派发记录」确认，勿直接重发。</string>
+    <string name="task_edit_title">编辑任务</string>
+    <string name="task_edit_note">保存会整体覆盖设备上的标题与描述；其他设置保持不变。</string>
+    <string name="task_edit_save">保存</string>
+    <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
+    <string name="dispatch_task_desc_required">请填写描述或添加附件——服务端会拒绝空任务书。</string>
+    <string name="dispatch_model_pending">选择项目后探测</string>
+    <!-- 批v155 R5 P3-2: viewer decode failure (corrupt/unreadable source) -->
+    <string name="image_viewer_failed">图片加载失败</string>
 </resources>

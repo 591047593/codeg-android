@@ -1,5 +1,6 @@
 package app.codeg.android.feature.sessions
 
+import app.codeg.android.core.data.isLiveFresh
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.datastore.isSessionUnread
@@ -64,7 +65,9 @@ fun buildAggregateSessionSections(
                 serverId = profile.id,
                 serverName = profile.name,
                 unread = isSessionUnread(
-                    statusLive = conv.status.isLive,
+                    // R2D#2: the freshness gate, not the raw flag — an eternal
+                    // "live" corpse suppresses the unread dot forever.
+                    statusLive = conv.isLiveFresh(),
                     updatedAt = conv.updatedAt.toEpochMilli(),
                     readMark = readMarks["${profile.id}:${conv.id}"],
                 ),

@@ -106,6 +106,8 @@ import app.codeg.android.core.designsystem.component.AgentAvatar
 import app.codeg.android.core.designsystem.component.AgentVisuals
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
+import app.codeg.android.core.designsystem.component.ImageViewerDialog
+import app.codeg.android.core.designsystem.component.ImageViewerSource
 import app.codeg.android.core.designsystem.component.InlineError
 import app.codeg.android.core.designsystem.component.OptionListSheet
 import app.codeg.android.core.designsystem.component.sheetContentScrollLock
@@ -878,10 +880,14 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-/** A horizontal strip of pending image attachments, each removable. */
+/** A horizontal strip of pending image attachments, each removable.
+ *  批v155 段3: tapping a thumbnail opens the fullscreen viewer across all
+ *  images in the strip. */
 @Composable
 private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) -> Unit) {
     val colors = CodegTheme.colors
+    // rememberSaveable: rotation no longer closes the viewer (R2D#4).
+    var viewerIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     LazyRow(
         Modifier.fillMaxWidth().background(colors.bgElevated.copy(alpha = 0.92f)).padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -900,7 +906,7 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
             Box(Modifier.size(60.dp)) {
                 val bmp = bitmap
             if (bmp != null) {
-                    Image(bmp, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)))
+                    Image(bmp, contentDescription = stringResource(R.string.sessiondetail_attachment), contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).clickable { viewerIndex = attachments.indexOfFirst { it.id == att.id }.takeIf { idx -> idx >= 0 } })
                 } else {
                     Box(Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(colors.codeSurface))
                 }
@@ -910,6 +916,13 @@ private fun AttachmentStrip(attachments: List<Attachment>, onRemove: (String) ->
                 ) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_remove), tint = colors.textPrimary, modifier = Modifier.size(12.dp)) }
             }
         }
+    }
+    viewerIndex?.let { idx ->
+        ImageViewerDialog(
+            images = attachments.map { ImageViewerSource.Base64(it.base64) },
+            initialIndex = idx,
+            onDismiss = { viewerIndex = null },
+        )
     }
 }
 

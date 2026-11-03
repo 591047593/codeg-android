@@ -11,6 +11,7 @@ import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.AGG_SKELETON_DELAY_MS
 import app.codeg.android.core.data.FOLDER_LOOKUP_TIMEOUT_MS
 import app.codeg.android.core.data.LIVE_PROBE_TIMEOUT_MS
+import app.codeg.android.core.data.RUNNING_STATUS_MAX_AGE
 import app.codeg.android.core.data.SINGLE_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.aggregateDeviceSignature
 import app.codeg.android.core.data.failedNames
@@ -411,14 +412,24 @@ class ActivityViewModel @Inject constructor(
         // snapshot lists only connections that are actually prompting / waiting on
         // a permission. Null (probe failed) keeps the old status-only behavior —
         // never hide a session that may really be running.
+        // 批v155 bugfix: the status-only fallback is now age-bounded
+        // ([RUNNING_STATUS_MAX_AGE]). A running turn streams messages, so its
+        // updated_at advances; a frozen row is a turn that died mid-flight (server
+        // powered off — no terminal status write) and must not re-enter 运行中
+        // every time one probe round flakes. When the probe answers, it wins
+        // unchanged — the age bound only guards the degraded round.
         val liveIds = withTimeoutOrNull(LIVE_PROBE_TIMEOUT_MS) { c.liveConversationIds() }
+        val fallbackCutoff = Instant.now().minus(RUNNING_STATUS_MAX_AGE)
         return conversations.map { conv ->
             ActivityRow(
                 conversation = conv,
                 serverId = server.id,
                 serverName = server.name,
                 folderName = folders[conv.folderId],
-                live = conv.status.isLive && (liveIds == null || conv.id in liveIds),
+                live = conv.status.isLive && when (liveIds) {
+                    null -> conv.updatedAt.isAfter(fallbackCutoff)
+                    else -> conv.id in liveIds
+                },
             )
         }
     }

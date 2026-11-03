@@ -390,6 +390,10 @@ fun ActivityScreen(
                                         onAddToProject = { addToTarget = row },
                                         onRename = { pendingRename = row },
                                         unread = row.unread,
+                                        // R2D#1: the feed's probe-corroborated verdict —
+                                        // without it the demoted corpse rows would still
+                                        // pulse via SessionRow's freshness default.
+                                        live = row.live,
                                         highlighted = allMode &&
                                             highlight?.takeIf { it.owner == ACTIVITY_FOCUS_OWNER }
                                                 ?.item?.ref?.key == row.refKey,

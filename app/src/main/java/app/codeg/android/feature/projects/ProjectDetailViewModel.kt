@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.isLiveFresh
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.GitBranchList
 import app.codeg.android.core.model.GitCredentials
@@ -66,7 +67,9 @@ class ProjectDetailViewModel @Inject constructor(
                         folder = folder,
                         client = client,
                         branch = liveBranch,
-                        runningCount = conversations.count { c -> c.status.isLive },
+                        // R2D#2: freshness-gated running count (power-off corpse
+                        // must not sit in the header's 运行中 forever).
+                        runningCount = conversations.count { c -> c.isLiveFresh() },
                         sessionCount = conversations.size,
                     )
                 }

@@ -46,6 +46,8 @@ class QuickActionViewModel @Inject constructor(
     private val dispatchStore: DispatchStore,
     private val targetLoader: DispatchTargetLoader,
     private val repository: ServerRepository,
+    /** 批v155: the dispatch form's 模型 row probes agent modes through this. */
+    private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
     /** 批v154: the shared form stages picked files here. */
     override val attachmentStager: AttachmentStager,
     appSettingsStore: AppSettingsStore,
@@ -114,6 +116,11 @@ class QuickActionViewModel @Inject constructor(
                 agents = loaded.agents,
                 foldersLoading = loaded.foldersLoading,
                 error = loaded.error,
+                // 批v155(R2C#3): same as host C — a failed list must show its
+                // error row + retry, not a silent "无项目/无 Agent".
+                agentsError = loaded.agentsError,
+                foldersError = loaded.foldersError,
+                loadedForServerId = serverId,
             )
         }
     }
@@ -164,6 +171,14 @@ class QuickActionViewModel @Inject constructor(
         }
     }
 
+    /** 批v155: the shared form's 模型 row — cache-first probe, shared store. */
+    override suspend fun probeAgentOptions(
+        serverId: String,
+        agentType: AgentType,
+        workingDir: String?,
+    ): app.codeg.android.core.model.AgentOptionsSnapshot? =
+        agentOptionsProber.probe(serverId, agentType, workingDir)
+
     // endregion
 
     // region Dispatch (guarded thin pipeline — see class kdoc)
@@ -209,6 +224,7 @@ class QuickActionViewModel @Inject constructor(
                         description = submit.description,
                         agentTypeWire = submit.agentType?.wire,
                         baseBranch = submit.baseBranch,
+                        modeId = submit.modeId,
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,

@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -40,7 +41,57 @@ data class WorkTaskInfo(
     val baseBranch: String? = null,
     /** Per-task work branch the agent commits to. */
     val workBranch: String? = null,
+    /**
+     * 批v155(R3 P2-3): provenance of the task — server constants are
+     * `forge_issue` / `forge_pr` (null = created by hand). A `forge_pr` task's
+     * review merge is REJECTED server-side ("this task came from a pull
+     * request — deliver it back"), so the UI must not offer 合并 for it.
+     */
+    val sourceKind: String? = null,
+    /**
+     * 批v155: the raw config object verbatim — powers the detail sheet's 任务描述
+     * and the edit prefill. `work_task_update` overwrites title+config WHOLE, so
+     * an edit must rebuild the config from this (unknown fields preserved).
+     */
+    val rawConfig: JsonObject? = null,
 ) {
+    /** Server SOURCE_KIND_PR — see [sourceKind]. */
+    val fromPullRequest: Boolean get() = sourceKind == "forge_pr"
+    /** Task description the editor wrote (`config.display_text`). */
+    val configDisplayText: String? get() = rawConfig?.stringOrNull("display_text")
+
+    /**
+     * 批v155: the FULL prompt text the task launches with — `prompt_blocks[].text`
+     * joined (display_text is a 2-000-code-point truncation and must never feed
+     * an edit back). Falls back to display_text for rows that predate
+     * prompt_blocks. Empty when the task was created without content.
+     */
+    val configPromptText: String?
+        get() {
+            val blocks = rawConfig?.get("prompt_blocks") as? JsonArray ?: return configDisplayText
+            val joined = blocks.mapNotNull { (it as? JsonObject)?.get("text") as? JsonPrimitive }
+                .mapNotNull { it.contentOrNull }
+                .joinToString("\n\n")
+            return joined.ifBlank { configDisplayText }
+        }
+
+    /** Mode/model id pinned in the config (`config.mode_id`), if any. */
+    val configModeId: String? get() = rawConfig?.stringOrNull("mode_id")
+
+    /** Agent wire name inside the config (`config.agent_type`), if any. */
+    val configAgentType: String? get() = rawConfig?.stringOrNull("agent_type")
+
+    /** Base branch pinned at creation (`config.base_branch`); edit must resend it. */
+    val configBaseBranch: String? get() = rawConfig?.stringOrNull("base_branch")
+
+    /** Extra config options (`config.config_values`), string-valued only — the
+     *  edit rebuild passes them through untouched. */
+    val configValues: Map<String, String>
+        get() = (rawConfig?.get("config_values") as? JsonObject)
+            ?.mapValues { (_, v) -> (v as? JsonPrimitive)?.contentOrNull ?: "" }
+            ?.filter { it.value.isNotEmpty() }
+            ?: emptyMap()
+
     val isTerminal: Boolean get() = status in TERMINAL_STATUSES
 
     /**
@@ -96,6 +147,10 @@ data class WorkTaskInfo(
                 failureReason = obj.stringOrNull("failure_reason"),
                 baseBranch = obj.stringOrNull("base_branch"),
                 workBranch = obj.stringOrNull("work_branch"),
+                // R5 P1-1: the field existed but was never parsed — fromPullRequest
+                // was hardcoded false and the forge_pr merge gate was dead code.
+                sourceKind = obj.stringOrNull("source_kind"),
+                rawConfig = obj.objectOrNull("config"),
             )
         }
     }
@@ -171,10 +226,31 @@ object WorkTaskWire {
             })
         }
 
-    fun cancelBody(id: Int, deleteWorktree: Boolean = false): JsonObject =
+    fun cancelBody(id: Int, deleteWorktree: Boolean = false, reason: String? = null): JsonObject =
         buildJsonObject {
             put("id", id)
             put("deleteWorktree", deleteWorktree)
+            // 批v155: CancelParams is camelCase and `reason` rides the canceled
+            // timeline event (web parity) — blank reasons are simply omitted.
+            reason?.takeIf { it.isNotBlank() }?.let { put("reason", it) }
+        }
+
+    /** RetryParams is camelCase; the optional note feeds the retry prompt. */
+    fun retryBody(id: Int, note: String? = null): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            note?.takeIf { it.isNotBlank() }?.let { put("note", it) }
+        }
+
+    /** UpdateParams camelCase outer (`id`), nested WorkTaskDraft snake (`folder_id`). */
+    fun updateBody(id: Int, folderId: Int, title: String, config: JsonObject): JsonObject =
+        buildJsonObject {
+            put("id", id)
+            put("draft", buildJsonObject {
+                put("folder_id", folderId)
+                put("title", title)
+                put("config", config)
+            })
         }
 
     fun mergeBody(id: Int, deleteWorktree: Boolean = true, message: String? = null): JsonObject =

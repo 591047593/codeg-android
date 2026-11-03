@@ -1947,9 +1947,17 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             var added = 0
             var skipped = 0
-            for (uri in uris) {
+            for ((index, uri) in uris.withIndex()) {
                 if (_ui.value.attachments.size >= AttachmentPrep.MAX_COUNT) { skipped++; continue }
-                val att = AttachmentPrep.fromUri(uri, resolver)
+                // 批v155: the count cap is now 20, but the 2 MiB axum ceiling did
+                // not move — each image's prep target shrinks with what's left of
+                // the budget, so a big batch lands uniformly compressed instead of
+                // the first few images hogging it and the rest being skipped.
+                val currentRawBytes = _ui.value.attachments.sumOf { it.base64.length } * 3 / 4
+                val remainingInBatch = uris.size - index
+                val adaptiveTarget = (((AttachmentPrep.MAX_TOTAL_BYTES - currentRawBytes) * 19 / 20) / remainingInBatch)
+                    .coerceIn(64_000, AttachmentPrep.TARGET_BYTES)
+                val att = AttachmentPrep.fromUri(uri, resolver, adaptiveTarget)
                 if (att == null) { skipped++; continue }
                 val currentBytes = _ui.value.attachments.sumOf { it.base64.length }
                 // base64 length ≈ 4/3 of raw bytes; cap on the aggregate raw estimate.

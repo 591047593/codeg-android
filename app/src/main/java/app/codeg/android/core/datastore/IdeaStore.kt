@@ -115,6 +115,11 @@ data class DispatchRef(
     /** 批v154 附件快照：重派时按同一批本地文件重新上传（落点路径属于目标设备
      *  工作区，不能跨设备复用，所以只记本地副本）。 */
     val attachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
+    /** 批v155(R2C#2) 上传成功的远端绝对路径（upload_workspace_file 的返回值）。
+     *  UNKNOWN 走收件箱探针确认时本地副本还在，但首条指令必须引用目标设备上的
+     *  路径——没有这个快照，探针只能 arm 出一条不带附件的首条指令（文件明明已
+     *  在设备上，prompt 却不提），随后本地副本被清，远端成了无引用孤儿。 */
+    val uploadedPaths: List<String> = emptyList(),
 )
 
 @Singleton

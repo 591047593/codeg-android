@@ -761,12 +761,22 @@ class CodegClient(
         send("work_task_start", WorkTaskWire.idBody(id).toString())
     }
 
-    suspend fun workTaskCancel(id: Int, deleteWorktree: Boolean = false) {
-        send("work_task_cancel", WorkTaskWire.cancelBody(id, deleteWorktree).toString())
+    suspend fun workTaskCancel(id: Int, deleteWorktree: Boolean = false, reason: String? = null) {
+        send("work_task_cancel", WorkTaskWire.cancelBody(id, deleteWorktree, reason).toString())
     }
 
-    suspend fun workTaskRetry(id: Int) {
-        send("work_task_retry", WorkTaskWire.idBody(id).toString())
+    suspend fun workTaskRetry(id: Int, note: String? = null) {
+        send("work_task_retry", WorkTaskWire.retryBody(id, note).toString())
+    }
+
+    /**
+     * 批v155: full title+config overwrite (UpdateParams camelCase outer, nested
+     * draft snake). Only todo/failed/canceled accept an update upstream — the
+     * UI must gate the entry; a 4xx here surfaces verbatim on the board.
+     */
+    suspend fun workTaskUpdate(id: Int, folderId: Int, title: String, config: JsonObject): WorkTaskInfo? {
+        val root = sendJsonElement("work_task_update", WorkTaskWire.updateBody(id, folderId, title, config).toString())
+        return (root as? JsonObject)?.let { WorkTaskInfo.fromWire(it) }
     }
 
     suspend fun workTaskRequeue(id: Int, note: String? = null) {
