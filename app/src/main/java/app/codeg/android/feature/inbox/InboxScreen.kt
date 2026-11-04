@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
@@ -32,17 +38,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddTask
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -173,10 +184,16 @@ fun InboxScreen(
     // (device profiles + per-device folders/agents) and the model probe.
     val targets by viewModel.target.collectAsStateWithLifecycle()
 
+    // 批v160 multi-select: ids only (saveable), cleared on exit; the destructive
+    // confirm carries the snapshot so deleting can't race the selection.
+    var selectMode by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
+    var pendingBatchDelete by remember { mutableStateOf<List<String>?>(null) }
+
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         floatingActionButton = {
-            if (ideaStyle != INBOX_IDEA_STYLE_CENTER_WIDE) {
+            if (ideaStyle != INBOX_IDEA_STYLE_CENTER_WIDE && !selectMode) {
                 FloatingActionButton(onClick = { creating = true }) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.inbox_new))
                 }
@@ -185,59 +202,55 @@ fun InboxScreen(
         bottomBar = {
             // Wide placement rides the bottomBar slot: Scaffold pads the list
             // content above it automatically, in both placements.
-            if (ideaStyle == INBOX_IDEA_STYLE_CENTER_WIDE) {
+            if (ideaStyle == INBOX_IDEA_STYLE_CENTER_WIDE && !selectMode) {
                 NewIdeaWideButton(onClick = { creating = true })
             }
         },
     ) { padding ->
-        if (ui.ideas.isEmpty() && orphanRefs.isEmpty()) {
-            Column(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            InboxToolbar(
+                selectMode = selectMode,
+                columns = settings.inboxColumns,
+                selectedCount = selected.size,
+                allSelected = ui.ideas.isNotEmpty() && ui.ideas.all { it.id in selected },
+                hasIdeas = ui.ideas.isNotEmpty(),
+                onExitSelect = { selectMode = false; selected = emptySet() },
+                onEnterSelect = { selectMode = true; selected = emptySet() },
+                onToggleColumns = {
+                    viewModel.setInboxColumns(if (settings.inboxColumns == 2) 1 else 2)
+                },
+                onToggleAll = {
+                    selected = if (ui.ideas.isNotEmpty() && ui.ideas.all { it.id in selected }) {
+                        emptySet()
+                    } else {
+                        ui.ideas.map { it.id }.toSet()
+                    }
+                },
+                onDeleteSelected = { pendingBatchDelete = selected.toList() },
+            )
+            if (ui.ideas.isEmpty() && orphanRefs.isEmpty()) {
                 EmptyState(
                     icon = Icons.Rounded.Add,
                     title = stringResource(R.string.inbox_empty),
                     message = "",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // probe/redispatch fire from the cards below with no sheet open —
-                // without this line their failures ("检查失败…勿直接重派") would
-                // be set on the VM but never rendered anywhere.
-                ui.dispatchError?.takeIf { dispatching == null }?.let { error ->
-                    item(key = "dispatch-error") {
-                        Text(
-                            error,
-                            color = colors.danger,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-                orphanRefs.forEach { ref ->
-                    item(key = "orphan-${ref.requestId}", contentType = { "unknown-ref" }) {
-                        // 草稿已删（或旧版本记录没挂 ideaId）的 UNKNOWN 只能自立卡片：
-                        // 去重闸门靠它保持可解析，绝不能无声消失。
-                        UnknownRefCard(
-                            ref = ref,
-                            probing = ref.requestId in ui.probingIds,
-                            canRedispatch = ref.requestId in ui.probeClearedIds,
-                            onProbe = { viewModel.probe(ref.requestId) },
-                            onDiscard = { confirmRef = ref; confirmRedispatch = false },
-                            onRedispatch = { confirmRef = ref; confirmRedispatch = true },
-                        )
-                    }
-                }
-                items(ui.ideas, key = { it.id }, contentType = { "idea" }) { idea ->
+            } else {
+                // Shared per-idea card factory for both the single-column list and
+                // the two-column grid (identical wiring, only the layout differs).
+                val ideaCard: @Composable (IdeaEntry) -> Unit = { idea ->
                     val ref = refByIdeaId[idea.id]
                     IdeaCard(
                         idea = idea,
                         unresolved = ref,
                         probing = ref != null && ref.requestId in ui.probingIds,
                         canRedispatch = ref != null && ref.requestId in ui.probeClearedIds,
+                        selectMode = selectMode,
+                        selected = idea.id in selected,
+                        onToggleSelect = {
+                            selected = if (idea.id in selected) selected - idea.id else selected + idea.id
+                        },
+                        onEnterSelect = { selectMode = true; selected = setOf(idea.id) },
                         onDispatch = { dispatchingId = idea.id },
                         onEdit = { editingId = idea.id },
                         onCopy = { context ->
@@ -249,6 +262,82 @@ fun InboxScreen(
                         onDiscard = { ref?.let { confirmRef = it; confirmRedispatch = false } },
                         onRedispatch = { ref?.let { confirmRef = it; confirmRedispatch = true } },
                     )
+                }
+                if (settings.inboxColumns == 2) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        state = rememberLazyGridState(),
+                    ) {
+                        // probe/redispatch failures must be visible with no sheet open.
+                        ui.dispatchError?.takeIf { dispatching == null }?.let { error ->
+                            item(key = "dispatch-error", span = { GridItemSpan(maxLineSpan) }) {
+                                Text(
+                                    error,
+                                    color = colors.danger,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                        orphanRefs.forEach { ref ->
+                            item(
+                                key = "orphan-${ref.requestId}",
+                                contentType = { "unknown-ref" },
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) {
+                                UnknownRefCard(
+                                    ref = ref,
+                                    probing = ref.requestId in ui.probingIds,
+                                    canRedispatch = ref.requestId in ui.probeClearedIds,
+                                    onProbe = { viewModel.probe(ref.requestId) },
+                                    onDiscard = { confirmRef = ref; confirmRedispatch = false },
+                                    onRedispatch = { confirmRef = ref; confirmRedispatch = true },
+                                )
+                            }
+                        }
+                        gridItems(ui.ideas, key = { it.id }, contentType = { "idea" }) { idea ->
+                            ideaCard(idea)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // probe/redispatch fire from the cards below with no sheet open —
+                        // without this line their failures ("检查失败…勿直接重派") would
+                        // be set on the VM but never rendered anywhere.
+                        ui.dispatchError?.takeIf { dispatching == null }?.let { error ->
+                            item(key = "dispatch-error") {
+                                Text(
+                                    error,
+                                    color = colors.danger,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                        orphanRefs.forEach { ref ->
+                            item(key = "orphan-${ref.requestId}", contentType = { "unknown-ref" }) {
+                                // 草稿已删（或旧版本记录没挂 ideaId）的 UNKNOWN 只能自立卡片：
+                                // 去重闸门靠它保持可解析，绝不能无声消失。
+                                UnknownRefCard(
+                                    ref = ref,
+                                    probing = ref.requestId in ui.probingIds,
+                                    canRedispatch = ref.requestId in ui.probeClearedIds,
+                                    onProbe = { viewModel.probe(ref.requestId) },
+                                    onDiscard = { confirmRef = ref; confirmRedispatch = false },
+                                    onRedispatch = { confirmRef = ref; confirmRedispatch = true },
+                                )
+                            }
+                        }
+                        items(ui.ideas, key = { it.id }, contentType = { "idea" }) { idea ->
+                            ideaCard(idea)
+                        }
+                    }
                 }
             }
         }
@@ -307,6 +396,27 @@ fun InboxScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
+
+    // 批v160 multi-select batch delete. The dialog carries the id snapshot:
+    // exiting select mode clears the live set, the snapshot survives it.
+    pendingBatchDelete?.let { ids ->
+        AlertDialog(
+            onDismissRequest = { pendingBatchDelete = null },
+            title = { Text(stringResource(R.string.inbox_delete)) },
+            text = { Text(stringResource(R.string.inbox_delete_selected_confirm, ids.size)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteIdeas(ids)
+                    pendingBatchDelete = null
+                    selectMode = false
+                    selected = emptySet()
+                }) { Text(stringResource(R.string.inbox_delete), color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingBatchDelete = null }) { Text(stringResource(android.R.string.cancel)) }
             },
         )
     }
@@ -401,13 +511,20 @@ fun InboxScreen(
  * 描述与派发钮之间内联一行状态：PENDING 显示"提交中"，UNKNOWN 给出
  * 检查/重派/放弃入口；未决期间主派发钮禁用（去重闸门本来也会拦）。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun IdeaCard(
     idea: IdeaEntry,
     unresolved: DispatchRef?,
     probing: Boolean,
     canRedispatch: Boolean,
+    /** 批v160 multi-select: when on, whole-card taps toggle the checkbox and the
+     *  ⋯ menu / dispatch action are suppressed. */
+    selectMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
+    /** 批v160: the ⋯ menu's 多选 entry — enters select mode with this card picked. */
+    onEnterSelect: () -> Unit,
     onDispatch: () -> Unit,
     onEdit: () -> Unit,
     onCopy: (Context) -> Unit,
@@ -419,40 +536,53 @@ private fun IdeaCard(
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
     Card(
+        modifier = Modifier.combinedClickable(
+            onClick = { if (selectMode) onToggleSelect() },
+            onLongClick = { if (!selectMode) menuOpen = true },
+        ),
         colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectMode) {
+                    Checkbox(checked = selected, onCheckedChange = { onToggleSelect() })
+                }
                 Text(
                     formatStamp(idea.updatedAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.textTertiary,
                     modifier = Modifier.weight(1f),
                 )
-                Box {
-                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            Icons.Rounded.MoreVert,
-                            contentDescription = null,
-                            tint = colors.textSecondary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.inbox_edit)) },
-                            onClick = { menuOpen = false; onEdit() },
-                        )
-                        val context = LocalContext.current
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.inbox_copy)) },
-                            onClick = { menuOpen = false; onCopy(context) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.inbox_delete), color = colors.danger) },
-                            onClick = { menuOpen = false; onDelete() },
-                        )
+                if (!selectMode) {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(
+                                Icons.Rounded.MoreVert,
+                                contentDescription = null,
+                                tint = colors.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.inbox_edit)) },
+                                onClick = { menuOpen = false; onEdit() },
+                            )
+                            val context = LocalContext.current
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.inbox_copy)) },
+                                onClick = { menuOpen = false; onCopy(context) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.inbox_menu_select)) },
+                                onClick = { menuOpen = false; onEnterSelect() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.inbox_delete), color = colors.danger) },
+                                onClick = { menuOpen = false; onDelete() },
+                            )
+                        }
                     }
                 }
             }
@@ -567,7 +697,7 @@ private fun IdeaCard(
                         colors.accent.copy(alpha = if (unresolved == null) 0.14f else 0.06f),
                         RoundedCornerShape(8.dp),
                     )
-                    .clickable(enabled = unresolved == null, onClick = onDispatch)
+                    .clickable(enabled = !selectMode && unresolved == null, onClick = onDispatch)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -575,6 +705,82 @@ private fun IdeaCard(
                     stringResource(R.string.inbox_dispatch),
                     style = MaterialTheme.typography.labelLarge,
                     color = if (unresolved == null) colors.accent else colors.textTertiary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 批v160 inbox toolbar row. Normal mode: columns toggle (1⇄2) + enter-select on
+ * the right. Select mode: the whole row becomes the batch toolbar — exit, 全选
+ * toggle, "N selected" count and the destructive delete (confirm handled by the
+ * caller's dialog).
+ */
+@Composable
+private fun InboxToolbar(
+    selectMode: Boolean,
+    columns: Int,
+    selectedCount: Int,
+    allSelected: Boolean,
+    hasIdeas: Boolean,
+    onExitSelect: () -> Unit,
+    onEnterSelect: () -> Unit,
+    onToggleColumns: () -> Unit,
+    onToggleAll: () -> Unit,
+    onDeleteSelected: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selectMode) {
+            IconButton(onClick = onExitSelect) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.common_close),
+                    tint = colors.textSecondary,
+                )
+            }
+            IconButton(onClick = onToggleAll, enabled = hasIdeas) {
+                Icon(
+                    Icons.Rounded.Checklist,
+                    contentDescription = stringResource(
+                        if (allSelected) R.string.inbox_select_none else R.string.inbox_select_all,
+                    ),
+                    tint = if (hasIdeas) colors.textSecondary else colors.textTertiary,
+                )
+            }
+            Text(
+                stringResource(R.string.inbox_selected_count, selectedCount),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onDeleteSelected, enabled = selectedCount > 0) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = stringResource(R.string.inbox_delete),
+                    tint = if (selectedCount > 0) colors.danger else colors.textTertiary,
+                )
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onToggleColumns) {
+                Icon(
+                    if (columns == 2) Icons.Rounded.ViewAgenda else Icons.Rounded.GridView,
+                    contentDescription = stringResource(
+                        if (columns == 2) R.string.inbox_columns_one else R.string.inbox_columns_two,
+                    ),
+                    tint = colors.textSecondary,
+                )
+            }
+            IconButton(onClick = onEnterSelect, enabled = hasIdeas) {
+                Icon(
+                    Icons.Rounded.Checklist,
+                    contentDescription = stringResource(R.string.inbox_menu_select),
+                    tint = if (hasIdeas) colors.textSecondary else colors.textTertiary,
                 )
             }
         }

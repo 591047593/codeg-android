@@ -57,6 +57,9 @@ data class AppSettings(
      *  bottom-right (default) | "centerWide" = bottom-center pill half the
      *  screen wide (either thumb reaches it). */
     val inboxNewIdeaStyle: String = DEFAULT_INBOX_IDEA_STYLE,
+    /** 批v160: idea list columns — 1 = classic single column (default),
+     *  2 = two-column grid for denser scanning. */
+    val inboxColumns: Int = DEFAULT_INBOX_COLUMNS,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
     /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
@@ -77,6 +80,7 @@ data class AppSettings(
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
         const val DEFAULT_FLOAT_BALL_CYCLE_DEPTH = 5
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
+        const val DEFAULT_INBOX_COLUMNS = 1
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
         val INITIAL = AppSettings()
@@ -145,6 +149,7 @@ class AppSettingsStore @Inject constructor(
                 .coerceIn(FLOAT_BALL_CYCLE_MIN, FLOAT_BALL_CYCLE_MAX),
             inboxNewIdeaStyle = prefs[INBOX_NEW_IDEA_STYLE]?.takeIf { it in INBOX_IDEA_STYLES }
                 ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE,
+            inboxColumns = (prefs[INBOX_COLUMNS] ?: AppSettings.DEFAULT_INBOX_COLUMNS).coerceIn(1, 2),
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
             dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
@@ -258,6 +263,11 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[INBOX_NEW_IDEA_STYLE] = style.takeIf { s -> s in INBOX_IDEA_STYLES } ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE }
     }
 
+    /** 批v160: persist the idea-list column count (1 or 2). */
+    suspend fun setInboxColumns(columns: Int) {
+        dataStore.edit { it[INBOX_COLUMNS] = columns.coerceIn(1, 2) }
+    }
+
     /** Persist the font-scale multiplier (coerced to the usable band on read too). */
     suspend fun setFontScale(scale: Float) {
         dataStore.edit { it[FONT_SCALE] = scale.coerceIn(0.5f, 2f) }
@@ -344,6 +354,7 @@ class AppSettingsStore @Inject constructor(
         val DISPATCH_DEFAULT_FOLDER_NAME = stringPreferencesKey("dispatch_default_folder_name")
         val DISPATCH_DEFAULT_AGENT = stringPreferencesKey("dispatch_default_agent")
         val INBOX_NEW_IDEA_STYLE = stringPreferencesKey("inbox_new_idea_style")
+        val INBOX_COLUMNS = intPreferencesKey("inbox_columns")
     }
 }
 

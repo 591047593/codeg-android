@@ -56,7 +56,7 @@ class InboxViewModel @Inject constructor(
     /** 批v154 附件：SAF 选择 → 应用私有目录落盘（想法要跨重启/跨设备存活）。
      *  派发表单也通过这个接口自己收附件（同一套存储布局）。 */
     override val attachmentStager: AttachmentStager,
-    appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
+    private val appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel(), app.codeg.android.feature.dispatch.DispatchFormHost {
 
     /** App-wide settings — the dispatch form reads its preselected defaults
@@ -64,6 +64,11 @@ class InboxViewModel @Inject constructor(
     override val settings = appSettingsStore.settings
         .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
             app.codeg.android.core.datastore.AppSettings.INITIAL)
+
+    /** 批v160: persist the idea-list column count (1 or 2). */
+    fun setInboxColumns(columns: Int) = viewModelScope.launch {
+        appSettingsStore.setInboxColumns(columns)
+    }
 
     data class UiState(
         val ideas: List<IdeaEntry> = emptyList(),
@@ -323,6 +328,23 @@ class InboxViewModel @Inject constructor(
             throw e
         } catch (_: Exception) {
             // Delete failed: the idea stays; harmless retryable.
+        }
+    }
+
+    /** 批v160 multi-select batch delete: one store rewrite, then the same
+     *  attachment-discard rule as [deleteIdea] for every removed row. */
+    fun deleteIdeas(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val doomed = ids.mapNotNull { id -> _ui.value.ideas.firstOrNull { it.id == id } }
+            try {
+                ideaStore.removeIds(ids)
+                doomed.forEach { idea -> idea.attachments.forEach(attachmentStager::discard) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Delete failed: the ideas stay; harmless retryable.
+            }
         }
     }
 

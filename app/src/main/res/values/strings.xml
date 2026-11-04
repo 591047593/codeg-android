@@ -1260,6 +1260,14 @@
     <string name="inbox_desc_hint">Description</string>
     <string name="inbox_empty">No ideas yet — tap + to capture one</string>
     <string name="inbox_dispatch">Dispatch</string>
+    <!-- 批v160 multi-select + columns -->
+    <string name="inbox_menu_select">Multi-select</string>
+    <string name="inbox_select_all">Select all</string>
+    <string name="inbox_select_none">Deselect all</string>
+    <string name="inbox_selected_count">%1$d selected</string>
+    <string name="inbox_delete_selected_confirm">Delete the %1$d selected ideas? Their attachment copies are removed too.</string>
+    <string name="inbox_columns_one">Single column</string>
+    <string name="inbox_columns_two">Two columns</string>
     <string name="dispatch_device">Target device</string>
     <string name="dispatch_project">Target project</string>
     <string name="dispatch_agent">Agent (optional)</string>

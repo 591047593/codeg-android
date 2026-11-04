@@ -68,6 +68,18 @@ class IdeaStore @Inject constructor(
         }
     }
 
+    /** 批v160 multi-select: one JSON rewrite for the whole batch — N single
+     *  deletes would each re-encode the full list. Unknown ids are ignored. */
+    suspend fun removeIds(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        dataStore.edit { prefs ->
+            prefs[KEY] = json.encodeToString(
+                ListSerializer(IdeaEntry.serializer()),
+                decode(prefs[KEY]).filterNot { it.id in ids },
+            )
+        }
+    }
+
     private fun decode(raw: String?): List<IdeaEntry> =
         raw?.let { runCatching { json.decodeFromString(ListSerializer(IdeaEntry.serializer()), it) }.getOrNull() }
             ?: emptyList()
