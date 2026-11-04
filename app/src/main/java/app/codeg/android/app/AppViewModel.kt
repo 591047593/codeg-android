@@ -9,6 +9,7 @@ import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.SessionFocusHub
 import app.codeg.android.core.data.SessionProjectRepository
 import app.codeg.android.core.data.TaskSegment
+import app.codeg.android.core.data.TaskSegmentBus
 import app.codeg.android.core.data.nextQuickSwitchStep
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
@@ -45,6 +46,9 @@ class AppViewModel @Inject constructor(
      *  start/stop (foreground) and reads [InteractiveRequestWatcher.requests]
      *  for the bottom-bar badge; the workbench re-scopes the same list. */
     val interactionWatcher: InteractiveRequestWatcher,
+    /** 批v160 W5: the shell's gesture layer emits kanban column steps here when
+     *  the Tasks tab's swipe semantics is 「切任务状态」; the board collects them. */
+    val taskSegmentBus: TaskSegmentBus,
 ) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = appSettingsStore.settings

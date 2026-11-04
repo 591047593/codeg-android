@@ -35,6 +35,11 @@ data class WorkTaskInfo(
     val updatedAt: String? = null,
     val scheduledAt: String? = null,
     val archivedAt: String? = null,
+    /** 批v160 W5 (web parity): lifecycle timestamps for the card's meta "when"
+     *  and the detail grid's 开始/完成时间 — finished ?? settled ?? started. */
+    val startedAt: String? = null,
+    val finishedAt: String? = null,
+    val settledAt: String? = null,
     val deferred: Boolean = false,
     val failureReason: String? = null,
     /** Branch the task was forked from (null = followed HEAD at launch). */
@@ -142,6 +147,9 @@ data class WorkTaskInfo(
                 updatedAt = obj.stringOrNull("updated_at"),
                 scheduledAt = obj.stringOrNull("scheduled_at"),
                 archivedAt = obj.stringOrNull("archived_at"),
+                startedAt = obj.stringOrNull("started_at"),
+                finishedAt = obj.stringOrNull("finished_at"),
+                settledAt = obj.stringOrNull("settled_at"),
                 // Server's `deferred_at` is an ISO timestamp STRING, not an object.
                 deferred = obj.stringOrNull("deferred_at") != null || obj.boolOrNull("deferred") == true,
                 failureReason = obj.stringOrNull("failure_reason"),
@@ -161,6 +169,9 @@ data class WorkTaskEvent(
     val kind: String,
     val actor: String?,
     val summary: String?,
+    /** 批v160 W5 (web parity): status_changed's target status (payload.to) — the
+     *  timeline head colors by it like the web's status dot does. */
+    val to: String? = null,
     val createdAt: String?,
 ) {
     companion object {
@@ -176,6 +187,7 @@ data class WorkTaskEvent(
                         ?: p.stringOrNull("note")
                         ?: p.stringOrNull("reason")
                 },
+                to = payload?.stringOrNull("to"),
                 createdAt = obj.stringOrNull("created_at"),
             )
         }

@@ -638,7 +638,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         ROUTE_CHATS, ROUTE_SEARCH -> DeviceSwipeScope.WITH_ALL
         // 批v152: the task board has an aggregate now, so it joins the WITH_ALL
         // sequence (swipe left from a device lands on 全部 before leaving the tab).
-        HomeTab.TASKS.route -> DeviceSwipeScope.WITH_ALL
+        // 批v160 W5: unless the user picked 「切任务状态」 — then the swipe belongs
+        // to the kanban's four columns (routed through [TaskSegmentBus] below)
+        // and the device layer stands down entirely.
+        HomeTab.TASKS.route ->
+            if (appSettings.taskSwipeMode == app.codeg.android.core.datastore.TASK_SWIPE_DEVICES) {
+                DeviceSwipeScope.WITH_ALL
+            } else null
         ROUTE_FOLDERS -> DeviceSwipeScope.DEVICE_ONLY
         else -> null
     }
@@ -663,7 +669,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     ) {
         Modifier.tabSwipeNavigation(enabled = true) { direction ->
             val step = if (direction == SwipeDirection.NEXT) 1 else -1
-            if (deviceSwipeOn && deviceSwipeScope != null) {
+            // 批v160 W5: on the Tasks tab with 「切任务状态」 semantics the swipe
+            // steps the kanban's four columns — never the device sequence, never
+            // the tab row (the board clamps at its ends, no wraparound).
+            if (currentRoute == HomeTab.TASKS.route &&
+                appSettings.taskSwipeMode != app.codeg.android.core.datastore.TASK_SWIPE_DEVICES
+            ) {
+                appViewModel.taskSegmentBus.step(step)
+            } else if (deviceSwipeOn && deviceSwipeScope != null) {
                 when (val verdict = resolveDeviceSwipeStep(
                     currentIndex = currentDeviceIndex,
                     deviceCount = servers.size,

@@ -75,7 +75,21 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "float_ball_cycle_depth" })
         assertEquals(1, keys.count { it == "notify_interactive_enabled" })
         assertEquals(1, keys.count { it == "keep_alive_enabled" })
+        assertEquals(1, keys.count { it == "task_swipe_mode" })
         // And no key collides with another at all.
         assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun `task swipe mode defaults to segments and only two modes are legal`() {
+        // 批v160 W5: the task board's horizontal swipe steps the four status
+        // columns by default; switching devices is the explicit opt-in. The
+        // loader coerces unknown stored values back to the default, so a corrupt
+        // pref can never strand the board.
+        val s = AppSettings()
+        assertEquals(TASK_SWIPE_SEGMENTS, s.taskSwipeMode)
+        assertEquals(setOf("segments", "devices"), TASK_SWIPE_MODES)
+        assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_SEGMENTS))
+        assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_DEVICES))
     }
 }

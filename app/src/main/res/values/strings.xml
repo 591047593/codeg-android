@@ -1444,6 +1444,39 @@
     <string name="task_edit_title">Edit task</string>
     <string name="task_edit_note">Saving overwrites the title and description on the device; other settings are kept.</string>
     <string name="task_edit_save">Save</string>
+    <!-- 批v160 W5: web-parity card/detail (task-card.tsx / task-detail-sheet.tsx) -->
+    <string name="task_status_interrupted">Interrupted</string>
+    <string name="task_archive_all_done">Archive all</string>
+    <string name="task_detail_summary">Result</string>
+    <string name="task_detail_started">Started</string>
+    <string name="task_detail_finished">Finished</string>
+    <string name="task_detail_changes">Changes</string>
+    <string name="task_action_follow_up">Follow up</string>
+    <string name="task_action_abandon">Abandon</string>
+    <string name="task_event_created">Created</string>
+    <string name="task_event_status_changed">Status changed</string>
+    <string name="task_event_config_effective">Config applied</string>
+    <string name="task_event_init_command">Init command</string>
+    <string name="task_event_agent_progress">Agent progress</string>
+    <string name="task_event_agent_verdict">Agent verdict</string>
+    <string name="task_event_merge_attempt">Merge attempt</string>
+    <string name="task_event_merge_queued">Merge queued</string>
+    <string name="task_event_deliver_attempt">Deliver attempt</string>
+    <string name="task_event_delivered_pr">PR delivered</string>
+    <string name="task_event_merge_conflict">Merge conflict</string>
+    <string name="task_event_preflight">Preflight</string>
+    <string name="task_event_cleanup_failed">Cleanup failed</string>
+    <string name="task_event_resume_fallback">Resume fallback</string>
+    <string name="task_event_context_compact">Context compacted</string>
+    <string name="task_event_user_action">User action</string>
+    <string name="task_event_diff_stat">Diff stats</string>
+    <string name="task_event_forge_writeback">Forge writeback</string>
+    <string name="task_event_forge_writeback_failed">Writeback failed</string>
+    <!-- 批v160 W5: task board horizontal-swipe semantics -->
+    <string name="general_task_swipe_title">Swipe on Task board</string>
+    <string name="general_task_swipe_subtitle">What a horizontal swipe does on the Task board: step through the four status columns (default) or switch devices like on Activity.</string>
+    <string name="general_task_swipe_segments">Switch columns</string>
+    <string name="general_task_swipe_devices">Switch devices</string>
     <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
     <string name="dispatch_task_desc_required">Add a description (or attach files) — the server rejects an empty prompt.</string>
     <string name="dispatch_model_pending">Pick a project to probe</string>

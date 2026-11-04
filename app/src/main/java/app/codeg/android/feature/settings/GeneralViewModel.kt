@@ -227,6 +227,11 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setActivityDeviceSwipe(enabled)
     }
 
+    /** 批v160 W5: task-board horizontal swipe semantics (segments|devices). */
+    fun setTaskSwipeMode(mode: String) = launchPersist {
+        appSettingsStore.setTaskSwipeMode(mode)
+    }
+
     // ---- Floating ball + font scale (batch v126; device-local prefs) ----
 
     fun setFloatBallEnabled(enabled: Boolean) = launchPersist {

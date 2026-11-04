@@ -11,6 +11,7 @@ import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
+import app.codeg.android.core.data.archiveAllCandidates
 import app.codeg.android.core.data.buildBoard
 import app.codeg.android.core.data.taskSegmentOf
 import app.codeg.android.core.data.participating
@@ -72,6 +73,9 @@ class TaskHubViewModel @Inject constructor(
     private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
     override val attachmentStager: app.codeg.android.core.data.AttachmentStager,
     appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
+    /** 批v160 W5: the shell's 「切任务状态」 swipe steps — the screen collects
+     *  them to step the kanban's columns (same singleton the shell emits into). */
+    val segmentBus: app.codeg.android.core.data.TaskSegmentBus,
 ) : ViewModel(),
     app.codeg.android.feature.dispatch.DispatchFormHost {
 
@@ -498,47 +502,78 @@ class TaskHubViewModel @Inject constructor(
         // coroutine would let a second tap slip past the gate before launch runs
         // and double-submit merge/cancel (v139 H2).
         _ui.update { it.copy(busyKey = key(serverId, taskId), actionError = null, actionNote = null) }
+        viewModelScope.launch {
+            val (ok, err) = runPost(serverId, taskId, block)
+            onSettled(ok, err)
+        }
+    }
+
+    /** One action round with the busy slot ALREADY reserved by the caller —
+     *  [post] reserves it synchronously (v139 H2); [archiveAllDone] reserves it
+     *  per iteration so its serial sweep stays exclusive against user actions. */
+    private suspend fun runPost(
+        serverId: String,
+        taskId: Int,
+        block: suspend (CodegClient) -> Unit,
+    ): Pair<Boolean, String?> {
         detailEpoch += 1
         val epoch = detailEpoch
+        var ok = true
+        var err: String? = null
+        try {
+            val profile = deviceById(serverId) ?: error("设备不存在")
+            val client = repository.client(profile) ?: error("Token 缺失")
+            block(client)
+            // The action moved the task (status/列/events); the cached detail
+            // is a pre-action snapshot and loadDetail's existing!=null check
+            // would keep serving it — drop it so the next expand refetches.
+            _ui.update { state ->
+                if (!state.details.containsKey(serverId)) state
+                else state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
+            }
+            // The user's action IS the newest round: bump the generation so a
+            // poll that started mid-action can't invalidate this refresh
+            // (the board would otherwise show the pre-action state for up to
+            // one 25s poll cycle — inviting a second click).
+            generation += 1
+            fetchDevices(setOf(serverId))
+            // 批v156: the action moved the task; report where it landed so the
+            // screen can follow it (the board stays on the user's segment
+            // otherwise — an empty 待办 with the card one tab away). Not found
+            // (deleted/archived-away) → null → no jump.
+            _actedLandedSegment.value = _ui.value.tasks
+                .firstOrNull { it.serverId == serverId && it.task.id == taskId }
+                ?.let { taskSegmentOf(it.task) }
+        } catch (e: CancellationException) {
+            ok = false
+            throw e
+        } catch (e: Exception) {
+            ok = false
+            err = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败"
+            _ui.update {
+                it.copy(actionError = err)
+            }
+        } finally {
+            _ui.update { it.copy(busyKey = null) }
+        }
+        return ok to err
+    }
+
+    /** 批v160 W5: the DONE column's 全部归档 — every finished row still on the
+     *  board ([archiveAllCandidates]: status=="done", none already archived),
+     *  one set_archived per row, serially. A user action in between (the busy
+     *  slot) stops the sweep — it never fights the user for the board. */
+    fun archiveAllDone() {
+        if (_ui.value.busyKey != null) return
+        val targets = archiveAllCandidates(board.value.segments[TaskSegment.DONE].orEmpty())
+        if (targets.isEmpty()) return
         viewModelScope.launch {
-            var ok = true
-            var err: String? = null
-            try {
-                val profile = deviceById(serverId) ?: error("设备不存在")
-                val client = repository.client(profile) ?: error("Token 缺失")
-                block(client)
-                // The action moved the task (status/列/events); the cached detail
-                // is a pre-action snapshot and loadDetail's existing!=null check
-                // would keep serving it — drop it so the next expand refetches.
-                _ui.update { state ->
-                    if (!state.details.containsKey(serverId)) state
-                    else state.copy(details = state.details + (serverId to (state.details[serverId].orEmpty() - taskId)))
-                }
-                // The user's action IS the newest round: bump the generation so a
-                // poll that started mid-action can't invalidate this refresh
-                // (the board would otherwise show the pre-action state for up to
-                // one 25s poll cycle — inviting a second click).
-                generation += 1
-                fetchDevices(setOf(serverId))
-                // 批v156: the action moved the task; report where it landed so the
-                // screen can follow it (the board stays on the user's segment
-                // otherwise — an empty 待办 with the card one tab away). Not found
-                // (deleted/archived-away) → null → no jump.
-                _actedLandedSegment.value = _ui.value.tasks
-                    .firstOrNull { it.serverId == serverId && it.task.id == taskId }
-                    ?.let { taskSegmentOf(it.task) }
-            } catch (e: CancellationException) {
-                ok = false
-                throw e
-            } catch (e: Exception) {
-                ok = false
-                err = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败"
+            for (entry in targets) {
+                if (_ui.value.busyKey != null) return@launch
                 _ui.update {
-                    it.copy(actionError = err)
+                    it.copy(busyKey = key(entry.serverId, entry.task.id), actionError = null, actionNote = null)
                 }
-            } finally {
-                _ui.update { it.copy(busyKey = null) }
-                onSettled(ok, err)
+                runPost(entry.serverId, entry.task.id) { it.workTaskArchive(entry.task.id, true) }
             }
         }
     }

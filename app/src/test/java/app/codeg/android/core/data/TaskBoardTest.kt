@@ -124,4 +124,81 @@ class TaskBoardTest {
         assertEquals(TaskStatusTone.WARN, taskStatusUi(task(5, "review").task).tone)
         assertEquals(TaskStatusTone.DANGER, taskStatusUi(task(6, "failed").task).tone)
     }
+
+    // ---- 批v160 W5: kanban accent projection + column stepping + archive-all ----
+
+    /** The card/header accent per status, web statusAccent parity. */
+    @Test
+    fun `accent tone follows the web statusAccent matrix`() {
+        assertEquals(TaskAccentTone.QUEUED, taskAccentTone(task(1, "todo").task))
+        assertEquals(TaskAccentTone.QUEUED, taskAccentTone(task(2, "queued").task))
+        assertEquals(TaskAccentTone.LIVE, taskAccentTone(task(3, "preparing").task))
+        assertEquals(TaskAccentTone.LIVE, taskAccentTone(task(4, "running").task))
+        assertEquals(TaskAccentTone.ATTENTION, taskAccentTone(task(5, "awaiting_input").task))
+        assertEquals(TaskAccentTone.ATTENTION, taskAccentTone(task(6, "review").task))
+        assertEquals(TaskAccentTone.ATTENTION, taskAccentTone(task(7, "merging").task))
+        assertEquals(TaskAccentTone.FAILED, taskAccentTone(task(8, "failed").task))
+        assertEquals(TaskAccentTone.DONE, taskAccentTone(task(9, "done").task))
+        assertEquals(TaskAccentTone.CANCELED, taskAccentTone(task(10, "canceled").task))
+        assertEquals(TaskAccentTone.QUEUED, taskAccentTone(task(11, "mystery").task))
+    }
+
+    /** Shelved/archived outrank the underlying status (muted wins). */
+    @Test
+    fun `archived and deferred rows project their own accent`() {
+        assertEquals(TaskAccentTone.ARCHIVED, taskAccentTone(task(1, "done", deferred = false).copyTask(archivedAt = "2026-11-01T00:00:00Z")))
+        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(2, "review", deferred = true)))
+        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(3, "failed", deferred = true)))
+    }
+
+    /** Column stepping clamps at both ends — never wraps around (W5 拍板). */
+    @Test
+    fun `segment step clamps to the four columns`() {
+        assertEquals(1, segmentStepIndex(0, 1))
+        assertEquals(3, segmentStepIndex(2, 1))
+        assertEquals(3, segmentStepIndex(3, 1))
+        assertEquals(3, segmentStepIndex(3, 5))
+        assertEquals(0, segmentStepIndex(0, -1))
+        assertEquals(0, segmentStepIndex(2, -9))
+        assertEquals(2, segmentStepIndex(3, -1))
+    }
+
+    /** 全部归档 sweeps the DONE column only, and skips already-archived rows. */
+    @Test
+    fun `archive-all candidates are done rows not yet archived`() {
+        val rows = listOf(
+            task(1, "done"),
+            task(2, "done", deferred = true),
+            task(3, "failed"),
+            task(4, "canceled"),
+            task(5, "running"),
+        )
+        assertEquals(listOf(1, 2), archiveAllCandidates(rows).map { it.task.id })
+        assertEquals(
+            emptyList<TaskBoardEntry>(),
+            archiveAllCandidates(listOf(task(6, "done").copyTask(archivedAt = "2026-11-01T00:00:00Z"))),
+        )
+    }
+
+    /** Timeline heads need a label for a bare status string (payload.to). */
+    @Test
+    fun `status label res maps known statuses and nulls the wild`() {
+        assertEquals(app.codeg.android.R.string.task_status_running, taskStatusLabelRes("running"))
+        assertEquals(app.codeg.android.R.string.task_status_review, taskStatusLabelRes("review"))
+        assertEquals(app.codeg.android.R.string.task_status_canceled, taskStatusLabelRes("cancelled"))
+        assertNull(taskStatusLabelRes("mystery"))
+        assertNull(taskStatusLabelRes(null))
+    }
+
+    /** WorkTaskInfo has no copy for entries — tiny local helper for the two tests above. */
+    private fun TaskBoardEntry.copyTask(archivedAt: String?): TaskBoardEntry =
+        TaskBoardEntry(
+            serverId = serverId,
+            serverName = serverName,
+            task = WorkTaskInfo(
+                id = task.id, title = task.title, status = task.status,
+                scheduledAt = task.scheduledAt, updatedAt = task.updatedAt,
+                deferred = task.deferred, archivedAt = archivedAt,
+            ),
+        )
 }

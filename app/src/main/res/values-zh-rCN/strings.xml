@@ -1430,6 +1430,39 @@
     <string name="task_edit_title">编辑任务</string>
     <string name="task_edit_note">保存会整体覆盖设备上的标题与描述；其他设置保持不变。</string>
     <string name="task_edit_save">保存</string>
+    <!-- 批v160 W5: web-parity card/detail (task-card.tsx / task-detail-sheet.tsx) -->
+    <string name="task_status_interrupted">已中断</string>
+    <string name="task_archive_all_done">全部归档</string>
+    <string name="task_detail_summary">结果</string>
+    <string name="task_detail_started">开始时间</string>
+    <string name="task_detail_finished">完成时间</string>
+    <string name="task_detail_changes">变更</string>
+    <string name="task_action_follow_up">继续处理</string>
+    <string name="task_action_abandon">放弃</string>
+    <string name="task_event_created">创建</string>
+    <string name="task_event_status_changed">状态变更</string>
+    <string name="task_event_config_effective">配置生效</string>
+    <string name="task_event_init_command">初始化命令</string>
+    <string name="task_event_agent_progress">Agent 进展</string>
+    <string name="task_event_agent_verdict">Agent 结论</string>
+    <string name="task_event_merge_attempt">合并尝试</string>
+    <string name="task_event_merge_queued">合并排队</string>
+    <string name="task_event_deliver_attempt">交付尝试</string>
+    <string name="task_event_delivered_pr">PR 已交付</string>
+    <string name="task_event_merge_conflict">合并冲突</string>
+    <string name="task_event_preflight">预检结果</string>
+    <string name="task_event_cleanup_failed">清理失败</string>
+    <string name="task_event_resume_fallback">续跑回退</string>
+    <string name="task_event_context_compact">上下文压缩</string>
+    <string name="task_event_user_action">用户操作</string>
+    <string name="task_event_diff_stat">变更统计</string>
+    <string name="task_event_forge_writeback">回写 Forge</string>
+    <string name="task_event_forge_writeback_failed">回写失败</string>
+    <!-- 批v160 W5: task board horizontal-swipe semantics -->
+    <string name="general_task_swipe_title">任务板横滑</string>
+    <string name="general_task_swipe_subtitle">任务板顶部横滑手势的行为：默认在四个任务状态列之间步进，也可切成与动态页相同的设备切换。</string>
+    <string name="general_task_swipe_segments">切任务状态</string>
+    <string name="general_task_swipe_devices">切换设备</string>
     <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
     <string name="dispatch_task_desc_required">请填写描述或添加附件——服务端会拒绝空任务书。</string>
     <string name="dispatch_model_pending">选择项目后探测</string>

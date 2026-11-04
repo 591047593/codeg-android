@@ -102,6 +102,45 @@ fun GeneralContent(
                 appSettings.activityDeviceSwipe,
                 viewModel::setActivityDeviceSwipe,
             )
+            // 批v160 W5: task-board horizontal swipe semantics — step the four
+            // status columns (default) or switch devices like on Activity. Same
+            // chip idiom as the inbox-idea-style row below.
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.general_task_swipe_title)) },
+                supportingContent = { Text(stringResource(R.string.general_task_swipe_subtitle)) },
+                trailingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(
+                            app.codeg.android.core.datastore.TASK_SWIPE_SEGMENTS to R.string.general_task_swipe_segments,
+                            app.codeg.android.core.datastore.TASK_SWIPE_DEVICES to R.string.general_task_swipe_devices,
+                        ).forEach { (id, labelRes) ->
+                            // 局部变量刻意叫 isSelected：若叫 selected，下方
+                            // semantics lambda 的左值会解析到局部变量报编译错。
+                            val isSelected = appSettings.taskSwipeMode == id
+                            Text(
+                                stringResource(labelRes),
+                                fontSize = 13.sp,
+                                color = if (isSelected) colors.onAccent else colors.textSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
+                                    )
+                                    .clickable { viewModel.setTaskSwipeMode(id) }
+                                    .semantics { selected = isSelected }
+                                    .heightIn(min = 48.dp)
+                                    .wrapContentHeight(Alignment.CenterVertically)
+                                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                            )
+                        }
+                    }
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                    headlineColor = colors.textPrimary,
+                    supportingColor = colors.textTertiary,
+                ),
+            )
             // 批v151: inbox "new idea" button placement (corner FAB vs bottom-center
             // half-width pill) — same chip idiom as the ball-size row above.
             ListItem(

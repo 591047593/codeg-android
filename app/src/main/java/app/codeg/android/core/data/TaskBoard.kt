@@ -129,6 +129,56 @@ private fun timestampKey(iso: String?): String? = iso?.let { raw ->
         .getOrNull()?.toString()
 }
 
+// region 批v160 W5: web-parity `statusAccent` — the row/column colour language.
+
+/**
+ * Web-parity `statusAccent` (task-card.tsx 169-189), as a tone the UI maps to a
+ * Compose colour — the board column's marker bar and a card's accent speak one
+ * language: `failed` reads red rather than the attention column's amber, and
+ * `canceled` stays neutral instead of inheriting Done's green.
+ */
+enum class TaskAccentTone { ARCHIVED, SHELVED, QUEUED, LIVE, ATTENTION, FAILED, DONE, CANCELED }
+
+fun taskAccentTone(task: WorkTaskInfo): TaskAccentTone = when {
+    task.isArchivedLike -> TaskAccentTone.ARCHIVED
+    isEffectivelyDeferred(task) -> TaskAccentTone.SHELVED
+    else -> when (task.status) {
+        "todo", "queued" -> TaskAccentTone.QUEUED
+        "preparing", "running" -> TaskAccentTone.LIVE
+        "awaiting_input", "review", "merging" -> TaskAccentTone.ATTENTION
+        "failed" -> TaskAccentTone.FAILED
+        "done" -> TaskAccentTone.DONE
+        "canceled", "cancelled" -> TaskAccentTone.CANCELED
+        else -> TaskAccentTone.QUEUED // unknown → the neutral muted like todo
+    }
+}
+
+/** Each column's marker colour = the accent of its canonical member status. */
+fun segmentAccentTone(segment: TaskSegment): TaskAccentTone = when (segment) {
+    TaskSegment.TODO -> TaskAccentTone.QUEUED
+    TaskSegment.RUNNING -> TaskAccentTone.LIVE
+    TaskSegment.ATTENTION -> TaskAccentTone.ATTENTION
+    TaskSegment.DONE -> TaskAccentTone.DONE
+}
+
+/**
+ * 批v160 W5: the kanban's horizontal swipe steps between the four columns and
+ * STOPS at the ends — swiping past 已完成 or before 待办 does nothing (no
+ * wraparound; a board that loops would fling the user across three columns).
+ */
+fun segmentStepIndex(current: Int, step: Int): Int =
+    (current + step).coerceIn(0, SEGMENT_ORDER.lastIndex)
+
+/**
+ * The rows the DONE column's 全部归档 acts on: status=="done" only. The server's
+ * set_archived accepts done/failed/canceled, but the column also holds canceled
+ * and shelved review rows whose owners did not ask for them to be shelved away.
+ */
+fun archiveAllCandidates(entries: List<TaskBoardEntry>): List<TaskBoardEntry> =
+    entries.filter { it.task.status == "done" && !it.task.isArchivedLike }
+
+// endregion
+
 // region Status → label/tone projection (single source of truth for tags).
 
 enum class TaskStatusTone { NEUTRAL, RUN, WARN, INFO, DANGER, DONE }
@@ -156,6 +206,27 @@ fun taskStatusUi(task: WorkTaskInfo): TaskStatusUi {
         else -> return TaskStatusUi(0, TaskStatusTone.NEUTRAL, raw = task.status)
     }
     return TaskStatusUi(label, tone)
+}
+
+/**
+ * 批v160 W5: label for an ARBITRARY status string — the detail timeline's
+ * status_changed heads project `payload.to`, which arrives without a
+ * [WorkTaskInfo] to feed [taskStatusUi]. Same mapping; null for unknown
+ * (the raw string renders as-is).
+ */
+fun taskStatusLabelRes(status: String?): Int? = when (status) {
+    "todo" -> R_task_todo
+    "queued" -> R_task_queued
+    "preparing" -> R_task_preparing
+    "running" -> R_task_running
+    "awaiting_input" -> R_task_awaiting
+    "review" -> R_task_review
+    "merging" -> R_task_merging
+    "done" -> R_task_done
+    "failed" -> R_task_failed
+    "canceled", "cancelled" -> R_task_canceled
+    "archived" -> R_task_archived
+    else -> null
 }
 
 // Int indirection keeps this file free of a UI import (R constants resolve fine).

@@ -67,6 +67,10 @@ data class AppSettings(
      *  foreground service (dataSync). Default OFF — it costs battery; users on
      *  aggressive OEM ROMs opt in. */
     val keepAliveEnabled: Boolean = false,
+    /** 批v160 W5: the Tasks tab's horizontal-swipe semantics — "segments" =
+     *  step between the board's four kanban columns (default), "devices" =
+     *  the cross-device sequence (the pre-v160 behavior). */
+    val taskSwipeMode: String = DEFAULT_TASK_SWIPE_MODE,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
     /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
@@ -88,6 +92,7 @@ data class AppSettings(
         const val DEFAULT_FLOAT_BALL_CYCLE_DEPTH = 5
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
         const val DEFAULT_INBOX_COLUMNS = 1
+        const val DEFAULT_TASK_SWIPE_MODE = TASK_SWIPE_SEGMENTS
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
         val INITIAL = AppSettings()
@@ -159,6 +164,8 @@ class AppSettingsStore @Inject constructor(
             inboxColumns = (prefs[INBOX_COLUMNS] ?: AppSettings.DEFAULT_INBOX_COLUMNS).coerceIn(1, 2),
             notifyInteractiveEnabled = prefs[NOTIFY_INTERACTIVE_ENABLED] ?: true,
             keepAliveEnabled = prefs[KEEP_ALIVE_ENABLED] ?: false,
+            taskSwipeMode = prefs[TASK_SWIPE_MODE]?.takeIf { it in TASK_SWIPE_MODES }
+                ?: AppSettings.DEFAULT_TASK_SWIPE_MODE,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
             dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
@@ -288,6 +295,11 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[KEEP_ALIVE_ENABLED] = enabled }
     }
 
+    /** 批v160 W5: persist the Tasks tab's swipe semantics; unknown values coerce back. */
+    suspend fun setTaskSwipeMode(mode: String) {
+        dataStore.edit { it[TASK_SWIPE_MODE] = mode.takeIf { m -> m in TASK_SWIPE_MODES } ?: AppSettings.DEFAULT_TASK_SWIPE_MODE }
+    }
+
     /** Persist the font-scale multiplier (coerced to the usable band on read too). */
     suspend fun setFontScale(scale: Float) {
         dataStore.edit { it[FONT_SCALE] = scale.coerceIn(0.5f, 2f) }
@@ -377,6 +389,7 @@ class AppSettingsStore @Inject constructor(
         val INBOX_COLUMNS = intPreferencesKey("inbox_columns")
         val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")
         val KEEP_ALIVE_ENABLED = booleanPreferencesKey("keep_alive_enabled")
+        val TASK_SWIPE_MODE = stringPreferencesKey("task_swipe_mode")
     }
 }
 
@@ -392,6 +405,11 @@ const val FLOAT_BALL_CYCLE_MAX = 10
 const val INBOX_IDEA_STYLE_CORNER = "corner"
 const val INBOX_IDEA_STYLE_CENTER_WIDE = "centerWide"
 val INBOX_IDEA_STYLES = setOf(INBOX_IDEA_STYLE_CORNER, INBOX_IDEA_STYLE_CENTER_WIDE)
+
+/** Legal Tasks-tab swipe semantics (批v160 W5) — screens branch on the constants. */
+const val TASK_SWIPE_SEGMENTS = "segments"
+const val TASK_SWIPE_DEVICES = "devices"
+val TASK_SWIPE_MODES = setOf(TASK_SWIPE_SEGMENTS, TASK_SWIPE_DEVICES)
 
 /** JSON envelope for the read-marks map (DataStore carries one string). */
 @Serializable

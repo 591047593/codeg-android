@@ -11,33 +11,56 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CallMade
+import androidx.compose.material.icons.rounded.CallMerge
+import androidx.compose.material.icons.rounded.Chat
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Clock
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -67,24 +90,35 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
-import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.DEFERRABLE_STATUSES
+import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.SEGMENT_ORDER
+import app.codeg.android.core.data.TaskAccentTone
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
-import app.codeg.android.core.data.TaskStatusTone
+import app.codeg.android.core.data.archiveAllCandidates
 import app.codeg.android.core.data.isEffectivelyDeferred
+import app.codeg.android.core.data.segmentAccentTone
+import app.codeg.android.core.data.segmentStepIndex
+import app.codeg.android.core.data.taskStatusLabelRes
 import app.codeg.android.core.data.taskStatusUi
+import app.codeg.android.core.data.TaskStatusUi
+import app.codeg.android.core.data.TaskSegmentBus
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.designsystem.component.AgentChipRow
@@ -93,7 +127,11 @@ import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
 import app.codeg.android.core.designsystem.component.rememberSheetDragLock
 import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegColors
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.WorkTaskChangedFile
+import app.codeg.android.core.model.WorkTaskEvent
+import app.codeg.android.core.model.WorkTaskInfo
 import app.codeg.android.feature.dispatch.DispatchForm
 import java.time.Instant
 import java.time.LocalDate
@@ -123,22 +161,41 @@ fun TaskHubScreen(
     val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
 
-    var segmentName by rememberSaveable { mutableStateOf(TaskSegment.TODO.name) }
-    val segment = runCatching { TaskSegment.valueOf(segmentName) }.getOrDefault(TaskSegment.TODO)
-    // 批v152: the workbench stat cards / 需要处理 preview ask for a SPECIFIC segment.
-    // Consumed once on entry (the request is read-then-cleared in the repository),
-    // so a later plain tab return keeps whatever segment the user picked himself.
+    // 批v160 W5: the board is a four-column kanban now — no selected segment,
+    // just the LazyRow and a scroll target for the programmatic jumps.
+    val columnState = rememberLazyListState()
+    var pendingColumn by remember { mutableStateOf<Int?>(null) }
+    // 批v152: the workbench stat cards / 需要处理 preview ask for a SPECIFIC
+    // column. Consumed once on entry (the request is read-then-cleared in the
+    // repository), so a later plain tab return keeps the columns where the user
+    // left them.
     LaunchedEffect(viewModel) {
-        viewModel.consumeSegmentRequest()?.let { segmentName = it.name }
+        viewModel.consumeSegmentRequest()?.let { seg ->
+            pendingColumn = SEGMENT_ORDER.indexOf(seg).coerceAtLeast(0)
+        }
     }
-    // 批v156: after an action (启动/取消/重试…) the card moves segments — follow it
-    // so it never "vanishes" one tab away (the board used to stay on the old,
-    // now-empty segment). The VM emits the landed segment once per action.
+    // 批v156: after an action (启动/取消/重试…) the card moves columns — follow
+    // it so it never "vanishes" one swipe away (the VM emits the landed segment
+    // once per action).
     val actedLanded by viewModel.actedLandedSegment.collectAsStateWithLifecycle()
     LaunchedEffect(actedLanded) {
         val landed = actedLanded ?: return@LaunchedEffect
-        if (landed != segment) segmentName = landed.name
+        pendingColumn = SEGMENT_ORDER.indexOf(landed).coerceAtLeast(0)
         viewModel.consumeActedLandedSegment()
+    }
+    // 批v160 W5: the 「切任务状态」 horizontal swipe — step between the four
+    // columns, clamped at the ends (segmentStepIndex; no wraparound).
+    LaunchedEffect(viewModel) {
+        viewModel.segmentBus.steps.collect { step ->
+            pendingColumn = segmentStepIndex(columnState.firstVisibleItemIndex, step)
+        }
+    }
+    LaunchedEffect(pendingColumn) {
+        val target = pendingColumn ?: return@LaunchedEffect
+        pendingColumn = null
+        if (target in SEGMENT_ORDER.indices) {
+            runCatching { columnState.animateScrollToItem(target) }
+        }
     }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var folderSheet by remember { mutableStateOf(false) }
@@ -173,169 +230,115 @@ fun TaskHubScreen(
         onRefresh = { viewModel.refresh(); viewModel.refreshFolders() },
         modifier = Modifier.fillMaxSize(),
     ) {
-        val listState = rememberLazyListState()
-        // On a long board the failure banner at the top is off-screen when
-        // the user acts on a bottom card — pull it into view.
-        LaunchedEffect(ui.actionError) {
-            if (ui.actionError != null) runCatching { listState.animateScrollToItem(0) }
-        }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 24.dp),
-        ) {
-            item(key = "toolbar") {
-                ToolbarRow(
-                    folderFilter = ui.folderFilter,
-                    searchOpen = searchOpen,
-                    showCanceled = ui.showCanceled,
-                    showArchived = ui.showArchived,
-                    onToggleSearch = {
-                        searchOpen = !searchOpen
-                        if (!searchOpen) viewModel.setSearchQuery("")
+        Column(Modifier.fillMaxSize()) {
+            ToolbarRow(
+                folderFilter = ui.folderFilter,
+                searchOpen = searchOpen,
+                showCanceled = ui.showCanceled,
+                showArchived = ui.showArchived,
+                onToggleSearch = {
+                    searchOpen = !searchOpen
+                    if (!searchOpen) viewModel.setSearchQuery("")
+                },
+                onFolderClick = { folderSheet = true },
+                onShowCanceled = viewModel::setShowCanceled,
+                onShowArchived = viewModel::setShowArchived,
+                onNewTask = { showNewTask = true },
+            )
+            if (searchOpen) {
+                OutlinedTextField(
+                    value = ui.searchQuery,
+                    onValueChange = viewModel::setSearchQuery,
+                    placeholder = { Text(stringResource(R.string.task_search_hint)) },
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { viewModel.setSearchQuery(""); searchOpen = false }) {
+                            Icon(Icons.Rounded.Close, contentDescription = null)
+                        }
                     },
-                    onFolderClick = { folderSheet = true },
-                    onShowCanceled = viewModel::setShowCanceled,
-                    onShowArchived = viewModel::setShowArchived,
-                    onNewTask = { showNewTask = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            if (searchOpen) {
-                item(key = "search") {
-                    OutlinedTextField(
-                        value = ui.searchQuery,
-                        onValueChange = viewModel::setSearchQuery,
-                        placeholder = { Text(stringResource(R.string.task_search_hint)) },
-                        singleLine = true,
-                        trailingIcon = {
-                            IconButton(onClick = { viewModel.setSearchQuery(""); searchOpen = false }) {
-                                Icon(Icons.Rounded.Close, contentDescription = null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 2.dp),
-                    )
-                }
-            }
             if (ui.failedDevices > 0) {
-                item(key = "banner") {
-                    FailedBanner(
-                        ui = ui,
-                        onRetry = viewModel::retryFailedDevices,
-                    )
-                }
+                FailedBanner(ui = ui, onRetry = viewModel::retryFailedDevices)
             }
             ui.actionError?.let { error ->
-                item(key = "action-error") {
-                    Text(
-                        text = stringResource(R.string.task_action_failed) + " · " + error,
-                        color = colors.danger,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clickable { viewModel.clearActionError() },
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.task_action_failed) + " · " + error,
+                    color = colors.danger,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { viewModel.clearActionError() },
+                )
             }
             // Non-error outcome note (e.g. merge queued behind the folder's
             // serial merge slot): tap to dismiss, same lifecycle as actionError.
             ui.actionNote?.let { note ->
-                item(key = "action-note") {
-                    Text(
-                        text = note,
-                        color = colors.textSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 2.dp)
-                            .clickable { viewModel.clearActionError() },
-                    )
-                }
+                Text(
+                    text = note,
+                    color = colors.textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .clickable { viewModel.clearActionError() },
+                )
             }
             if (ui.archivedHidden > 0) {
-                item(key = "archived-note") {
-                    Text(
-                        text = stringResource(R.string.task_archived_hidden, ui.archivedHidden),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                    )
-                }
-            }
-            item(key = "segments") {
-                SegmentBar(
-                    counts = board.counts,
-                    selected = segment,
-                    onSelect = { segmentName = it.name },
+                Text(
+                    text = stringResource(R.string.task_archived_hidden, ui.archivedHidden),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            val rows = board.segments[segment].orEmpty()
-            val unknownHere = segment == TaskSegment.ATTENTION
-            val isEmpty = ui.hasLoaded && rows.isEmpty() && (!unknownHere || board.unknown.isEmpty())
-            if (isEmpty) {
-                item(key = "empty") {
-                    EmptyState(
-                        icon = Icons.Rounded.Refresh,
-                        title = stringResource(
-                            if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
-                        ),
-                        message = stringResource(R.string.task_empty_hint),
-                        modifier = Modifier.padding(top = 48.dp),
-                    )
-                }
-            }
-            items(
-                rows,
-                key = { "${it.serverId}-${it.task.id}" },
-                contentType = { "task" },
-            ) { entry ->
-                TaskCard(
-                    entry = entry,
-                    folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
-                    busy = ui.busyKey != null,
-                    spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
-                    onOpenDetail = { detailKey = entry.serverId to entry.task.id },
-                    onOpenSession = onOpenSession,
-                    onAction = { action ->
-                        // 编辑 opens a sheet, not a confirm dialog.
-                        if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
-                    },
+            if (ui.hasLoaded && board.segments.values.all { it.isEmpty() } && board.unknown.isEmpty()) {
+                EmptyState(
+                    icon = Icons.Rounded.Refresh,
+                    title = stringResource(
+                        if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
+                    ),
+                    message = stringResource(R.string.task_empty_hint),
+                    modifier = Modifier.padding(top = 48.dp),
                 )
             }
-            if (unknownHere && board.unknown.isNotEmpty()) {
-                item(key = "unknown-header") {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.task_unknown_section),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = colors.textPrimary,
-                        )
-                        Text("${board.unknown.size}", style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
-                    }
-                }
-                items(
-                    board.unknown,
-                    key = { "u-${it.serverId}-${it.task.id}" },
-                    contentType = { "task" },
-                ) { entry ->
-                    TaskCard(
-                        entry = entry,
-                        folderName = ui.folderNames[entry.serverId]?.get(entry.task.folderId),
+            // 批v160 W5 kanban: four side-by-side columns (web board parity).
+            // Column width = max(240dp, 72% of the screen) — a phone never sees
+            // two full columns at once, and the 240dp floor keeps every card
+            // footer's buttons reachable (施工图 W5 风险条目).
+            val configuration = LocalConfiguration.current
+            val columnWidth = maxOf(240.dp, configuration.screenWidthDp.dp * 0.72f)
+            LazyRow(
+                state = columnState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(SEGMENT_ORDER, key = { it.name }, contentType = { "column" }) { seg ->
+                    val rows = board.segments[seg].orEmpty()
+                    KanbanColumn(
+                        segment = seg,
+                        entries = rows,
+                        // Unknown statuses surface under 等你处理 (the old
+                        // single-column view showed them in the same section).
+                        unknown = if (seg == TaskSegment.ATTENTION) board.unknown else emptyList(),
+                        modifier = Modifier.width(columnWidth).fillParentMaxHeight(),
+                        folderNames = ui.folderNames,
                         busy = ui.busyKey != null,
-                        spinning = false,
-                        onOpenDetail = { detailKey = entry.serverId to entry.task.id },
+                        spinningKey = ui.busyKey,
+                        canArchiveAll = seg == TaskSegment.DONE &&
+                            archiveAllCandidates(rows).isNotEmpty(),
+                        onArchiveAll = viewModel::archiveAllDone,
+                        onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
                         onOpenSession = onOpenSession,
                         onAction = { action ->
+                            // 编辑 opens a sheet, not a confirm dialog.
                             if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
                         },
                     )
@@ -605,51 +608,168 @@ private fun FolderOptionRow(label: String, selected: Boolean, onClick: () -> Uni
     }
 }
 
-/** Four web-parity segments with live counts (待办 | 进行中 | 等你处理 | 已完成). */
+/**
+ * 批v160 W5: one kanban column (web board parity) — a fixed header (accent
+ * bar + name + count badge, and 全部归档 on DONE) over a vertical list of
+ * cards. Unknown statuses ride at the bottom of 等你处理 like the old
+ * single-column view did.
+ */
 @Composable
-private fun SegmentBar(
-    counts: Map<TaskSegment, Int>,
-    selected: TaskSegment,
-    onSelect: (TaskSegment) -> Unit,
+private fun KanbanColumn(
+    segment: TaskSegment,
+    entries: List<TaskBoardEntry>,
+    unknown: List<TaskBoardEntry>,
+    modifier: Modifier,
+    folderNames: Map<String, Map<Int, String>>,
+    busy: Boolean,
+    spinningKey: String?,
+    canArchiveAll: Boolean,
+    onArchiveAll: () -> Unit,
+    onOpenDetail: (TaskBoardEntry) -> Unit,
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit,
+    onAction: (ConfirmAction) -> Unit,
+) {
+    Column(modifier) {
+        KanbanColumnHeader(
+            segment = segment,
+            count = entries.size,
+            showArchiveAll = segment == TaskSegment.DONE,
+            canArchiveAll = canArchiveAll,
+            busy = busy,
+            onArchiveAll = onArchiveAll,
+        )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(
+                entries,
+                key = { "${it.serverId}-${it.task.id}" },
+                contentType = { "task" },
+            ) { entry ->
+                TaskCardWeb(
+                    entry = entry,
+                    folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
+                    busy = busy,
+                    spinning = spinningKey == "${entry.serverId}:${entry.task.id}",
+                    onOpenDetail = { onOpenDetail(entry) },
+                    onOpenSession = onOpenSession,
+                    onAction = onAction,
+                )
+            }
+            if (unknown.isNotEmpty()) {
+                item(key = "unknown-header") {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.task_unknown_section),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = CodegTheme.colors.textPrimary,
+                        )
+                        Text(
+                            "${unknown.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = CodegTheme.colors.textSecondary,
+                        )
+                    }
+                }
+                items(
+                    unknown,
+                    key = { "u-${it.serverId}-${it.task.id}" },
+                    contentType = { "task" },
+                ) { entry ->
+                    TaskCardWeb(
+                        entry = entry,
+                        folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
+                        busy = busy,
+                        spinning = false,
+                        onOpenDetail = { onOpenDetail(entry) },
+                        onOpenSession = onOpenSession,
+                        onAction = onAction,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Column header: the 4dp accent bar + name + live count (+ 全部归档 on DONE). */
+@Composable
+private fun KanbanColumnHeader(
+    segment: TaskSegment,
+    count: Int,
+    showArchiveAll: Boolean,
+    canArchiveAll: Boolean,
+    busy: Boolean,
+    onArchiveAll: () -> Unit,
 ) {
     val colors = CodegTheme.colors
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .heightIn(min = 44.dp)
+            .wrapContentHeight(Alignment.CenterVertically),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        SEGMENT_ORDER.forEach { seg ->
-            val isSel = seg == selected
-            val count = counts[seg] ?: 0
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (isSel) colors.accentDim else colors.bgElevated)
-                    .border(
-                        1.dp,
-                        if (isSel) colors.accent.copy(alpha = 0.5f) else Color.Transparent,
-                        RoundedCornerShape(12.dp),
-                    )
-                    .clickable { onSelect(seg) }
-                    .padding(vertical = 10.dp),
+        Box(
+            Modifier
+                .size(width = 4.dp, height = 18.dp)
+                .background(segmentAccentTone(segment).composeColor(colors), RoundedCornerShape(2.dp)),
+        )
+        Text(
+            stringResource(segment.labelRes),
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textPrimary,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+        Box(
+            Modifier
+                .padding(start = 6.dp)
+                .background(colors.textSecondary.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+        ) {
+            Text(
+                "$count",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        if (showArchiveAll) {
+            // 批v160 W5: one-tap sweep of every finished row on the board.
+            TextButton(
+                onClick = onArchiveAll,
+                enabled = canArchiveAll && !busy,
+                contentPadding = PaddingValues(horizontal = 8.dp),
             ) {
                 Text(
-                    stringResource(seg.labelRes),
+                    stringResource(R.string.task_archive_all_done),
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (isSel) colors.accent else colors.textSecondary,
-                    maxLines = 1,
-                )
-                Text(
-                    "$count",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isSel) colors.textPrimary else colors.textSecondary,
                 )
             }
         }
     }
+}
+
+/** 批v160 W5: [TaskAccentTone] → the theme colour it reads as on this surface. */
+private fun TaskAccentTone.composeColor(
+    colors: app.codeg.android.core.designsystem.theme.CodegColors,
+): Color = when (this) {
+    TaskAccentTone.ARCHIVED -> colors.textSecondary.copy(alpha = 0.20f)
+    TaskAccentTone.SHELVED, TaskAccentTone.QUEUED -> colors.textSecondary.copy(alpha = 0.35f)
+    TaskAccentTone.LIVE -> colors.accent
+    TaskAccentTone.ATTENTION -> colors.warning
+    TaskAccentTone.FAILED -> colors.danger
+    TaskAccentTone.DONE -> colors.success
+    TaskAccentTone.CANCELED -> colors.textSecondary.copy(alpha = 0.25f)
 }
 
 @Composable
@@ -682,47 +802,240 @@ private fun FailedBanner(ui: TaskHubViewModel.UiState, onRetry: () -> Unit) {
     }
 }
 
-/** Colored status pill; the color IS the tone mapping, the label the raw truth. */
+/**
+ * Web StatusChip (task-card.tsx 84-156), 1:1: live statuses are spinner text in
+ * the accent colour, `awaiting_input`/`review` an outlined amber pill, `done` a
+ * green pill with a check, `failed` a red pill, the rest muted — and a shelved
+ * task reads as exactly that (muted + clock) whatever status is underneath.
+ * An interrupted failure reads differently from an agent failure.
+ */
 @Composable
-private fun StatusTag(task: app.codeg.android.core.model.WorkTaskInfo) {
-    val status = taskStatusUi(task)
+private fun WebStatusChip(task: WorkTaskInfo) {
     val colors = CodegTheme.colors
-    val color = when (status.tone) {
-        TaskStatusTone.NEUTRAL -> colors.textSecondary
-        TaskStatusTone.RUN -> colors.success
-        TaskStatusTone.WARN -> colors.warning
-        TaskStatusTone.INFO -> colors.accent
-        TaskStatusTone.DANGER -> colors.danger
-        TaskStatusTone.DONE -> colors.success
+    val status = taskStatusUi(task)
+    val deferred = isEffectivelyDeferred(task)
+    val label = when {
+        deferred -> stringResource(R.string.task_deferred_tag)
+        task.status == "failed" && task.failureReason == "interrupted" ->
+            stringResource(R.string.task_status_interrupted)
+        status.raw != null -> status.raw
+        else -> stringResource(status.labelRes)
     }
-    Tag(status.raw ?: stringResource(status.labelRes), color)
+    val base = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    when {
+        deferred -> ChipPill(
+            bg = colors.textSecondary.copy(alpha = 0.14f), fg = colors.textSecondary,
+            label = label, base = base, icon = Icons.Rounded.Clock,
+        )
+        task.status in LIVE_CHIP_STATUSES -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(10.dp), strokeWidth = 1.5.dp, color = colors.accent)
+            Text(label, style = base, color = colors.accent, maxLines = 1)
+        }
+        task.status == "awaiting_input" || task.status == "review" -> ChipPill(
+            bg = colors.warning.copy(alpha = 0.05f), fg = colors.warning,
+            label = label, base = base, border = colors.warning.copy(alpha = 0.45f),
+        )
+        task.status == "done" -> ChipPill(
+            bg = colors.success.copy(alpha = 0.10f), fg = colors.success,
+            label = label, base = base, icon = Icons.Rounded.Check,
+        )
+        task.status == "failed" -> ChipPill(
+            bg = colors.danger.copy(alpha = 0.10f), fg = colors.danger, label = label, base = base,
+        )
+        else -> ChipPill(
+            bg = colors.textSecondary.copy(alpha = 0.14f), fg = colors.textSecondary, label = label, base = base,
+        )
+    }
 }
 
+/** Statuses whose chip is bare spinner text in the accent colour (web 108-116). */
+private val LIVE_CHIP_STATUSES = setOf("queued", "preparing", "running", "merging")
+
 @Composable
-private fun Tag(text: String, color: Color) {
-    Box(
-        Modifier
-            .background(color.copy(alpha = 0.14f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 1.dp),
+private fun ChipPill(
+    bg: Color,
+    fg: Color,
+    label: String,
+    base: androidx.compose.ui.text.TextStyle,
+    border: Color? = null,
+    icon: ImageVector? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .then(if (border != null) Modifier.border(1.dp, border, RoundedCornerShape(50)) else Modifier)
+            .background(bg, RoundedCornerShape(50))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
+        icon?.let {
+            Icon(it, contentDescription = null, tint = fg, modifier = Modifier.size(10.dp))
+        }
+        Text(label, style = base, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The planned start of a to-do card — the one thing on it that says something
+ *  WILL happen (web ScheduleChip 375-389). */
+@Composable
+private fun SchedulePill(scheduledAt: String) {
+    val colors = CodegTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .background(colors.accent.copy(alpha = 0.10f), RoundedCornerShape(50))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Icon(Icons.Rounded.Schedule, contentDescription = null, tint = colors.accent, modifier = Modifier.size(10.dp))
         Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
+            relativeLabel(scheduledAt) ?: scheduledAt,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+            color = colors.accent,
             maxLines = 1,
         )
     }
 }
 
 /**
- * Compact card (任务书 §4.3): project + status on top, title, snippet, meta row
- * with ONE primary action (plus 查看会话 when the task has a session — 批v155
- * web parity), 查看详情 affordance at the bottom right. Long-press opens the
- * per-state context menu (web task-actions matrix, server-honest subset).
+ * One card action. The web `buildTaskActions` matrix minus what this wire
+ * doesn't carry (merge_queued / preflight / worktree state → no unqueue, no
+ * preflight/worktree chips); OPEN_SESSION is dispatched by the screen, it is
+ * not a ConfirmAction.
  */
-@OptIn(ExperimentalFoundationApi::class)
+private class CardAction(
+    val labelRes: Int,
+    val icon: ImageVector,
+    val kind: Kind,
+    val danger: Boolean = false,
+    val amber: Boolean = false,
+) {
+    enum class Kind {
+        START, CANCEL, RETRY, REQUEUE, MERGE, DELIVER_PR, COMPLETE, RETURN,
+        EDIT, SCHEDULE, ARCHIVE, UNARCHIVE, DEFER, UNDEFER, OPEN_SESSION,
+    }
+
+    fun toConfirm(entry: TaskBoardEntry): ConfirmAction = when (kind) {
+        Kind.START -> ConfirmAction.START(entry)
+        Kind.CANCEL -> ConfirmAction.CANCEL(entry)
+        Kind.RETRY -> ConfirmAction.RETRY(entry)
+        Kind.REQUEUE -> ConfirmAction.REQUEUE(entry)
+        Kind.MERGE -> ConfirmAction.MERGE(entry)
+        Kind.DELIVER_PR -> ConfirmAction.DELIVER_PR(entry)
+        Kind.COMPLETE -> ConfirmAction.COMPLETE(entry)
+        Kind.RETURN -> ConfirmAction.RETURN(entry)
+        Kind.EDIT -> ConfirmAction.EDIT(entry)
+        Kind.SCHEDULE -> ConfirmAction.SCHEDULE(entry)
+        Kind.ARCHIVE -> ConfirmAction.ARCHIVE(entry)
+        Kind.UNARCHIVE -> ConfirmAction.UNARCHIVE(entry)
+        Kind.DEFER -> ConfirmAction.DEFER(entry)
+        Kind.UNDEFER -> ConfirmAction.UNDEFER(entry)
+        Kind.OPEN_SESSION -> error("OPEN_SESSION is dispatched by the screen, not ConfirmAction")
+    }
+}
+
+private class CardActions(val primary: CardAction?, val secondaries: List<CardAction>)
+
+/** 「以后处理」, or — on a task already shelved — the way back (web deferToggle). */
+private fun cardDeferToggle(task: WorkTaskInfo): CardAction? = when {
+    isEffectivelyDeferred(task) ->
+        CardAction(R.string.task_action_undefer, Icons.Rounded.Inbox, CardAction.Kind.UNDEFER)
+    task.status in DEFERRABLE_STATUSES && !task.isArchivedLike ->
+        CardAction(R.string.task_action_defer, Icons.Rounded.Clock, CardAction.Kind.DEFER)
+    else -> null
+}
+
+/**
+ * The action set a card offers (web task-actions.ts buildTaskActions): exactly
+ * one primary per status on the left, secondaries on the right, 查看会话 always
+ * last when a session exists.
+ */
+private fun buildCardActions(task: WorkTaskInfo): CardActions {
+    val secondaries = mutableListOf<CardAction>()
+    var primary: CardAction? = null
+    if (task.isArchivedLike) {
+        // An archived row offers exactly one way back.
+        primary = CardAction(R.string.task_action_unarchive, Icons.Rounded.Unarchive, CardAction.Kind.UNARCHIVE)
+    } else {
+        when (task.status) {
+            "todo" -> {
+                primary = CardAction(R.string.task_action_start, Icons.Rounded.PlayArrow, CardAction.Kind.START)
+                secondaries += CardAction(R.string.task_action_edit, Icons.Rounded.Edit, CardAction.Kind.EDIT)
+                secondaries += CardAction(R.string.task_action_schedule, Icons.Rounded.Schedule, CardAction.Kind.SCHEDULE)
+            }
+            "queued", "preparing", "running", "awaiting_input" ->
+                primary = CardAction(R.string.task_action_cancel, Icons.Rounded.Block, CardAction.Kind.CANCEL, danger = true)
+            "review" -> {
+                if (isEffectivelyDeferred(task)) {
+                    // Picking it back up is what this card is for now (web 163-171).
+                    primary = CardAction(
+                        R.string.task_action_follow_up, Icons.AutoMirrored.Rounded.Undo,
+                        CardAction.Kind.RETURN, amber = true,
+                    )
+                    secondaries += CardAction(R.string.task_action_undefer, Icons.Rounded.Inbox, CardAction.Kind.UNDEFER)
+                } else {
+                    primary = when {
+                        // Nothing changed ⟹ nothing to merge: accept outright (web 176-181).
+                        (task.changedFileCount ?: -1) == 0 ->
+                            CardAction(R.string.task_action_complete, Icons.Rounded.CheckCircle, CardAction.Kind.COMPLETE, amber = true)
+                        // forge_pr: the local merge is refused server-side (web 182-191).
+                        task.fromPullRequest ->
+                            CardAction(R.string.task_action_deliver_pr, Icons.Rounded.CallMade, CardAction.Kind.DELIVER_PR, amber = true)
+                        else ->
+                            CardAction(R.string.task_action_merge, Icons.Rounded.CallMerge, CardAction.Kind.MERGE, amber = true)
+                    }
+                    cardDeferToggle(task)?.let { secondaries += it }
+                }
+            }
+            "merging" -> {} // no primary: it cannot be canceled
+            "failed" -> {
+                primary = CardAction(R.string.task_action_retry, Icons.Rounded.Replay, CardAction.Kind.RETRY)
+                secondaries += CardAction(R.string.task_action_edit, Icons.Rounded.Edit, CardAction.Kind.EDIT)
+                cardDeferToggle(task)?.let { secondaries += it }
+                secondaries += CardAction(R.string.task_action_archive, Icons.Rounded.Archive, CardAction.Kind.ARCHIVE)
+            }
+            "done" ->
+                primary = CardAction(R.string.task_action_archive, Icons.Rounded.Archive, CardAction.Kind.ARCHIVE)
+            "canceled", "cancelled" -> {
+                primary = CardAction(R.string.task_action_requeue, Icons.Rounded.Replay, CardAction.Kind.REQUEUE)
+                secondaries += CardAction(R.string.task_action_archive, Icons.Rounded.Archive, CardAction.Kind.ARCHIVE)
+            }
+        }
+    }
+    // The session is offered in every status once one exists; always last.
+    if (task.conversationId != null) {
+        secondaries += CardAction(R.string.task_open_session, Icons.Rounded.Chat, CardAction.Kind.OPEN_SESSION)
+    }
+    return CardActions(primary, secondaries)
+}
+
+private fun dispatchCardAction(
+    action: CardAction,
+    entry: TaskBoardEntry,
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit,
+    onAction: (ConfirmAction) -> Unit,
+) {
+    if (action.kind == CardAction.Kind.OPEN_SESSION) {
+        entry.task.conversationId?.let { onOpenSession(entry.serverId, it) }
+    } else {
+        onAction(action.toConfirm(entry))
+    }
+}
+
+/**
+ * 批v160 W5: the web TaskCard (task-card.tsx), 1:1 where the Android wire
+ * carries the data — rounded 16dp bordered card, agent mark + 2-line title +
+ * status chip on top, the folder/branch · ±stat · when meta line, a review
+ * card's 2-line verdict, and a footer of one primary pill on the left with
+ * round icon secondaries on the right. Long-press keeps the v155 context menu
+ * (the full per-status action matrix, server-honest).
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
-private fun TaskCard(
+private fun TaskCardWeb(
     entry: TaskBoardEntry,
     folderName: String?,
     busy: Boolean,
@@ -734,103 +1047,213 @@ private fun TaskCard(
     val task = entry.task
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
-    Card(
+    val actions = buildCardActions(task)
+    val metaStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+    val monoStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .combinedClickable(onClick = onOpenDetail, onLongClick = { menuOpen = true }),
-        colors = CardDefaults.cardColors(containerColor = colors.bgElevated),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            .then(if (task.isArchivedLike) Modifier.alpha(0.6f) else Modifier)
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.bgElevated)
+            .border(1.dp, colors.textPrimary.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+            .combinedClickable(onClick = onOpenDetail, onLongClick = { menuOpen = true })
+            .padding(12.dp),
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    folderName
-                        ?: task.folderId?.let { stringResource(R.string.task_folder_fallback, it) }
-                        ?: "—",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (spinning) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.size(6.dp))
-                }
-                StatusTag(task)
+        // Header: agent mark rides the first title line, chip pinned right.
+        Row(verticalAlignment = Alignment.Top) {
+            if (spinning) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(6.dp))
             }
+            Icon(
+                Icons.Rounded.SmartToy,
+                contentDescription = null,
+                tint = if (task.agentType != null || task.configAgentType != null) {
+                    colors.textSecondary
+                } else {
+                    colors.textTertiary.copy(alpha = 0.4f)
+                },
+                modifier = Modifier
+                    .padding(top = 1.dp)
+                    .size(14.dp),
+            )
             Text(
                 task.title,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 17.sp,
+                ),
                 color = colors.textPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp),
             )
+            WebStatusChip(task)
+        }
+        // Meta line (web 468-506). The server name is Android-only — this board
+        // aggregates across devices, the web board never does.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 6.dp),
+        ) {
+            Text(
+                entry.serverName,
+                style = metaStyle, color = colors.textSecondary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 96.dp),
+            )
+            folderName?.let {
+                Text(
+                    it,
+                    style = metaStyle, color = colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 160.dp),
+                )
+            }
+            task.workBranch?.let { branch ->
+                Text(
+                    branch,
+                    style = monoStyle, color = colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 160.dp),
+                )
+            }
+            if ((task.changedFileCount ?: 0) > 0) {
+                Text("+${task.additions ?: 0}", style = monoStyle, color = colors.success)
+                Text("-${task.deletions ?: 0}", style = monoStyle, color = colors.danger)
+            }
+            (task.finishedAt ?: task.settledAt ?: task.startedAt ?: task.createdAt)?.let { whenIso ->
+                relativeLabel(whenIso)?.let {
+                    Text(it, style = metaStyle, color = colors.textTertiary, maxLines = 1)
+                }
+            }
+            if (task.status == "todo" && task.scheduledAt != null) {
+                SchedulePill(task.scheduledAt)
+            }
+        }
+        // Review cards quote the agent's verdict, two lines (web 546-550).
+        if (task.status == "review") {
             task.resultSummary?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
                     color = colors.textSecondary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 6.dp),
-            ) {
-                Tag(entry.serverName, colors.textSecondary)
-                task.agentType?.let { Tag(it, colors.textSecondary) }
-                if (task.deferred) Tag(stringResource(R.string.task_deferred_tag), colors.warning)
-                relativeLabel(task.updatedAt ?: task.createdAt)?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
-                }
-                Spacer(Modifier.weight(1f))
-                // 批v155: 查看会话 — jump into the task's live session (continue
-                // typing / steer / resend), exactly the web card's session button.
-                // R3 P3-1: web shows it whenever a conversation exists (a retried
-                // failed→queued task keeps its session); todo rows simply have
-                // no conversationId yet, so no extra status filter.
-                val convId = task.conversationId
-                if (convId != null) {
-                    MiniButton(
-                        label = stringResource(R.string.task_open_session),
-                        danger = false,
-                        enabled = true,
-                    ) { onOpenSession(entry.serverId, convId) }
-                }
-                primaryAction(task)?.let { action ->
-                    // Always composed, only disabled: removing the button on any
-                    // in-flight action made every card's row height jump.
-                    MiniButton(
-                        label = stringResource(action.labelRes),
-                        danger = action.danger,
-                        enabled = !busy,
-                    ) { onAction(action.toConfirm(entry)) }
+        }
+        // Footer: divider, then primary pill left / round icon secondaries right
+        // (web 560-597). Always composed, only disabled — removing buttons on an
+        // in-flight action made every card's row height jump.
+        if (actions.primary != null || actions.secondaries.isNotEmpty()) {
+            Column(Modifier.padding(top = 12.dp)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(colors.textPrimary.copy(alpha = 0.08f)),
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                ) {
+                    actions.primary?.let { primary ->
+                        CardPrimaryPill(
+                            action = primary,
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f, fill = false),
+                        ) { dispatchCardAction(primary, entry, onOpenSession, onAction) }
+                    }
+                    if (actions.secondaries.isNotEmpty()) {
+                        Spacer(Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            actions.secondaries.forEach { secondary ->
+                                CardIconAction(action = secondary, enabled = !busy) {
+                                    dispatchCardAction(secondary, entry, onOpenSession, onAction)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            Text(
-                stringResource(R.string.task_view_detail) + " ›",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.accent,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .clickable(onClick = onOpenDetail),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            )
-            TaskContextMenu(
-                entry = entry,
-                expanded = menuOpen,
-                onDismiss = { menuOpen = false },
-                onOpenSession = onOpenSession,
-                onAction = onAction,
-            )
         }
+        TaskContextMenu(
+            entry = entry,
+            expanded = menuOpen,
+            onDismiss = { menuOpen = false },
+            onOpenSession = onOpenSession,
+            onAction = onAction,
+        )
+    }
+}
+
+/** The one filled primary pill of a card footer; danger/amber keep their tints. */
+@Composable
+private fun CardPrimaryPill(
+    action: CardAction,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val bg = when {
+        action.danger -> colors.danger.copy(alpha = 0.14f)
+        action.amber -> colors.warning.copy(alpha = 0.16f)
+        else -> colors.accent
+    }
+    val fg = when {
+        action.danger -> colors.danger
+        action.amber -> colors.warning
+        else -> colors.onAccent
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+            .heightIn(min = 32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Icon(action.icon, contentDescription = null, tint = fg, modifier = Modifier.size(13.dp))
+        Text(
+            stringResource(action.labelRes),
+            style = MaterialTheme.typography.labelMedium,
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** One round icon-only secondary of a card footer (web CardIconAction). */
+@Composable
+private fun CardIconAction(action: CardAction, enabled: Boolean, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    val tint = if (action.danger) colors.danger else colors.textSecondary
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .border(1.dp, colors.textPrimary.copy(alpha = 0.18f), CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            action.icon,
+            contentDescription = stringResource(action.labelRes),
+            tint = tint,
+            modifier = Modifier.size(15.dp),
+        )
     }
 }
 
@@ -931,68 +1354,15 @@ private fun MenuAction(labelRes: Int, danger: Boolean = false, onClick: () -> Un
     )
 }
 
-@Composable
-private fun MiniButton(label: String, danger: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val colors = CodegTheme.colors
-    val tint = if (danger) colors.danger else colors.accent
-    Box(
-        modifier = Modifier
-            .heightIn(min = 32.dp)
-            .background(tint.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (enabled) tint else tint.copy(alpha = 0.4f),
-        )
-    }
-}
-
-private class PrimaryAction(val labelRes: Int, val danger: Boolean, val kind: Kind) {
-    enum class Kind { START, CANCEL, RETRY, REQUEUE, MERGE, DELIVER_PR }
-    fun toConfirm(entry: TaskBoardEntry): ConfirmAction = when (kind) {
-        Kind.START -> ConfirmAction.START(entry)
-        Kind.CANCEL -> ConfirmAction.CANCEL(entry)
-        Kind.RETRY -> ConfirmAction.RETRY(entry)
-        Kind.REQUEUE -> ConfirmAction.REQUEUE(entry)
-        Kind.MERGE -> ConfirmAction.MERGE(entry)
-        Kind.DELIVER_PR -> ConfirmAction.DELIVER_PR(entry)
-    }
-}
-
-/** The ONE primary action per status; everything else lives in the detail sheet. */
-private fun primaryAction(task: app.codeg.android.core.model.WorkTaskInfo): PrimaryAction? {
-    // R5 P3-1: an archived row shows no card primary — the server would happily
-    // retry/requeue it behind the user's back (CAS sees only status, not the
-    // archived flag); web parity keeps archived rows out of the action matrix.
-    if (task.isArchivedLike) return null
-    return when (task.status) {
-    "todo" -> PrimaryAction(R.string.task_action_start, false, PrimaryAction.Kind.START)
-    // R3 P1-1: queued rows can never START — the server's claim CAS only
-    // matches Status::Todo, so the button always failed with "task is not in
-    // todo"; queued's primary (web parity) is 取消.
-    "queued" -> PrimaryAction(R.string.task_action_cancel, true, PrimaryAction.Kind.CANCEL)
-    "preparing", "running", "awaiting_input" -> PrimaryAction(R.string.task_action_cancel, true, PrimaryAction.Kind.CANCEL)
-    // R3 P2-3: a forge_pr task's merge is rejected server-side ("came from a
-    // pull request") — its review way out is 交付 PR (web's mustDeliverToPr).
-    "review" ->
-        if (task.fromPullRequest) {
-            PrimaryAction(R.string.task_action_deliver_pr, false, PrimaryAction.Kind.DELIVER_PR)
-        } else {
-            PrimaryAction(R.string.task_action_merge, false, PrimaryAction.Kind.MERGE)
-        }
-    "failed" -> PrimaryAction(R.string.task_action_retry, false, PrimaryAction.Kind.RETRY)
-    "canceled", "cancelled" -> PrimaryAction(R.string.task_action_requeue, false, PrimaryAction.Kind.REQUEUE)
-    else -> null // merging/done/unknown: no state action on the card
-    }
-}
-
 // region Detail sheet
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * 批v160 W5: the web task-detail-sheet (task-detail-sheet.tsx), 1:1 where the
+ * wire carries the data — agent-marked header with chip + ✕, a scroll body
+ * (任务描述 → 结果 → zone panel → InfoGrid → 变更文件 → 推进记录 → diff) and a
+ * FIXED footer of 查看会话 / 编辑 / 删除. Merging rows hide destructive actions
+ * (server refuses them anyway); an archived row keeps exactly one way back.
+ */
 @Composable
 private fun TaskDetailSheet(
     entry: TaskBoardEntry,
@@ -1009,15 +1379,17 @@ private fun TaskDetailSheet(
     val task = entry.task
     val colors = CodegTheme.colors
     LaunchedEffect(entry.serverId, task.id) { onOpen() }
-    // 批v151 全锁 + 固定头：标题行在滚动区外（拖拽关闭只认它），其余进滚动体。
+    // 批v151 全锁 + 固定头；W5 加固定底栏：滚动体 weight(1f)，头尾都钉死，
+    // 推进记录再长也只滚中间。
     Column(
         Modifier
             .fillMaxWidth()
+            .fillMaxHeight(0.94f)
             .sheetContentScrollLock()
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
-        // 批v153（第3轮可及性审查）：dragHandle=null 后标题行是唯一拖拽关闭区，
-        // 1 行标题时 ≈42.6dp——补 48dp（与 8 张姊妹 sheet 标题条同法）。
+        // Header (web 90-120): agent mark in a bordered tile, title, spinner,
+        // chip, ✕ — the drag handle is this whole row.
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -1025,39 +1397,51 @@ private fun TaskDetailSheet(
                 .heightIn(min = 48.dp)
                 .wrapContentHeight(Alignment.CenterVertically),
         ) {
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, colors.textPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Rounded.SmartToy,
+                    contentDescription = null,
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             Text(
                 task.title,
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp),
             )
             if (spinning) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.size(8.dp))
             }
-            StatusTag(task)
-            if (task.deferred) {
-                Spacer(Modifier.size(6.dp))
-                Tag(stringResource(R.string.task_deferred_tag), colors.warning)
+            WebStatusChip(task)
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.common_close),
+                    tint = colors.textSecondary,
+                )
             }
         }
         Column(
             Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            task.resultSummary?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            // 批v155: the task's own description (config.prompt_blocks) — what the
-            // agent actually launches with, above the metadata grid.
+            // 批v155: the task's own description (config.prompt_blocks) — what
+            // the agent actually launches with.
             task.configPromptText?.takeIf { it.isNotBlank() }?.let { prompt ->
                 DetailSection(stringResource(R.string.task_detail_prompt)) {
                     Text(
@@ -1067,102 +1451,367 @@ private fun TaskDetailSheet(
                     )
                 }
             }
+            // 结果 (web result block): the agent's own verdict text.
+            task.resultSummary?.takeIf { it.isNotBlank() }?.let {
+                DetailSection(stringResource(R.string.task_detail_summary)) {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textPrimary,
+                    )
+                }
+            }
+            DetailZonePanel(entry, busy, onAction)
             InfoGrid(entry, folderName)
-            // All native actions, confirm-gated (任务书 §4.4 — 以实际 API 能力为准).
-            // R5 P3-1: an archived row's ONLY action is 取消归档 (web parity) —
-            // retry/requeue/delete on a shelved row either resurrect it behind
-            // the user's back or just 4xx.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
-            ) {
-                if (task.isArchivedLike) {
-                    SheetAction(R.string.task_action_unarchive, busy) { onAction(ConfirmAction.UNARCHIVE(entry)) }
-                } else {
-                    task.conversationId?.let { convId ->
-                        SheetAction(R.string.task_open_session, busy = false) {
-                            onOpenSession(entry.serverId, convId)
-                        }
-                    }
-                    when (task.status) {
-                    // R1A: queued split from todo — schedule/edit are todo-only
-                    // on the server (CAS on Status::Todo); queued waits can be long.
-                    "todo" -> {
-                        SheetAction(R.string.task_action_start, busy) { onAction(ConfirmAction.START(entry)) }
-                        SheetAction(R.string.task_action_edit, busy) { onAction(ConfirmAction.EDIT(entry)) }
-                        SheetAction(R.string.task_action_schedule, busy) { onAction(ConfirmAction.SCHEDULE(entry)) }
-                        SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
-                    }
-                    "queued" ->
-                        SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
-                    "preparing", "running", "awaiting_input" ->
-                        SheetAction(R.string.task_action_cancel, busy, danger = true) { onAction(ConfirmAction.CANCEL(entry)) }
-                    "review" -> {
-                        // R3 P2-3: a forge_pr task's merge is rejected server-side —
-                        // hide 合并 the way the web's mustDeliverToPr does; 交付 PR
-                        // stays (the client can't see the forge remote to gate it).
-                        if (!task.fromPullRequest) {
-                            SheetAction(R.string.task_action_merge, busy) { onAction(ConfirmAction.MERGE(entry)) }
-                        }
-                        SheetAction(R.string.task_action_complete, busy) { onAction(ConfirmAction.COMPLETE(entry)) }
-                        SheetAction(R.string.task_action_return, busy) { onAction(ConfirmAction.RETURN(entry)) }
-                        SheetAction(R.string.task_action_deliver_pr, busy) { onAction(ConfirmAction.DELIVER_PR(entry)) }
-                    }
-                    "failed" -> {
-                        // R1A: no requeue — the server requeue path accepts
-                        // canceled rows only; failed's way out is 重试.
-                        SheetAction(R.string.task_action_retry, busy) { onAction(ConfirmAction.RETRY(entry)) }
-                        SheetAction(R.string.task_action_edit, busy) { onAction(ConfirmAction.EDIT(entry)) }
-                    }
-                    "canceled", "cancelled" -> {
-                        SheetAction(R.string.task_action_requeue, busy) { onAction(ConfirmAction.REQUEUE(entry)) }
-                        SheetAction(R.string.task_action_edit, busy) { onAction(ConfirmAction.EDIT(entry)) }
-                    }
-                }
-                when {
-                    // 搁置 only where the server accepts it (set_deferred filters to
-                    // DEFERRABLE = review/failed elsewhere — the button would always
-                    // no-op with a 4xx); unshelve shows whenever the flag is set.
-                    isEffectivelyDeferred(task) ->
-                        SheetAction(R.string.task_action_undefer, busy) { onAction(ConfirmAction.UNDEFER(entry)) }
-                    task.status in DEFERRABLE_STATUSES ->
-                        SheetAction(R.string.task_action_defer, busy) { onAction(ConfirmAction.DEFER(entry)) }
-                }
-                    when {
-                        // R3 P2-2: failed archives too (set_archived: done/failed/canceled).
-                        task.status == "done" || task.status == "failed" ||
-                            task.status == "canceled" || task.status == "cancelled" ->
-                            SheetAction(R.string.task_action_archive, busy) { onAction(ConfirmAction.ARCHIVE(entry)) }
-                    }
-                    // R3 P2-5: the server refuses to delete a merging row — wait for
-                    // the transient state to resolve instead of a guaranteed 4xx.
-                    if (task.status != "merging") {
-                        SheetAction(R.string.task_action_delete, busy, danger = true) { onAction(ConfirmAction.DELETE(entry)) }
+            // The load failed: say so and offer the retry, instead of a blank
+            // panel that looks like "no events / no files".
+            detail?.loadError?.let { err ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                ) {
+                    Text(
+                        err,
+                        color = colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onOpen, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Text(stringResource(R.string.task_action_retry), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
-            TaskDetailBody(detail, onLoadDiff, onRetry = onOpen)
-            Spacer(Modifier.padding(bottom = 24.dp))
+            detail?.changedFiles?.takeIf { it.isNotEmpty() }?.let { files ->
+                ChangedFilesSection(files)
+            }
+            detail?.events?.takeIf { it.isNotEmpty() }?.let { events ->
+                DetailSection(stringResource(R.string.task_detail_events)) {
+                    TaskTimeline(events)
+                }
+            }
+            if (detail != null) {
+                DiffSection(detail, onLoadDiff)
+            }
+            Spacer(Modifier.padding(bottom = 16.dp))
+        }
+        // Fixed footer (web bottom bar): divider, 查看会话 + 编辑 left, 删除
+        // right. 批v160 W5: 编辑 moves here from the action grid (web canEdit
+        // = todo/failed — Android adds canceled, the server accepts it); 删除
+        // keeps the server's no-merging rule and R5 P3-1's archived gate.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(colors.textPrimary.copy(alpha = 0.08f)),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+        ) {
+            task.conversationId?.let { convId ->
+                TextButton(onClick = { onOpenSession(entry.serverId, convId) }) {
+                    Icon(
+                        Icons.Rounded.Chat,
+                        contentDescription = null,
+                        tint = colors.accent,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.size(4.dp))
+                    Text(stringResource(R.string.task_open_session), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            val canEdit = !task.isArchivedLike &&
+                (task.status == "todo" || task.status == "failed" || task.status == "canceled" || task.status == "cancelled")
+            if (canEdit) {
+                TextButton(onClick = { onAction(ConfirmAction.EDIT(entry)) }) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = colors.textSecondary,
+                        modifier = Modifier.size(15.dp),
+                    )
+                    Spacer(Modifier.size(4.dp))
+                    Text(stringResource(R.string.task_action_edit), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            // R3 P2-5: the server refuses to delete a merging row — wait for the
+            // transient state to resolve instead of a guaranteed 4xx.
+            if (task.status != "merging" && !task.isArchivedLike) {
+                TextButton(onClick = { onAction(ConfirmAction.DELETE(entry)) }) {
+                    Text(
+                        stringResource(R.string.task_action_delete),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.danger,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The zone panel (web detail-sheet zone): a bordered block that turns AMBER on
+ * review — "the agent is waiting on YOU" — and carries the per-status actions
+ * the wide sheet can afford. One filled primary per row; a trailing ghost rides
+ * the same row pushed right (web filled/trailing split), the rest wrap below.
+ */
+@Composable
+private fun DetailZonePanel(
+    entry: TaskBoardEntry,
+    busy: Boolean,
+    onAction: (ConfirmAction) -> Unit,
+) {
+    val task = entry.task
+    // merging: transient, nothing to offer — the panel vanishes for a beat.
+    if (task.status == "merging") return
+    val colors = CodegTheme.colors
+    val amber = task.status == "review" && !isEffectivelyDeferred(task) && !task.isArchivedLike
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (amber) colors.warning.copy(alpha = 0.05f) else colors.textPrimary.copy(alpha = 0.03f))
+            .border(
+                1.dp,
+                if (amber) colors.warning.copy(alpha = 0.30f) else colors.textPrimary.copy(alpha = 0.10f),
+                RoundedCornerShape(14.dp),
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when {
+            // R5 P3-1: an archived row's ONLY action is 取消归档 — the server
+            // would happily retry/requeue it behind the user's back.
+            task.isArchivedLike -> ZoneRow {
+                ZoneFilled(
+                    R.string.task_action_unarchive, Icons.Rounded.Unarchive, busy,
+                    modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.UNARCHIVE(entry)) }
+            }
+            task.status == "review" && isEffectivelyDeferred(task) -> ZoneRow {
+                // Shelved review: picking it back up is the whole point.
+                ZoneFilled(
+                    R.string.task_action_follow_up, Icons.AutoMirrored.Rounded.Undo, busy,
+                    modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.RETURN(entry)) }
+                ZoneGhost(R.string.task_action_undefer, Icons.Rounded.Inbox, busy) {
+                    onAction(ConfirmAction.UNDEFER(entry))
+                }
+            }
+            task.status == "review" -> {
+                // Primary = the way out this task actually has: nothing changed
+                // ⟹ nothing to merge (完成); a forge_pr task's merge is refused
+                // server-side ⟹ 交付 PR (R3 P2-3); otherwise 合并. Trailing
+                // 放弃 rides the same row pushed right (web parity).
+                ZoneRow {
+                    val primary = when {
+                        (task.changedFileCount ?: -1) == 0 ->
+                            Triple(R.string.task_action_complete, Icons.Rounded.CheckCircle, ConfirmAction.COMPLETE(entry))
+                        task.fromPullRequest ->
+                            Triple(R.string.task_action_deliver_pr, Icons.Rounded.CallMade, ConfirmAction.DELIVER_PR(entry))
+                        else ->
+                            Triple(R.string.task_action_merge, Icons.Rounded.CallMerge, ConfirmAction.MERGE(entry))
+                    }
+                    ZoneFilled(primary.first, primary.second, busy, modifier = Modifier.weight(1f)) {
+                        onAction(primary.third)
+                    }
+                    ZoneGhost(R.string.task_action_abandon, Icons.Rounded.Block, busy, danger = true) {
+                        onAction(ConfirmAction.CANCEL(entry))
+                    }
+                }
+                ZoneRow {
+                    // The alternative delivery path: a normal task can still be
+                    // turned into a PR instead of merging (web offers both).
+                    if (!task.fromPullRequest && (task.changedFileCount ?: -1) != 0) {
+                        ZoneGhost(R.string.task_action_deliver_pr, Icons.Rounded.CallMade, busy) {
+                            onAction(ConfirmAction.DELIVER_PR(entry))
+                        }
+                    }
+                    ZoneGhost(R.string.task_action_follow_up, Icons.AutoMirrored.Rounded.Undo, busy) {
+                        onAction(ConfirmAction.RETURN(entry))
+                    }
+                    ZoneGhost(R.string.task_action_defer, Icons.Rounded.Clock, busy) {
+                        onAction(ConfirmAction.DEFER(entry))
+                    }
+                }
+            }
+            task.status == "todo" -> ZoneRow {
+                // R1A: schedule/edit are todo-only on the server (CAS on
+                // Status::Todo); web parity drops todo-取消 from the zone.
+                ZoneFilled(
+                    R.string.task_action_start, Icons.Rounded.PlayArrow, busy,
+                    modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.START(entry)) }
+                ZoneGhost(R.string.task_action_schedule, Icons.Rounded.Schedule, busy) {
+                    onAction(ConfirmAction.SCHEDULE(entry))
+                }
+            }
+            task.status == "queued" || task.status == "preparing" ||
+                task.status == "running" || task.status == "awaiting_input" -> ZoneRow {
+                ZoneFilled(
+                    R.string.task_action_cancel, Icons.Rounded.Block, busy,
+                    danger = true, modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.CANCEL(entry)) }
+            }
+            task.status == "failed" -> {
+                // R1A: no requeue — the server requeue path accepts canceled
+                // rows only; failed's way out is 重试.
+                ZoneRow {
+                    ZoneFilled(
+                        R.string.task_action_retry, Icons.Rounded.Replay, busy,
+                        modifier = Modifier.weight(1f),
+                    ) { onAction(ConfirmAction.RETRY(entry)) }
+                    if (isEffectivelyDeferred(task)) {
+                        ZoneGhost(R.string.task_action_undefer, Icons.Rounded.Inbox, busy) {
+                            onAction(ConfirmAction.UNDEFER(entry))
+                        }
+                    } else {
+                        ZoneGhost(R.string.task_action_defer, Icons.Rounded.Clock, busy) {
+                            onAction(ConfirmAction.DEFER(entry))
+                        }
+                    }
+                }
+                ZoneRow {
+                    ZoneGhost(R.string.task_action_archive, Icons.Rounded.Archive, busy) {
+                        onAction(ConfirmAction.ARCHIVE(entry))
+                    }
+                }
+            }
+            task.status == "done" -> ZoneRow {
+                ZoneFilled(
+                    R.string.task_action_archive, Icons.Rounded.Archive, busy,
+                    modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.ARCHIVE(entry)) }
+            }
+            task.status == "canceled" || task.status == "cancelled" -> ZoneRow {
+                ZoneFilled(
+                    R.string.task_action_requeue, Icons.Rounded.Replay, busy,
+                    modifier = Modifier.weight(1f),
+                ) { onAction(ConfirmAction.REQUEUE(entry)) }
+                ZoneGhost(R.string.task_action_archive, Icons.Rounded.Archive, busy) {
+                    onAction(ConfirmAction.ARCHIVE(entry))
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun ZoneRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+        content = content,
+    )
+}
+
+/** The zone's solid primary (web `filled`): accent on-accent, 40dp tall. */
+@Composable
+private fun ZoneFilled(
+    labelRes: Int,
+    icon: ImageVector,
+    enabled: Boolean,
+    danger: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val bg = if (danger) colors.danger else colors.accent
+    val fg = if (danger) colors.onAccent else colors.onAccent
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(15.dp))
+        Text(
+            stringResource(labelRes),
+            style = MaterialTheme.typography.labelMedium,
+            color = fg,
+            maxLines = 1,
+        )
+    }
+}
+
+/** The zone's outlined secondary (web `ghost`); danger keeps a red label. */
+@Composable
+private fun ZoneGhost(
+    labelRes: Int,
+    icon: ImageVector,
+    enabled: Boolean,
+    danger: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val tint = if (danger) colors.danger else colors.textSecondary
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, colors.textPrimary.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
+        Text(
+            stringResource(labelRes),
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Metadata grid (web InfoGrid): 补齐 web 的 分支 `work ← base`、变更计数、
+ * 开始/完成时间 — the lifecycle timestamps this wire only started carrying in
+ * W5. Grid stays string-based; the colored ±stats live on the card/footer.
+ */
+@Composable
 private fun InfoGrid(entry: TaskBoardEntry, folderName: String?) {
     val task = entry.task
     val colors = CodegTheme.colors
-    val rows = listOf(
+    val branchValue = when {
+        task.workBranch != null && task.baseBranch != null -> "${task.workBranch} ← ${task.baseBranch}"
+        else -> task.workBranch ?: task.baseBranch ?: "—"
+    }
+    val changesValue = if ((task.changedFileCount ?: 0) > 0) {
+        "${task.changedFileCount} · +${task.additions ?: 0} -${task.deletions ?: 0}"
+    } else {
+        null
+    }
+    val rows = listOfNotNull(
         stringResource(R.string.task_detail_device) to entry.serverName,
         stringResource(R.string.task_detail_project) to (folderName ?: "#${task.folderId}"),
         stringResource(R.string.task_detail_agent) to (task.agentType ?: "—"),
-        stringResource(R.string.task_detail_branch) to (task.workBranch ?: task.baseBranch ?: "—"),
+        stringResource(R.string.task_detail_branch) to branchValue,
+        changesValue?.let { stringResource(R.string.task_detail_changes) to it },
         stringResource(R.string.task_detail_created) to (relativeLabel(task.createdAt) ?: "—"),
+        task.startedAt?.let { stringResource(R.string.task_detail_started) to (relativeLabel(it) ?: it) },
+        (task.finishedAt ?: task.settledAt)?.let {
+            stringResource(R.string.task_detail_finished) to (relativeLabel(it) ?: it)
+        },
         stringResource(R.string.task_detail_updated) to (relativeLabel(task.updatedAt) ?: "—"),
         task.scheduledAt?.let { stringResource(R.string.task_detail_scheduled) to (relativeLabel(it) ?: it) },
         stringResource(R.string.task_detail_task_id) to "#${task.id}",
     )
     Column(Modifier.padding(top = 10.dp)) {
-        rows.filterNotNull().forEach { (label, value) ->
+        rows.forEach { (label, value) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(
                     label,
@@ -1182,70 +1831,168 @@ private fun InfoGrid(entry: TaskBoardEntry, folderName: String?) {
     }
 }
 
-@Composable
-private fun SheetAction(labelRes: Int, busy: Boolean, danger: Boolean = false, onClick: () -> Unit) {
-    MiniButton(stringResource(labelRes), danger, enabled = !busy, onClick = onClick)
-}
-
 // endregion
 
+/** 变更文件 (web file list): mono path, +adds green / -dels red, capped at 20. */
 @Composable
-private fun TaskDetailBody(
-    detail: TaskHubViewModel.TaskDetail?,
-    onLoadDiff: () -> Unit,
-    onRetry: () -> Unit = {},
-) {
+private fun ChangedFilesSection(files: List<WorkTaskChangedFile>) {
     val colors = CodegTheme.colors
-    if (detail == null) return
-    // The load failed: say so and offer the retry, instead of a blank panel
-    // that looks like "no events / no files".
-    detail.loadError?.let { err ->
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        ) {
-            Text(
-                err,
-                color = colors.danger,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onRetry, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                Text(stringResource(R.string.task_action_retry), style = MaterialTheme.typography.labelMedium)
-            }
-        }
-    }
-    detail.changedFiles?.takeIf { it.isNotEmpty() }?.let { files ->
-        DetailSection(stringResource(R.string.task_detail_files)) {
+    DetailSection(stringResource(R.string.task_detail_files)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             files.take(20).forEach { file ->
-                Text(
-                    file.path,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        file.path,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    file.additions?.takeIf { it > 0 }?.let {
+                        Text("+$it", style = MaterialTheme.typography.labelSmall, color = colors.success)
+                    }
+                    file.deletions?.takeIf { it > 0 }?.let {
+                        Text("-$it", style = MaterialTheme.typography.labelSmall, color = colors.danger)
+                    }
+                }
             }
         }
     }
-    detail.events?.takeIf { it.isNotEmpty() }?.let { events ->
-        DetailSection(stringResource(R.string.task_detail_events)) {
-            events.take(10).forEach { event ->
-                Text(
-                    listOfNotNull(
-                        event.createdAt?.let { relativeLabel(it) },
-                        event.actor,
-                        event.kind,
-                        event.summary,
-                    ).joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                    maxLines = 2,
-                )
+}
+
+/** status_changed head dot color (web timeline): live=accent, attention=amber,
+ *  failed=red, done=green, the rest muted. */
+private fun statusDotColor(status: String?, colors: CodegColors): Color = when (status) {
+    "queued", "preparing", "running" -> colors.accent
+    "awaiting_input", "review", "merging" -> colors.warning
+    "failed" -> colors.danger
+    "done" -> colors.success
+    else -> colors.textSecondary.copy(alpha = 0.5f)
+}
+
+/** Localized label for an event kind; the raw kind falls back as-is. */
+@Composable
+private fun taskEventLabel(kind: String): String = when (kind) {
+    "created" -> stringResource(R.string.task_event_created)
+    "status_changed" -> stringResource(R.string.task_event_status_changed)
+    "config_effective" -> stringResource(R.string.task_event_config_effective)
+    "init_command" -> stringResource(R.string.task_event_init_command)
+    "agent_progress" -> stringResource(R.string.task_event_agent_progress)
+    "agent_verdict" -> stringResource(R.string.task_event_agent_verdict)
+    "merge_attempt" -> stringResource(R.string.task_event_merge_attempt)
+    "merge_queued" -> stringResource(R.string.task_event_merge_queued)
+    "deliver_attempt" -> stringResource(R.string.task_event_deliver_attempt)
+    "delivered_pr" -> stringResource(R.string.task_event_delivered_pr)
+    "merge_conflict" -> stringResource(R.string.task_event_merge_conflict)
+    "preflight_result" -> stringResource(R.string.task_event_preflight)
+    "cleanup_failed" -> stringResource(R.string.task_event_cleanup_failed)
+    "resume_fallback" -> stringResource(R.string.task_event_resume_fallback)
+    "context_compact" -> stringResource(R.string.task_event_context_compact)
+    "user_action" -> stringResource(R.string.task_event_user_action)
+    "diff_stat" -> stringResource(R.string.task_event_diff_stat)
+    "forge_writeback" -> stringResource(R.string.task_event_forge_writeback)
+    "forge_writeback_failed" -> stringResource(R.string.task_event_forge_writeback_failed)
+    else -> kind
+}
+
+/**
+ * 推进记录 (web timeline, 1:1 where the wire carries it): status_changed reads
+ * as a colored dot head (target status + its note), every other event a rail
+ * row with a localized kind label, summary, and the time on the right.
+ */
+@Composable
+private fun TaskTimeline(events: List<WorkTaskEvent>) {
+    val colors = CodegTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        events.take(20).forEach { event ->
+            if (event.kind == "status_changed") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusDotColor(event.to, colors)),
+                    )
+                    Text(
+                        event.to?.let { to ->
+                            taskStatusLabelRes(to)?.let { stringResource(it) } ?: to
+                        } ?: (event.summary ?: taskEventLabel(event.kind)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    event.summary?.let { note ->
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } ?: Spacer(Modifier.weight(1f))
+                    Text(
+                        relativeLabel(event.createdAt) ?: "—",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                    )
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
+                ) {
+                    Box(
+                        Modifier
+                            .width(1.dp)
+                            .fillMaxHeight()
+                            .background(colors.textPrimary.copy(alpha = 0.10f)),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            taskEventLabel(event.kind),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        event.summary?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textSecondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Text(
+                        relativeLabel(event.createdAt) ?: "—",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textTertiary,
+                    )
+                }
             }
         }
     }
+}
+
+/** Diff block — unchanged from 批v155, lifted out of the old TaskDetailBody. */
+@Composable
+private fun DiffSection(detail: TaskHubViewModel.TaskDetail, onLoadDiff: () -> Unit) {
+    val colors = CodegTheme.colors
     DetailSection(stringResource(R.string.task_detail_diff)) {
         when {
             detail.diff != null -> {
