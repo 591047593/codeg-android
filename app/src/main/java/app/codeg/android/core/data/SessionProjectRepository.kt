@@ -62,10 +62,13 @@ class SessionProjectRepository @Inject constructor(
     /** Member keys ("serverId:conversationId") of the active project, or null
      *  when no filter is active — the exact shape the section builders want.
      *  The 未添加 sentinel yields null here: its complement-narrowing rides
-     *  [activeExcludeKeys] instead (a key-set can't express "everything else"). */
+     *  [activeExcludeKeys] instead (a key-set can't express "everything else").
+     *  A real id with zero members yields an EMPTY set — the scope matches
+     *  nothing — never null, which would mean "no filter" (R1-B P2-3). */
     val activeMemberKeys: Flow<Set<String>?> =
         combine(_activeProjectId, members) { id, mem ->
-            id?.takeIf { it != UNASSIGNED_PROJECT_ID }?.let { pid -> mem[pid]?.map { it.key }?.toSet() }
+            id?.takeIf { it != UNASSIGNED_PROJECT_ID }
+                ?.let { pid -> mem[pid]?.map { it.key }?.toSet() ?: emptySet() }
         }
 
     /** 批v160 W9: the complement of [activeMemberKeys] — every ASSIGNED ref key,

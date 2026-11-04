@@ -95,6 +95,20 @@ class SessionProjectRepositoryTest {
         }
     }
 
+    @Test
+    fun `activeMemberKeys of an empty project is an empty set, never null`() = runBlocking {
+        // R1-B P2-3: an id with zero members is a filter that matches NOTHING.
+        // Emitting null here would mean "no filter" and show every session.
+        val (repo, scope) = newRepo()
+        try {
+            val p = repo.create("Empty")
+            repo.activateCreated(p.id)
+            assertEquals(emptySet<String>(), repo.activeMemberKeys.first())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     // ---- 批v160 W9: the 未添加 sentinel scope ----
 
     @Test

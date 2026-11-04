@@ -8,7 +8,7 @@ import app.codeg.android.core.data.orderedProjectChips
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.DraftFolderPrefsStore
-import app.codeg.android.core.datastore.SessionProjectRepository
+import app.codeg.android.core.data.SessionProjectRepository
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.FolderVisibility
 import app.codeg.android.core.network.CodegClient

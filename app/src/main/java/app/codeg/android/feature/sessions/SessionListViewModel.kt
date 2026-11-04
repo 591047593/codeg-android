@@ -289,44 +289,41 @@ class SessionListViewModel @Inject constructor(
      */
     val aggregateSections: StateFlow<List<AggregateSection>> =
         combine(
-            // 批v160: 7 flows exceed combine's typed arity — the base tuple rides
+            // 批v160: 8 flows exceed combine's typed arity — the base tuple rides
             // the existing data-class pattern (see [AggregateInput]).
             combine(
-                // 批v160: 7 flows exceed combine's typed arity — the base tuple rides
-                // the existing data-class pattern (see [AggregateInput]).
-                combine(
-                    _agg,
-                    repository.chatsAll,
-                    projectRepo.activeMemberKeys,
-                    appSettingsStore.sessionReadMarks,
-                    aggregateDeviceFilter.hiddenDevices,
-                ) { agg, all, memberKeys, marks, hiddenDevices ->
-                    AggregateSectionsInput(agg, all, memberKeys, marks, hiddenDevices)
-                },
-                aggregateProjectFilter.hiddenProjects,
-                projectRepo.members,
-                // 批v160 W9: the 未添加 sentinel's complement flow (null unless that
-                // scope is active) — rides the outer combine, which still fits the
-                // typed 4-arity overload.
-                projectRepo.activeExcludeKeys,
-            ) { input, hiddenProjects, members, excludeKeys ->
-                // Invert membership once per recomputation: refKey → project ids, the
-                // shape the row-level project filter consults.
-                val memberProjects = buildMap<String, MutableSet<String>> {
-                    for ((projectId, refs) in members) {
-                        for (ref in refs) getOrPut(ref.key) { mutableSetOf() }.add(projectId)
-                    }
+                _agg,
+                repository.chatsAll,
+                projectRepo.activeMemberKeys,
+                appSettingsStore.sessionReadMarks,
+                aggregateDeviceFilter.hiddenDevices,
+            ) { agg, all, memberKeys, marks, hiddenDevices ->
+                AggregateSectionsInput(agg, all, memberKeys, marks, hiddenDevices)
+            },
+            aggregateProjectFilter.hiddenProjects,
+            projectRepo.members,
+            // 批v160 W9: the 未添加 sentinel's complement flow (null unless that
+            // scope is active) — rides the outer combine, which still fits the
+            // typed 4-arity overload.
+            projectRepo.activeExcludeKeys,
+        ) { input, hiddenProjects, members, excludeKeys ->
+            // Invert membership once per recomputation: refKey → project ids, the
+            // shape the row-level project filter consults.
+            val memberProjects = buildMap<String, MutableSet<String>> {
+                for ((projectId, refs) in members) {
+                    for (ref in refs) getOrPut(ref.key) { mutableSetOf() }.add(projectId)
                 }
-                buildAggregateSessionSections(
-                    input.servers,
-                    input.memberKeys.takeIf { input.all },
-                    input.readMarks,
-                    excludeKeys = excludeKeys.takeIf { input.all },
-                    hiddenServerIds = input.hiddenDevices,
-                    hiddenProjectIds = hiddenProjects,
-                    memberProjects = memberProjects,
-                )
             }
+            buildAggregateSessionSections(
+                input.servers,
+                input.memberKeys.takeIf { input.all },
+                input.readMarks,
+                excludeKeys = excludeKeys.takeIf { input.all },
+                hiddenServerIds = input.hiddenDevices,
+                hiddenProjectIds = hiddenProjects,
+                memberProjects = memberProjects,
+            )
+        }
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -379,11 +376,18 @@ class SessionListViewModel @Inject constructor(
         }
     }
 
-    /** Check/uncheck one project in the 全部 list (pure view filter, 批v160). */
+    /** Check/uncheck one project in the 全部 list (pure view filter, 批v160).
+     *  Hiding the project that currently OWNS the active scope must also drop
+     *  the scope (mirrors AppViewModel.onHideProject): otherwise the list is
+     *  filtered by a project whose chip no longer renders and there is no
+     *  visible way to leave it (R1-B P2-2). */
     fun setProjectVisible(projectId: String, visible: Boolean) {
         viewModelScope.launch {
             try {
                 aggregateProjectFilter.setVisible(projectId, visible)
+                if (!visible && projectRepo.activeProjectId.value == projectId) {
+                    projectRepo.setActive(null)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

@@ -198,7 +198,7 @@ fun GeneralContent(
             if (!appSettings.projectChipSortByCount) {
                 // Display order = the row's effective order (saved ids first,
                 // then the never-moved rest) — the same order the chips render.
-                val repoProjects = viewModel.sessionProjectRepo.projects.collectAsStateWithLifecycle()
+                val repoProjects by viewModel.sessionProjectRepo.projects.collectAsStateWithLifecycle()
                 val projects = app.codeg.android.core.data.orderedProjectChips(
                     repoProjects, appSettings.projectChipOrder, sortByCount = false, counts = emptyMap(),
                 )

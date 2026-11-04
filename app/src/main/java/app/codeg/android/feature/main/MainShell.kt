@@ -521,7 +521,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         }
     }
     // Any route change — switching tabs or pushing a full-screen detail — reveals the bar.
-    LaunchedEffect(currentRoute) { barsVisible = true }
+    LaunchedEffect(currentRoute) {
+        barsVisible = true
+        // R1-B P3-4: the mode card is rememberSaveable — without this, a route
+        // change while it's open (deep link, notification tap) leaves it stale
+        // true and it resurrects on the next bar-bearing surface.
+        showModeCard = false
+    }
 
     // Project-filter invariant (batch v132 review #3, v134 rework): the filter only
     // lives while a tab surface is in an aggregate mode. Adjudicate ONLY on tab
@@ -1197,10 +1203,17 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     showAll = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS ||
                         currentRoute == ROUTE_SEARCH || currentRoute == HomeTab.TASKS.route,
                     allSubtitle = when {
-                        projectMode && activeProjectId == UNASSIGNED_PROJECT_ID ->
-                            stringResource(R.string.sessions_unassigned)
-                        activeProjectId != null ->
-                            sessionProjects.firstOrNull { it.id == activeProjectId }?.name
+                        // R1-B P3-5: a project scope only narrows the two session
+                        // surfaces — echo its name ONLY there. On tasks/search the
+                        // subtitle would advertise a filter that doesn't apply.
+                        currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS ->
+                            when {
+                                projectMode && activeProjectId == UNASSIGNED_PROJECT_ID ->
+                                    stringResource(R.string.sessions_unassigned)
+                                activeProjectId != null ->
+                                    sessionProjects.firstOrNull { it.id == activeProjectId }?.name
+                                else -> null
+                            }
                         else -> null
                     },
                     onSelectServer = { id ->
@@ -1602,12 +1615,20 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 counts = sessionProjectMembers.mapValues { it.value.size },
                 activeId = activeProjectId,
                 onSelect = { pid ->
+                    // R1-B P2-1: same guard as the chip row — entering a project
+                    // scope IS entering the aggregate. Without it the scope would
+                    // hang off a single-device view and render as an empty list.
+                    if (currentRoute == ROUTE_CHATS) appViewModel.setChatsAll(true)
+                    else appViewModel.setActivityAll(true)
                     appViewModel.setActiveProject(pid)
                     showProjectSheet = false
                 },
                 onCreateActivate = { name ->
                     // Create-and-filter in one step (R1-1); close the sheet so the
-                    // freshly filtered list is immediately visible (R2-9).
+                    // freshly filtered list is immediately visible (R2-9). Same
+                    // aggregate guard as onSelect.
+                    if (currentRoute == ROUTE_CHATS) appViewModel.setChatsAll(true)
+                    else appViewModel.setActivityAll(true)
                     appViewModel.createAndActivateProject(name)
                     showProjectSheet = false
                 },
