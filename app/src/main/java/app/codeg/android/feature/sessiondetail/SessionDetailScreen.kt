@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -432,28 +433,46 @@ fun SessionDetailScreen(
         },
         bottomBar = {
             Column(Modifier.imePadding()) {
-                ui.pendingPermission?.let { p ->
-                    PermissionRequestCard(
-                        parsed = p.parsed,
-                        options = p.options,
-                        onRespond = viewModel::respondPermission,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                ui.pendingQuestion?.let { q ->
-                    AskQuestionCard(
-                        questions = q.questions,
-                        onSubmit = viewModel::answerQuestion,
-                        onSkip = viewModel::dismissQuestion,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                ui.pendingPlanApproval?.let { p ->
-                    PlanApprovalCard(
-                        planMarkdown = p.planMarkdown,
-                        onAnswer = viewModel::answerPlanApproval,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
+                // 批v160: the interactive cards live in a bounded, scrollable strip —
+                // a tall card (expanded raw JSON, long plan, several questions) can
+                // no longer push its option row off-screen under the IME (the
+                // "only one button visible" report). The composer below stays pinned;
+                // the strip scrolls instead of clipping.
+                if (ui.pendingPermission != null || ui.pendingQuestion != null || ui.pendingPlanApproval != null) {
+                    val stripMax = with(androidx.compose.ui.platform.LocalConfiguration.current) {
+                        (screenHeightDp * 0.6f).dp
+                    }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = stripMax)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        ui.pendingPermission?.let { p ->
+                            PermissionRequestCard(
+                                parsed = p.parsed,
+                                options = p.options,
+                                onRespond = viewModel::respondPermission,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                        ui.pendingQuestion?.let { q ->
+                            AskQuestionCard(
+                                questions = q.questions,
+                                onSubmit = viewModel::answerQuestion,
+                                onSkip = viewModel::dismissQuestion,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                        ui.pendingPlanApproval?.let { p ->
+                            PlanApprovalCard(
+                                planMarkdown = p.planMarkdown,
+                                onAnswer = viewModel::answerPlanApproval,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
                 }
                 // Keep the last shown message so the exit animation has content to fade.
                 var lastNotice by remember { mutableStateOf("") }

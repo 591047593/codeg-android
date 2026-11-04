@@ -968,6 +968,8 @@
 
     <!-- ===== Session Detail · Permission fallback ===== -->
     <string name="perm_request_title">权限请求</string>
+    <string name="perm_details_expand">展开完整调用参数</string>
+    <string name="perm_details_collapse">收起调用参数</string>
 
     <!-- ===== ViewModel toasts (interactive flows) ===== -->
     <string name="cc_test_message_sent">测试消息已发送。</string>

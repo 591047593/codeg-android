@@ -989,6 +989,8 @@
 
     <!-- ===== Session Detail · Permission fallback ===== -->
     <string name="perm_request_title">Permission Request</string>
+    <string name="perm_details_expand">Show full payload</string>
+    <string name="perm_details_collapse">Hide full payload</string>
 
     <!-- ===== ViewModel toasts (interactive flows) ===== -->
     <string name="cc_test_message_sent">Test message sent.</string>

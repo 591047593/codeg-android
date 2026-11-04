@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -17,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Assignment
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,11 +34,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
@@ -46,6 +49,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.PermissionOption
 
 /** A tool-permission approval card shown above the composer. Port of iOS `PermissionRequestCard`. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PermissionRequestCard(
     parsed: ParsedPermission,
@@ -55,6 +59,10 @@ fun PermissionRequestCard(
 ) {
     val colors = CodegTheme.colors
     var submitting by remember(parsed.jsonPreview) { mutableStateOf<String?>(null) }
+    // 批v160: the raw tool_call JSON starts as a 2-line summary — the owner reads
+    // the question and the options first; the wire payload is noise until asked
+    // for (web permission-dialog keeps its raw view behind the same principle).
+    var rawExpanded by remember(parsed.jsonPreview) { mutableStateOf(false) }
     val accent = colors.accent
 
     Column(
@@ -95,38 +103,104 @@ fun PermissionRequestCard(
             }
         }
 
-        // Body.
-        val scrolls = parsed.diffFiles.isNotEmpty() || parsed.planMarkdown != null ||
+        // Body. The structured shapes (command / diff / plan) render directly; the
+        // raw-JSON fallback collapses to two lines until expanded. Whatever shows
+        // here scrolls under a fixed cap so the options below can never be pushed
+        // off-screen.
+        val scrolls = rawExpanded || parsed.diffFiles.isNotEmpty() || parsed.planMarkdown != null ||
             parsed.planEntries.size > 4 || parsed.allowedPrompts.size > 4
         Column(
             modifier = if (scrolls) Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()) else Modifier,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            PermissionBody(parsed)
+            if (!parsed.hasStructuredBody) {
+                if (rawExpanded) {
+                    CodeBlock(code = parsed.jsonPreview, language = "json")
+                    Text(
+                        stringResource(R.string.perm_details_collapse),
+                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                        color = accent,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { rawExpanded = false }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                } else {
+                    RawJsonSummary(parsed.jsonPreview, onExpand = { rawExpanded = true })
+                }
+            } else {
+                PermissionBody(parsed)
+            }
         }
 
-        // Option buttons.
-        for (option in options) {
-            OptionButton(
-                option = option,
-                submitting = submitting == option.optionId,
-                enabled = submitting == null,
-                onClick = {
-                    submitting = option.optionId
-                    onRespond(option.optionId)
-                },
-            )
+        // Option buttons — compact pills in a wrapping row (批v160): the old
+        // full-width stack could overflow the bottomBar under the IME and leave
+        // exactly one option visible.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (option in options) {
+                OptionPill(
+                    option = option,
+                    submitting = submitting == option.optionId,
+                    enabled = submitting == null,
+                    onClick = {
+                        submitting = option.optionId
+                        onRespond(option.optionId)
+                    },
+                )
+            }
         }
+    }
+}
+
+/** Two-line monospace peek at the raw tool_call JSON, with an expand affordance. */
+@Composable
+private fun RawJsonSummary(jsonPreview: String, onExpand: () -> Unit) {
+    val colors = CodegTheme.colors
+    val peek = remember(jsonPreview) {
+        val lines = jsonPreview.lines().filter { it.isNotBlank() }
+        val joined = lines.take(2).joinToString("\n")
+        when {
+            joined.isEmpty() -> jsonPreview.take(120)
+            lines.size > 2 || jsonPreview.length > 160 -> joined + " …"
+            else -> joined
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.codeSurface)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(8.dp))
+            .clickable(onClick = onExpand)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            peek,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.5.sp,
+            lineHeight = 15.sp,
+            color = colors.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Rounded.ExpandMore,
+            contentDescription = stringResource(R.string.perm_details_expand),
+            tint = colors.textTertiary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 
 @Composable
 private fun PermissionBody(parsed: ParsedPermission) {
     val colors = CodegTheme.colors
-    if (!parsed.hasStructuredBody) {
-        CodeBlock(code = parsed.jsonPreview, language = "json")
-        return
-    }
     parsed.command?.let { cmd ->
         CodeBlock(code = cmd, language = "bash")
         parsed.cwd?.let { Text("cwd: $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = colors.textTertiary) }
@@ -174,35 +248,32 @@ private fun PermissionBody(parsed: ParsedPermission) {
     }
 }
 
+/** Compact pill option (批v160) — reject keeps the outlined treatment. */
 @Composable
-private fun OptionButton(option: PermissionOption, submitting: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun OptionPill(option: PermissionOption, submitting: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val colors = CodegTheme.colors
-    val isReject = option.isReject
-    val shape = RoundedCornerShape(10.dp)
-    // Keep the actively-submitting button enabled-looking (spinner) while the
-    // others disable; clicking is gated by `enabled` regardless.
-    val clickable = enabled
-    if (isReject) {
+    val shape = RoundedCornerShape(20.dp)
+    if (option.isReject) {
         OutlinedButton(
             onClick = onClick,
-            enabled = clickable,
-            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
             shape = shape,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             border = BorderStroke(0.5.dp, colors.surfaceStroke),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
         ) {
             if (submitting) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.textPrimary)
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.textPrimary)
             } else {
-                Text(option.name, fontWeight = FontWeight.SemiBold)
+                Text(option.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     } else {
         Button(
             onClick = onClick,
-            enabled = clickable,
-            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
             shape = shape,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = colors.accent,
                 contentColor = colors.onAccent,
@@ -211,9 +282,9 @@ private fun OptionButton(option: PermissionOption, submitting: Boolean, enabled:
             ),
         ) {
             if (submitting) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = colors.onAccent)
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = colors.onAccent)
             } else {
-                Text(option.name, fontWeight = FontWeight.SemiBold)
+                Text(option.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
