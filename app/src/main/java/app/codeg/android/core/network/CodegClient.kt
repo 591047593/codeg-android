@@ -309,6 +309,39 @@ class CodegClient(
     }
 
     /**
+     * The full live-connection table (批v160 watcher): one row per active ACP
+     * connection with its conversation binding — everything
+     * [liveConversationIds] reads, plus the connectionId the /ws/events attach
+     * protocol needs. Null (not empty) on failure: an old server or a flaky
+     * transport must leave the watcher's current attach set untouched rather
+     * than detach sessions that are really waiting.
+     */
+    suspend fun petSessions(): List<PetSessionRow>? = try {
+        val root = CodegJson.response.parseToJsonElement(
+            send("pet_list_active_sessions", encode(EmptyBody)),
+        )
+        val sessions = (root as? JsonObject)?.get("sessions") as? JsonArray
+        sessions?.mapNotNull { row ->
+            val o = row as? JsonObject ?: return@mapNotNull null
+            fun str(vararg keys: String): String? =
+                keys.firstNotNullOfOrNull { (o[it] as? JsonPrimitive)?.contentOrNull }
+            val connectionId = str("connectionId", "connection_id") ?: return@mapNotNull null
+            val conversationId = str("conversationId", "conversation_id")?.toIntOrNull()
+                ?: return@mapNotNull null
+            PetSessionRow(
+                connectionId = connectionId,
+                conversationId = conversationId,
+                title = str("title").orEmpty(),
+                status = str("status").orEmpty(),
+            )
+        } ?: emptyList()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
      * Inject [text] into a running turn's steering channel (web "live feedback").
      * Valid only while a turn is in flight — the server rejects idle calls with a
      * 400 `invalid_input` whose message reads `no active turn`.
@@ -1492,3 +1525,16 @@ internal fun filterLinkedExperts(
     val linked = rows.filter { it.state == ExpertLinkState.LINKED_TO_CODEG }.mapTo(mutableSetOf()) { it.expertId }
     return experts.filter { it.id in linked }
 }
+
+/**
+ * One live ACP connection row of `pet_list_active_sessions` (批v160 watcher).
+ * Wire keys are camelCase on this command (the web pet panel mirrors the Rust
+ * struct directly); the decoder accepts the snake_case twins too, defensively.
+ */
+data class PetSessionRow(
+    val connectionId: String,
+    val conversationId: Int,
+    val title: String,
+    /** ConnectionStatus wire value (prompting / connected / …) — informational. */
+    val status: String,
+)

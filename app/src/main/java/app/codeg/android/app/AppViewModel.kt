@@ -2,6 +2,7 @@ package app.codeg.android.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.core.data.InteractiveRequestWatcher
 import app.codeg.android.core.data.QuickSwitchRing
 import app.codeg.android.core.data.QuickSwitchStep
 import app.codeg.android.core.data.ServerRepository
@@ -40,6 +41,10 @@ class AppViewModel @Inject constructor(
     private val ideaStore: IdeaStore,
     /** Floating-ball session cycling — the shell dispatches the ball actions here. */
     val focusHub: SessionFocusHub,
+    /** 批v160 W7: "agent blocked waiting for you" watcher — the shell owns its
+     *  start/stop (foreground) and reads [InteractiveRequestWatcher.requests]
+     *  for the bottom-bar badge; the workbench re-scopes the same list. */
+    val interactionWatcher: InteractiveRequestWatcher,
 ) : ViewModel() {
 
     val settings: StateFlow<AppSettings> = appSettingsStore.settings
@@ -49,6 +54,13 @@ class AppViewModel @Inject constructor(
     // 到收件箱才知道。计数 = 收件箱草稿数（派发成功即删）。R4 起走 ideaCount
     // （原始串 distinct，无关写盘不进 decode），不再重 sort 的 ideas 流。
     val inboxBadge: StateFlow<Int> = ideaStore.ideaCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    // 批v160 W7：底栏动态 tab 徽标——智能体卡在等用户确认（权限/提问/计划）的
+    // 会话数。watcher 全量不分设备（环境感知同收件箱徽标）；工作台再按当前
+    // 范围重切，两处口径一致只是范围不同。
+    val activityBadge: StateFlow<Int> = interactionWatcher.requests
+        .map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /** False until DataStore's first emission lands — the shell holds on it so the

@@ -1,5 +1,6 @@
 package app.codeg.android.feature.activity
 
+import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -42,6 +43,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
+import app.codeg.android.core.data.InteractionKind
+import app.codeg.android.core.data.PendingInteraction
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.TaskStatusTone
 import app.codeg.android.core.data.taskStatusUi
@@ -72,7 +75,7 @@ private fun WorkbenchOverviewRail(
         stringResource(
             R.string.workbench_overview_summary,
             stats.runningTasks,
-            stats.attentionTasks,
+            stats.attentionTotal,
             "${stats.onlineDevices}/${stats.totalDevices}",
         )
     } else {
@@ -198,7 +201,8 @@ internal fun WorkbenchStatsRow(
         )
         StatCard(
             stringResource(R.string.workbench_stat_attention),
-            value(stats.attentionTasks),
+            // 批v160 W7: blocked tasks + agents waiting on a confirmation.
+            value(stats.attentionTotal),
             stringResource(R.string.workbench_stat_attention_action),
             onOpenAttention,
             Modifier.weight(1f),
@@ -340,10 +344,85 @@ private fun AttentionRow(entry: app.codeg.android.core.data.TaskBoardEntry, onCl
     }
 }
 
+/** Chip label per interaction kind (批v160 W7). */
+private fun InteractionKind.labelRes(): Int = when (this) {
+    InteractionKind.PERMISSION -> R.string.workbench_kind_permission
+    InteractionKind.QUESTION -> R.string.workbench_kind_question
+    InteractionKind.PLAN -> R.string.workbench_kind_plan
+}
+
+/**
+ * 批v160 W7: one 「等待你确认」 row — amber (the attention card's task rows have
+ * no dedicated color; these are the loudest thing on the workbench). Chip + title
+ * on the first line, device + how long it has been waiting on the second. Tap →
+ * the conversation itself ([onOpenInteraction] hands a [PendingInteraction] to
+ * the shell, which handoffs to the right device and opens the session).
+ */
+@Composable
+private fun InteractiveRow(item: PendingInteraction, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.warning.copy(alpha = 0.10f))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.workbench_interactive_open),
+                onClick = onClick,
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = colors.warning.copy(alpha = 0.18f),
+        ) {
+            Text(
+                text = stringResource(item.kind.labelRes()),
+                fontSize = 11.sp,
+                color = colors.warning,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                text = item.title.ifBlank { stringResource(item.kind.labelRes()) },
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = item.serverName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    text = DateUtils.getRelativeTimeSpanString(item.since).toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.warning,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
 /**
  * 需要处理卡：≤3 条真实任务预览。空态整块不渲染。
  * 批v151：可折叠；批v152：整行任意位置点击折叠/展开（「去任务板」按钮已删，
  * 预览行/「还有 N 条」仍跳任务板「等你处理」段）。
+ * 批v160 W7：顶部「等待你确认」节（amber 行）置顶于任务行之上——智能体卡在
+ * 等用户确认（权限/提问/计划）的会话，点行直达会话本身；隐藏条件加上
+ * interactiveSessions 为空。
  */
 @Composable
 internal fun WorkbenchAttentionCard(
@@ -351,10 +430,11 @@ internal fun WorkbenchAttentionCard(
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
     onOpenTasks: () -> Unit,
+    onOpenInteraction: (PendingInteraction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    if (stats.attentionTasks == 0) return
+    if (stats.attentionTasks == 0 && stats.interactiveSessions.isEmpty()) return
     val stateText = stringResource(
         if (collapsed) R.string.workbench_attention_collapsed else R.string.workbench_attention_expanded
     )
@@ -403,6 +483,19 @@ internal fun WorkbenchAttentionCard(
         AnimatedVisibility(visible = !collapsed, enter = headerExpand(), exit = headerCollapse()) {
             Column {
                 Spacer(Modifier.size(2.dp))
+                // 批v160 W7: the waiting-for-you section sits ABOVE the task rows —
+                // an agent blocked mid-turn outranks a parked task.
+                if (stats.interactiveSessions.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.workbench_interactive_title),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.warning,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    )
+                    stats.interactiveSessions.take(WorkbenchViewModel.INTERACTIVE_MAX)
+                        .forEach { item -> InteractiveRow(item) { onOpenInteraction(item) } }
+                }
                 stats.attentionPreview.forEach { entry -> AttentionRow(entry, onOpenTasks) }
                 if (stats.attentionTasks > stats.attentionPreview.size) {
                     Text(
@@ -439,6 +532,7 @@ internal fun WorkbenchHeader(
     onOpenSearch: () -> Unit,
     onOpenNewSession: () -> Unit,
     onOpenTasks: (TaskSegment) -> Unit,
+    onOpenInteraction: (PendingInteraction) -> Unit,
     onOpenDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -463,6 +557,7 @@ internal fun WorkbenchHeader(
             attentionCollapsed,
             onToggleAttention,
             onOpenTasks = { onOpenTasks(TaskSegment.ATTENTION) },
+            onOpenInteraction = onOpenInteraction,
             modifier = Modifier.padding(top = 10.dp),
         )
     }

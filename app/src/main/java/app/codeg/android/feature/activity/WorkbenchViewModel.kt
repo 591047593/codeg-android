@@ -7,6 +7,8 @@ import app.codeg.android.CodegApplication
 import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
+import app.codeg.android.core.data.InteractiveRequestWatcher
+import app.codeg.android.core.data.PendingInteraction
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
@@ -52,11 +54,27 @@ data class WorkbenchStats(
     val runningTasks: Int = 0,
     val attentionTasks: Int = 0,
     val attentionPreview: List<TaskBoardEntry> = emptyList(),
+    /** 批v160 W7: pending permission/question/plan rows the watcher saw — the
+     *  需要处理 card's 「等待你确认」 section (already re-scoped + sorted). */
+    val interactiveSessions: List<PendingInteraction> = emptyList(),
     val onlineDevices: Int = 0,
     val totalDevices: Int = 0,
     /** False until the first fetch round completes: without it the cards would
      *  flash "0 everywhere" while the spinners are still running. */
     val hasLoaded: Boolean = false,
+)
+
+/** 需要处理 everywhere = blocked tasks + agents waiting on a confirmation. */
+internal val WorkbenchStats.attentionTotal: Int get() = attentionTasks + interactiveSessions.size
+
+/** The five poll/board inputs of the stats projection — the typed combine
+ *  overload caps at 5 flows, so they travel as one (批v160 W7 nesting). */
+private data class BoardInputs(
+    val round: RoundState,
+    val tasks: List<TaskBoardEntry>,
+    val profiles: List<ServerProfile>,
+    val selectedId: String?,
+    val allMode: Boolean,
 )
 
 /** One combine emission of the poll loop. */
@@ -86,6 +104,7 @@ private data class RoundSignal(
 class WorkbenchViewModel @Inject constructor(
     private val repository: ServerRepository,
     private val appSettingsStore: AppSettingsStore,
+    private val watcher: InteractiveRequestWatcher,
     @ApplicationContext appContext: Context,
 ) : ViewModel() {
 
@@ -149,21 +168,33 @@ class WorkbenchViewModel @Inject constructor(
 
     val stats: StateFlow<WorkbenchStats> =
         combine(
-            round,
-            tasks,
-            repository.profiles,
-            repository.selectedId,
-            repository.activityAll,
-        ) { round, tasks, profiles, selectedId, allMode ->
-            val scope = scopeIds(profiles, allMode, selectedId)
-            val board = buildBoard(tasks.filter { it.serverId in scope })
+            // 批v160 W7: the typed combine overload caps at 5 flows — the poll
+            // inputs travel as one [BoardInputs], the watcher's request list rides
+            // on the outer combine. Watcher state is app-wide; it is re-scoped here
+            // so a device switch (or All↔single) reflects instantly.
+            combine(
+                round,
+                tasks,
+                repository.profiles,
+                repository.selectedId,
+                repository.activityAll,
+            ) { round, tasks, profiles, selectedId, allMode ->
+                BoardInputs(round, tasks, profiles, selectedId, allMode)
+            },
+            watcher.requests,
+        ) { inputs, interactive ->
+            val scope = scopeIds(inputs.profiles, inputs.allMode, inputs.selectedId)
+            val board = buildBoard(inputs.tasks.filter { it.serverId in scope })
             WorkbenchStats(
                 runningTasks = board.segments[TaskSegment.RUNNING].orEmpty().size,
                 attentionTasks = board.segments[TaskSegment.ATTENTION].orEmpty().size,
                 attentionPreview = board.segments[TaskSegment.ATTENTION].orEmpty().take(PREVIEW_MAX),
-                onlineDevices = round.deviceStates.count { it.serverId in scope && it.status == DeviceLoadStatus.OK },
-                totalDevices = round.deviceStates.count { it.serverId in scope },
-                hasLoaded = round.hasLoaded,
+                interactiveSessions = interactive
+                    .filter { it.serverId in scope }
+                    .sortedBy { it.since },
+                onlineDevices = inputs.round.deviceStates.count { it.serverId in scope && it.status == DeviceLoadStatus.OK },
+                totalDevices = inputs.round.deviceStates.count { it.serverId in scope },
+                hasLoaded = inputs.round.hasLoaded,
             )
         }
             // Upstream (profiles) is a DataStore flow: a read failure must keep the
@@ -351,5 +382,8 @@ class WorkbenchViewModel @Inject constructor(
 
         /** 需要处理 preview cap (new mandate §1.3: ≤3 rows). */
         const val PREVIEW_MAX = 3
+
+        /** 批v160 W7: 「等待你确认」 rows cap — same preview discipline as tasks. */
+        const val INTERACTIVE_MAX = 3
     }
 }

@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -318,6 +319,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val activityAll by appViewModel.activityAll.collectAsStateWithLifecycle()
     // 批v153（UX 审查）：底栏收件箱徽标计数（草稿数，派发成功即删）。
     val inboxBadge by appViewModel.inboxBadge.collectAsStateWithLifecycle()
+    // 批v160 W7: 动态 tab 徽标——智能体卡在等用户确认的会话数（watcher 全量，
+    // 环境感知与收件箱徽标同款）。
+    val activityBadge by appViewModel.activityBadge.collectAsStateWithLifecycle()
+    // 批v160 W7: watcher 与 app UI 同生命周期（前台）——引用计数启动/停止，
+    // W8 的 keep-alive 服务可再持有一份把轮询带进后台。
+    DisposableEffect(appViewModel.interactionWatcher) {
+        appViewModel.interactionWatcher.start()
+        onDispose { appViewModel.interactionWatcher.stop() }
+    }
     // Aggregate "全部" mode for the Chats tab + the project filter (batch v132).
     val chatsAll by appViewModel.chatsAll.collectAsStateWithLifecycle()
     // 批v151: the Search push joins the aggregate family (device bar All chip).
@@ -1006,6 +1016,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     // 批v160: bar taps are free navigation — clear any pending return.
                     { tab -> freeTab(tab) },
                     inboxBadge = inboxBadge,
+                    // 批v160 W7: 动态 tab 的「等确认」徽标。
+                    activityBadge = activityBadge,
                     // Report a shrinking height as the bar hides so the Scaffold gives the
                     // freed strip back to the content (the whole point — reclaim the space);
                     // the bar is drawn at full height and slid down within, clipped away.
@@ -1219,6 +1231,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // DIFFERENT, larger set than the number just tapped —
                         // mirror the workbench scope instead.
                         if (servers.size >= 2 && !activityAll) appViewModel.setTasksAll(false)
+                    },
+                    // 批v160 W7: 「等待你确认」行直达会话——先切到持有设备（与
+                    // 聚合行同款 single-flight 舞步），落地后打开并清未读。
+                    onOpenInteraction = { row ->
+                        handoffTo(row.serverId) { openConversationAndMark(row.serverId, row.conversationId) }
                     },
                 )
             }
@@ -1641,6 +1658,8 @@ private fun CodegBottomBar(
     tabs: List<HomeTab>,
     onSelect: (HomeTab) -> Unit,
     inboxBadge: Int = 0,
+    // 批v160 W7: 动态 tab 的「智能体等你确认」徽标。
+    activityBadge: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
@@ -1669,6 +1688,11 @@ private fun CodegBottomBar(
                         BadgedBox(badge = {
                             if (tab == HomeTab.INBOX && inboxBadge > 0) {
                                 Badge { Text(inboxBadge.toString()) }
+                            }
+                            // 批v160 W7: 动态 tab 徽标——智能体卡在等用户确认
+                            // （权限/提问/计划）的会话数。横屏 NavRail 同样不挂。
+                            if (tab == HomeTab.ACTIVITY && activityBadge > 0) {
+                                Badge { Text(activityBadge.toString()) }
                             }
                         }) {
                             Icon(

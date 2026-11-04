@@ -45,6 +45,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.data.FocusItem
+import app.codeg.android.core.data.PendingInteraction
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.SessionRef
@@ -91,6 +92,9 @@ fun ActivityScreen(
     // 批v152: the stat cards jump into a SPECIFIC task-board segment (running /
     // needs-you); the shell routes the request through ServerRepository.
     onOpenTasks: (TaskSegment) -> Unit = {},
+    // 批v160 W7: 「等待你确认」row tap → the shell handoffs to the right device
+    // and opens the conversation (same landing as the aggregated feed rows).
+    onOpenInteraction: (PendingInteraction) -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
     workbench: WorkbenchViewModel = hiltViewModel(),
 ) {
@@ -205,6 +209,7 @@ fun ActivityScreen(
                 onOpenSearch = onOpenSearch,
                 onOpenNewSession = onOpenNewSession,
                 onOpenTasks = onOpenTasks,
+                onOpenInteraction = onOpenInteraction,
                 // 在线设备卡 → 设备管理（与设备栏「管理设备」同一个去处）。
                 onOpenDevices = onManageServers,
             )

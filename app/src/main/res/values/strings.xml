@@ -50,6 +50,12 @@
     <string name="workbench_new_session">New session</string>
     <string name="workbench_view_all_sessions">View all</string>
     <string name="workbench_attention_more">%1$d more</string>
+    <!-- 批v160 W7: waiting-for-you section (agents blocked on a confirmation). -->
+    <string name="workbench_interactive_title">Waiting for you</string>
+    <string name="workbench_kind_permission">Permission</string>
+    <string name="workbench_kind_question">Question</string>
+    <string name="workbench_kind_plan">Plan</string>
+    <string name="workbench_interactive_open">Open the conversation</string>
     <string name="workbench_overview_summary">%1$d running · %2$d need attention · %3$s online</string>
     <string name="workbench_overview_collapse">Collapse overview</string>
     <string name="workbench_overview_expand">Expand overview</string>

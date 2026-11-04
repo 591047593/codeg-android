@@ -50,6 +50,12 @@
     <string name="workbench_new_session">新建会话</string>
     <string name="workbench_view_all_sessions">查看全部</string>
     <string name="workbench_attention_more">还有 %1$d 项</string>
+    <!-- 批v160 W7: 等待你确认节（智能体卡在等确认的会话）。 -->
+    <string name="workbench_interactive_title">等待你确认</string>
+    <string name="workbench_kind_permission">权限确认</string>
+    <string name="workbench_kind_question">提问</string>
+    <string name="workbench_kind_plan">计划待批</string>
+    <string name="workbench_interactive_open">打开会话处理</string>
     <string name="workbench_overview_summary">%1$d 运行中 · %2$d 需要处理 · %3$s 在线</string>
     <string name="workbench_overview_collapse">收起总览</string>
     <string name="workbench_overview_expand">展开总览</string>
