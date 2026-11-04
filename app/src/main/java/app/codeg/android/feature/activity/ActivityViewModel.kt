@@ -106,11 +106,17 @@ class ActivityViewModel @Inject constructor(
             settingsStore.sessionReadMarks,
             repository.activityAll,
             projectRepo.activeMemberKeys,
-        ) { conversations, readMarks, all, memberKeys ->
-            val narrowed = memberKeys
-                .takeIf { all }
-                ?.let { keys -> conversations.filter { row -> row.refKey in keys } }
-                ?: conversations
+            // 批v160 W9: the 未添加 scope's complement — every ASSIGNED ref key.
+            projectRepo.activeExcludeKeys,
+        ) { conversations, readMarks, all, memberKeys, excludeKeys ->
+            // Project scope: membership narrows (memberKeys); the 未添加 sentinel
+            // complements (excludeKeys — keep rows with NO project); no scope: all.
+            val narrowed = when {
+                !all -> conversations
+                memberKeys != null -> conversations.filter { row -> row.refKey in memberKeys }
+                excludeKeys != null -> conversations.filter { row -> row.refKey !in excludeKeys }
+                else -> conversations
+            }
             buildActivitySections(narrowed, readMarks)
         }
         .distinctUntilChanged()

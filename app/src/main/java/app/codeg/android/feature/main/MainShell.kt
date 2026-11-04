@@ -77,9 +77,12 @@ import kotlin.math.roundToInt
 import app.codeg.android.R
 import app.codeg.android.app.AppViewModel
 import app.codeg.android.core.data.FocusPreview
+import app.codeg.android.core.data.orderedProjectChips
 import app.codeg.android.core.data.resolveCycleTarget
 import app.codeg.android.core.datastore.DispatchState
+import app.codeg.android.core.datastore.SESSION_CHIP_PROJECTS
 import app.codeg.android.core.datastore.ServerProfile
+import app.codeg.android.core.datastore.UNASSIGNED_PROJECT_ID
 import app.codeg.android.core.designsystem.component.GlobalDeviceBar
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.feature.activity.ActivityScreen
@@ -236,6 +239,27 @@ internal fun resolveDeviceSwipeStep(
     }
 }
 
+/** 批v160 W9: the session-chip row's PROJECT dimension sequence — 全部项目 at 0,
+ *  visible projects 1..n, 未添加 at n+1 (the row the bar renders in project mode).
+ *  Entering from a focused device, the caller reads index -1 (before 全部项目):
+ *  NEXT steps onto 全部项目, PREV falls through to the tab layer — the same
+ *  "inner first, outer at the edge" convention as the device sequence. */
+internal sealed interface ProjectSwipeVerdict {
+    /** 0 = 全部项目, 1..n = the visible projects, n+1 = 未添加. */
+    data class Chip(val index: Int) : ProjectSwipeVerdict
+
+    /** Off the sequence's end — the outer tab layer takes the gesture. */
+    data object Tab : ProjectSwipeVerdict
+}
+
+/** Pure arithmetic for the project swipe: [currentIndex] -1 = device focus,
+ *  0 = 全部项目, 1..n projects, n+1 = 未添加 ([chipCount] = n+2). */
+internal fun resolveProjectSwipeStep(currentIndex: Int, chipCount: Int, step: Int): ProjectSwipeVerdict {
+    val next = currentIndex + step
+    if (next < 0 || next >= chipCount) return ProjectSwipeVerdict.Tab
+    return ProjectSwipeVerdict.Chip(next)
+}
+
 /** Build the new-task route pre-seeded with a handoff reference (and optionally the
  *  source conversation's folder, so the new session starts in the same workspace —
  *  "接手" continues in-place). The reference (`[title](codeg://session/<id>)`) is
@@ -337,10 +361,16 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val sessionProjects by appViewModel.sessionProjects.collectAsStateWithLifecycle()
     val sessionProjectMembers by appViewModel.sessionProjectMembers.collectAsStateWithLifecycle()
     val activeProjectId by appViewModel.activeProjectId.collectAsStateWithLifecycle()
+    // 批v160 W9: hidden projects in the 全部 aggregate (bar long-press hide ⇄
+    // filter sheet project column — one set, two surfaces).
+    val hiddenProjectIds by appViewModel.hiddenProjectIds.collectAsStateWithLifecycle()
     // 旋转存活（第2轮审查修正）：旗标用 Saveable——manifest 无 configChanges，
     // 旋转重建 Activity 时普通 remember 归 false 会连人带输入一起拆掉；本库
     // 自身约定（InboxScreen 编辑态）就是"旋转不得关 sheet、丢输入即丢工作"。
     var showProjectSheet by rememberSaveable { mutableStateOf(false) }
+    // 批v160 W9: the mode card anchored under the 全部 chip (点击) — device ⇄
+    // project dimension switch. The project sheet moved to long-press.
+    var showModeCard by rememberSaveable { mutableStateOf(false) }
     // 批v150 quick-center sheets: the ball panel's 记录想法/创建任务/会话交接
     // cards land here — the shell owns them because the ball's actions do.
     var showQuickIdea by rememberSaveable { mutableStateOf(false) }
@@ -664,6 +694,30 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             servers.indexOfFirst { it.id == selectedProfile?.id }.coerceAtLeast(0)
         null -> 0
     }
+    // 批v160 W9: the session chip row's project dimension — on the two session
+    // surfaces once the mode card flipped them to 项目. Chips honor the aggregate
+    // hidden set (long-press hide) + the settings order / count sort.
+    val projectMode = appSettings.sessionChipMode == SESSION_CHIP_PROJECTS &&
+        (currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS)
+    val projectChips = if (projectMode) {
+        orderedProjectChips(
+            projects = sessionProjects,
+            savedOrder = appSettings.projectChipOrder,
+            sortByCount = appSettings.projectChipSortByCount,
+            counts = sessionProjectMembers.mapValues { (_, refs) -> refs.size },
+        ).filter { it.id !in hiddenProjectIds }
+    } else emptyList()
+    // Row shape: 全部项目 + projects + 未添加.
+    val projectChipCount = projectChips.size + 2
+    // -1 = still device-focused (the row not entered yet); 0 = 全部项目;
+    // 1..n = projects; n+1 = 未添加. A stale active id (project deleted/hidden
+    // mid-flight) degrades to 0 = 全部项目 rather than a dead index.
+    val currentProjectIndex = when {
+        !projectMode -> 0
+        activeProjectId == null -> if (routeAllActive) 0 else -1
+        activeProjectId == UNASSIGNED_PROJECT_ID -> projectChipCount - 1
+        else -> projectChips.indexOfFirst { it.id == activeProjectId } + 1
+    }
     val swipeModifier = if (!wide && ((showBottomBar && currentTabIndex >= 0) ||
             (deviceSwipeOn && currentRoute in barBearingRoutes))
     ) {
@@ -676,6 +730,33 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 appSettings.taskSwipeMode != app.codeg.android.core.datastore.TASK_SWIPE_DEVICES
             ) {
                 appViewModel.taskSegmentBus.step(step)
+            } else if (projectMode && (currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS)) {
+                // 批v160 W9: project mode owns the swipe on the two session surfaces
+                // (the device layer stands down — the row shows projects now).
+                when (val verdict = resolveProjectSwipeStep(
+                    currentIndex = currentProjectIndex,
+                    chipCount = projectChipCount,
+                    step = step,
+                )) {
+                    is ProjectSwipeVerdict.Chip -> {
+                        // Entering a project scope IS entering the aggregate: the
+                        // flag must be on or the scope renders as a single device.
+                        if (currentRoute == ROUTE_CHATS) appViewModel.setChatsAll(true)
+                        else appViewModel.setActivityAll(true)
+                        when (verdict.index) {
+                            0 -> appViewModel.setActiveProject(null)
+                            projectChipCount - 1 -> appViewModel.setActiveProject(UNASSIGNED_PROJECT_ID)
+                            else -> projectChips.getOrNull(verdict.index - 1)
+                                ?.let { appViewModel.setActiveProject(it.id) }
+                        }
+                    }
+                    ProjectSwipeVerdict.Tab -> {
+                        if (currentTabIndex >= 0) {
+                            val next = currentTabIndex + step
+                            if (next in homeTabs.indices) freeTab(homeTabs[next])
+                        }
+                    }
+                }
             } else if (deviceSwipeOn && deviceSwipeScope != null) {
                 when (val verdict = resolveDeviceSwipeStep(
                     currentIndex = currentDeviceIndex,
@@ -1102,14 +1183,25 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     // joins the chip (fan-out results), no project filter there.
                     // 批v152: the task board is the fourth aggregate surface — the All
                     // chip fans out every device's board.
-                    allSelected = (activityAll && currentRoute == HomeTab.ACTIVITY.route) ||
-                        (chatsAll && currentRoute == ROUTE_CHATS) ||
-                        (searchAll && currentRoute == ROUTE_SEARCH) ||
-                        (tasksAll && currentRoute == HomeTab.TASKS.route),
+                    // 批v160 W9: in project mode the All chip means 全部项目 — active
+                    // when the surface's aggregate flag is on with no project focused.
+                    allSelected = if (projectMode) {
+                        ((activityAll && currentRoute == HomeTab.ACTIVITY.route) ||
+                            (chatsAll && currentRoute == ROUTE_CHATS)) && activeProjectId == null
+                    } else {
+                        (activityAll && currentRoute == HomeTab.ACTIVITY.route) ||
+                            (chatsAll && currentRoute == ROUTE_CHATS) ||
+                            (searchAll && currentRoute == ROUTE_SEARCH) ||
+                            (tasksAll && currentRoute == HomeTab.TASKS.route)
+                    },
                     showAll = currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS ||
                         currentRoute == ROUTE_SEARCH || currentRoute == HomeTab.TASKS.route,
-                    allSubtitle = activeProjectId?.let { pid ->
-                        sessionProjects.firstOrNull { it.id == pid }?.name
+                    allSubtitle = when {
+                        projectMode && activeProjectId == UNASSIGNED_PROJECT_ID ->
+                            stringResource(R.string.sessions_unassigned)
+                        activeProjectId != null ->
+                            sessionProjects.firstOrNull { it.id == activeProjectId }?.name
+                        else -> null
                     },
                     onSelectServer = { id ->
                         // Tapping the already-focused device (or "All" while a device
@@ -1125,31 +1217,84 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onSelectAll = {
                         // Two-stage tap (v133 owner call): the FIRST tap on "All" just
                         // switches to the aggregate view; only a tap on an ALREADY-active
-                        // "All" opens the project sheet (to change/clear the filter).
-                        // Programmatic entries — swipes, gestures — never open it.
+                        // "All" opens the mode card (批v160 W9: device ⇄ project switch —
+                        // the project sheet moved to the chip's LONG-press). Programmatic
+                        // entries — swipes, gestures — never open it. In project mode a
+                        // tap on a focused project first re-widens to 全部项目, matching
+                        // the chip row's own click semantics.
                         // Per-tab flags: CHATS reads chatsAll, every other route reads
                         // activityAll; refresh is pull-to-refresh on either tab.
-                        // 批v151: SEARCH reads searchAll — no project filter exists on
-                        // search, so the second-stage tap is deliberately inert instead
-                        // of promising a sheet that can't affect the results.
+                        // 批v151: SEARCH reads searchAll — the second stage stays inert
+                        // there (no project scope exists on search).
                         when (currentRoute) {
                             ROUTE_CHATS -> {
-                                if (!chatsAll) appViewModel.setChatsAll(true) else showProjectSheet = true
+                                if (!chatsAll || (projectMode && activeProjectId != null)) {
+                                    appViewModel.setChatsAll(true)
+                                    if (projectMode) appViewModel.setActiveProject(null)
+                                } else showModeCard = true
                             }
                             ROUTE_SEARCH -> {
                                 if (!searchAll) appViewModel.setSearchAll(true)
                             }
                             HomeTab.TASKS.route -> {
-                                // No project filter on the board — second stage inert.
+                                // No project scope on the board — second stage inert.
                                 if (!tasksAll) appViewModel.setTasksAll(true)
                             }
                             else -> {
-                                if (!activityAll) appViewModel.setActivityAll(true) else showProjectSheet = true
+                                if (!activityAll || (projectMode && activeProjectId != null)) {
+                                    appViewModel.setActivityAll(true)
+                                    if (projectMode) appViewModel.setActiveProject(null)
+                                } else showModeCard = true
                             }
                         }
                     },
                     onManageServers = { nav.navigate(ROUTE_SERVERS) },
                     onSetIncludeInAll = appViewModel::setServerIncludeInAll,
+                    // ---- 批v160 W9: the project dimension ----
+                    projectMode = projectMode,
+                    projects = projectChips,
+                    selectedProjectId = if (projectMode && activeProjectId != null &&
+                        activeProjectId != UNASSIGNED_PROJECT_ID
+                    ) activeProjectId else null,
+                    unassignedSelected = projectMode && activeProjectId == UNASSIGNED_PROJECT_ID,
+                    onSelectProject = { pid ->
+                        // Entering a project scope IS entering the aggregate: the
+                        // surface's flag must be on or the scope renders empty.
+                        if (currentRoute == ROUTE_CHATS) appViewModel.setChatsAll(true)
+                        else appViewModel.setActivityAll(true)
+                        appViewModel.setActiveProject(pid)
+                    },
+                    onSelectUnassigned = {
+                        if (currentRoute == ROUTE_CHATS) appViewModel.setChatsAll(true)
+                        else appViewModel.setActivityAll(true)
+                        appViewModel.setActiveProject(UNASSIGNED_PROJECT_ID)
+                    },
+                    // The project sheet rides the chip's long-press on the two session
+                    // surfaces only (search/tasks have no project scope).
+                    onLongPressAll = if (currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS) {
+                        { showProjectSheet = true }
+                    } else null,
+                    onHideProject = { pid ->
+                        // Long-press hide = the aggregate's hidden-projects set (the
+                        // filter sheet's project column shares it). Hiding the focused
+                        // project falls back to 全部项目.
+                        appViewModel.setProjectVisible(pid, false)
+                        if (activeProjectId == pid) appViewModel.setActiveProject(null)
+                    },
+                    showModeCard = showModeCard,
+                    onDismissModeCard = { showModeCard = false },
+                    onChipModeChange = { mode ->
+                        appViewModel.setSessionChipMode(mode)
+                        // A mode switch lands on 全部 (全部设备 / 全部项目): clear any
+                        // project scope, and keep the current surface's aggregate flag
+                        // on so the landing scope actually applies.
+                        appViewModel.setActiveProject(null)
+                        when (currentRoute) {
+                            ROUTE_CHATS -> appViewModel.setChatsAll(true)
+                            HomeTab.ACTIVITY.route -> appViewModel.setActivityAll(true)
+                            else -> {}
+                        }
+                    },
                 )
             }
             androidx.compose.foundation.layout.Row {

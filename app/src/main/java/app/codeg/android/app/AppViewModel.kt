@@ -11,6 +11,7 @@ import app.codeg.android.core.data.SessionProjectRepository
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.TaskSegmentBus
 import app.codeg.android.core.data.nextQuickSwitchStep
+import app.codeg.android.core.datastore.AggregateProjectFilterStore
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.IdeaStore
@@ -39,6 +40,10 @@ class AppViewModel @Inject constructor(
     private val serverRepository: ServerRepository,
     private val appSettingsStore: AppSettingsStore,
     private val sessionProjectRepo: SessionProjectRepository,
+    /** 批v160 W9: the 全部-aggregate's hidden-projects set — the device bar's
+     *  long-press hide writes here, the same set the filter sheet's project
+     *  column reads, so both surfaces share one visibility state. */
+    private val aggregateProjectFilterStore: AggregateProjectFilterStore,
     private val ideaStore: IdeaStore,
     /** Floating-ball session cycling — the shell dispatches the ball actions here. */
     val focusHub: SessionFocusHub,
@@ -329,6 +334,22 @@ class AppViewModel @Inject constructor(
     val activeProjectId: StateFlow<String?> = sessionProjectRepo.activeProjectId
 
     fun setActiveProject(id: String?) = sessionProjectRepo.setActive(id)
+
+    // 批v160 W9: which projects the 全部 aggregate hides — one store backing both
+    // the filter sheet's project column and the bar's long-press-to-hide, so a
+    // hide from either surface shows up on the other. Default empty.
+    val hiddenProjectIds: StateFlow<Set<String>> = aggregateProjectFilterStore.hiddenProjects
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** Hide/show one project chip in the 全部 aggregate (bar long-press / sheet). */
+    fun setProjectVisible(id: String, visible: Boolean) = launchPersist {
+        aggregateProjectFilterStore.setVisible(id, visible)
+    }
+
+    /** 批v160 W9: the session chip row's dimension — devices (default) or projects. */
+    fun setSessionChipMode(mode: String) = launchPersist {
+        appSettingsStore.setSessionChipMode(mode)
+    }
 
     /**
      * Leave every aggregate context at once. THE exit path for device selection,

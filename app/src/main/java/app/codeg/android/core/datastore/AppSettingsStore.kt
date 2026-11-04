@@ -71,6 +71,15 @@ data class AppSettings(
      *  step between the board's four kanban columns (default), "devices" =
      *  the cross-device sequence (the pre-v160 behavior). */
     val taskSwipeMode: String = DEFAULT_TASK_SWIPE_MODE,
+    /** 批v160 W9: the top chip row's dimension on 动态/会话 — "devices" (default,
+     *  the pre-v160 row) or "projects" (全部 + project chips + 未添加). */
+    val sessionChipMode: String = DEFAULT_SESSION_CHIP_MODE,
+    /** 批v160 W9: the projects' manual left-to-right chip order (project ids).
+     *  Missing ids append after the known ones; stale ids are ignored. */
+    val projectChipOrder: List<String> = emptyList(),
+    /** 批v160 W9: order projects by session count (desc) instead of the manual
+     *  order. Default OFF — the manual order wins. */
+    val projectChipSortByCount: Boolean = false,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
     /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
@@ -93,6 +102,7 @@ data class AppSettings(
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
         const val DEFAULT_INBOX_COLUMNS = 1
         const val DEFAULT_TASK_SWIPE_MODE = TASK_SWIPE_SEGMENTS
+        const val DEFAULT_SESSION_CHIP_MODE = SESSION_CHIP_DEVICES
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
         val INITIAL = AppSettings()
@@ -166,6 +176,11 @@ class AppSettingsStore @Inject constructor(
             keepAliveEnabled = prefs[KEEP_ALIVE_ENABLED] ?: false,
             taskSwipeMode = prefs[TASK_SWIPE_MODE]?.takeIf { it in TASK_SWIPE_MODES }
                 ?: AppSettings.DEFAULT_TASK_SWIPE_MODE,
+            sessionChipMode = prefs[SESSION_CHIP_MODE]?.takeIf { it in SESSION_CHIP_MODES }
+                ?: AppSettings.DEFAULT_SESSION_CHIP_MODE,
+            projectChipOrder = prefs[PROJECT_CHIP_ORDER]?.split(',')?.filter { it.isNotBlank() }
+                ?: emptyList(),
+            projectChipSortByCount = prefs[PROJECT_CHIP_SORT_BY_COUNT] ?: false,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
             dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
@@ -284,6 +299,24 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[INBOX_COLUMNS] = columns.coerceIn(1, 2) }
     }
 
+    /** 批v160 W9: persist the top chip row's dimension (devices|projects). */
+    suspend fun setSessionChipMode(mode: String) {
+        dataStore.edit {
+            it[SESSION_CHIP_MODE] = mode.takeIf { m -> m in SESSION_CHIP_MODES }
+                ?: AppSettings.DEFAULT_SESSION_CHIP_MODE
+        }
+    }
+
+    /** 批v160 W9: persist the projects' manual chip order (ids, left→right). */
+    suspend fun setProjectChipOrder(order: List<String>) {
+        dataStore.edit { it[PROJECT_CHIP_ORDER] = order.filter { id -> id.isNotBlank() }.joinToString(",") }
+    }
+
+    /** 批v160 W9: persist the sort-by-session-count toggle. */
+    suspend fun setProjectChipSortByCount(enabled: Boolean) {
+        dataStore.edit { it[PROJECT_CHIP_SORT_BY_COUNT] = enabled }
+    }
+
     /** 批v160 W8: persist the "agent needs you" system-notification toggle. */
     suspend fun setNotifyInteractiveEnabled(enabled: Boolean) {
         dataStore.edit { it[NOTIFY_INTERACTIVE_ENABLED] = enabled }
@@ -390,6 +423,9 @@ class AppSettingsStore @Inject constructor(
         val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")
         val KEEP_ALIVE_ENABLED = booleanPreferencesKey("keep_alive_enabled")
         val TASK_SWIPE_MODE = stringPreferencesKey("task_swipe_mode")
+        val SESSION_CHIP_MODE = stringPreferencesKey("session_chip_mode")
+        val PROJECT_CHIP_ORDER = stringPreferencesKey("project_chip_order")
+        val PROJECT_CHIP_SORT_BY_COUNT = booleanPreferencesKey("project_chip_sort_by_count")
     }
 }
 
@@ -410,6 +446,11 @@ val INBOX_IDEA_STYLES = setOf(INBOX_IDEA_STYLE_CORNER, INBOX_IDEA_STYLE_CENTER_W
 const val TASK_SWIPE_SEGMENTS = "segments"
 const val TASK_SWIPE_DEVICES = "devices"
 val TASK_SWIPE_MODES = setOf(TASK_SWIPE_SEGMENTS, TASK_SWIPE_DEVICES)
+
+/** Legal top chip-row dimensions (批v160 W9) — screens branch on the constants. */
+const val SESSION_CHIP_DEVICES = "devices"
+const val SESSION_CHIP_PROJECTS = "projects"
+val SESSION_CHIP_MODES = setOf(SESSION_CHIP_DEVICES, SESSION_CHIP_PROJECTS)
 
 /** JSON envelope for the read-marks map (DataStore carries one string). */
 @Serializable

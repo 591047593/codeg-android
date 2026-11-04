@@ -94,4 +94,43 @@ class SessionProjectRepositoryTest {
             scope.cancel()
         }
     }
+
+    // ---- 批v160 W9: the 未添加 sentinel scope ----
+
+    @Test
+    fun `setActive accepts the unassigned sentinel and isUnassignedActive reports it`() = runBlocking {
+        val (repo, scope) = newRepo()
+        try {
+            repo.setActive(UNASSIGNED_PROJECT_ID)
+            assertEquals(UNASSIGNED_PROJECT_ID, repo.activeProjectId.value)
+            org.junit.Assert.assertTrue(repo.isUnassignedActive())
+
+            repo.setActive(null)
+            assertNull(repo.activeProjectId.value)
+            org.junit.Assert.assertFalse(repo.isUnassignedActive())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `activeExcludeKeys yields every assigned key only for the sentinel`() = runBlocking {
+        val (repo, scope) = newRepo()
+        try {
+            val p = repo.create("P1")
+            repo.setMembership(p.id, app.codeg.android.core.datastore.SessionRef("a", 1), true)
+            repo.setMembership(p.id, app.codeg.android.core.datastore.SessionRef("a", 2), true)
+
+            // No scope: null (the caller keeps every row).
+            assertNull(repo.activeExcludeKeys.first())
+            // A real project active: null too (memberKeys owns the narrowing).
+            repo.setActive(p.id)
+            assertNull(repo.activeExcludeKeys.first())
+            // Sentinel active: the complement — every ASSIGNED key.
+            repo.setActive(UNASSIGNED_PROJECT_ID)
+            assertEquals(setOf("a:1", "a:2"), repo.activeExcludeKeys.first())
+        } finally {
+            scope.cancel()
+        }
+    }
 }

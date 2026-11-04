@@ -183,6 +183,82 @@ fun GeneralContent(
                 ),
             )
         }
+        // 批v160 W9: the session chip row's project dimension — sort by member
+        // count (descending), or drag-free manual order via ↑/↓. The manual
+        // editor lists every project including hidden ones: it edits the row's
+        // display order, not chip visibility (that lives on the bar's long-press
+        // and the 全部 filter sheet).
+        Section(stringResource(R.string.general_project_section)) {
+            ToggleRow(
+                stringResource(R.string.general_project_sort_title),
+                stringResource(R.string.general_project_sort_subtitle),
+                appSettings.projectChipSortByCount,
+                viewModel::setProjectChipSortByCount,
+            )
+            if (!appSettings.projectChipSortByCount) {
+                // Display order = the row's effective order (saved ids first,
+                // then the never-moved rest) — the same order the chips render.
+                val repoProjects = viewModel.sessionProjectRepo.projects.collectAsStateWithLifecycle()
+                val projects = app.codeg.android.core.data.orderedProjectChips(
+                    repoProjects, appSettings.projectChipOrder, sortByCount = false, counts = emptyMap(),
+                )
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp)) {
+                    Text(
+                        stringResource(R.string.general_project_order_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = colors.textSecondary,
+                    )
+                    Text(
+                        stringResource(R.string.general_project_order_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textTertiary,
+                    )
+                }
+                if (projects.isEmpty()) {
+                    Text(
+                        stringResource(R.string.general_project_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textTertiary,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                    )
+                } else {
+                    projects.forEachIndexed { index, project ->
+                        ListItem(
+                            headlineContent = { Text(project.name) },
+                            trailingContent = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.moveProjectChip(project.id, -1) },
+                                        enabled = index > 0,
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = colors.textPrimary.copy(alpha = 0.08f),
+                                            contentColor = colors.textPrimary,
+                                        ),
+                                    ) {
+                                        Icon(Icons.Rounded.ArrowDropUp, contentDescription = null)
+                                    }
+                                    FilledTonalIconButton(
+                                        onClick = { viewModel.moveProjectChip(project.id, 1) },
+                                        enabled = index < projects.lastIndex,
+                                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                            containerColor = colors.textPrimary.copy(alpha = 0.08f),
+                                            contentColor = colors.textPrimary,
+                                        ),
+                                    ) {
+                                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = colors.textPrimary,
+                                supportingColor = colors.textTertiary,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
         // 批v152: cold-start collapse state for the two Activity workbench blocks.
         // The user asked for "the sessions below to be visible most of the time",
         // so both defaults can be turned off here; an in-session tap still wins.

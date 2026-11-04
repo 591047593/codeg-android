@@ -60,6 +60,9 @@ fun buildAggregateSessionSections(
     perServer: List<Pair<ServerProfile, List<ConversationSummary>>>,
     memberKeys: Set<String>? = null,
     readMarks: Map<String, Long> = emptyMap(),
+    // 批v160 W9: the 未添加 scope — keep rows with NO project membership (the
+    // complement of [memberKeys]; the two never arrive together).
+    excludeKeys: Set<String>? = null,
     hiddenServerIds: Set<String> = emptySet(),
     hiddenProjectIds: Set<String> = emptySet(),
     memberProjects: Map<String, Set<String>> = emptyMap(),
@@ -86,7 +89,9 @@ fun buildAggregateSessionSections(
                 row.serverId !in hiddenServerIds &&
                     hiddenProjectIds.intersect(memberProjects[row.refKey].orEmpty()).isEmpty()
             }
-            if (memberKeys == null) rows else rows.filter { it.refKey in memberKeys }
+            if (memberKeys == null) {
+                if (excludeKeys != null) rows.filter { it.refKey !in excludeKeys } else rows
+            } else rows.filter { it.refKey in memberKeys }
         }
 
     val out = ArrayList<AggregateSection>(filtered.size + 1)

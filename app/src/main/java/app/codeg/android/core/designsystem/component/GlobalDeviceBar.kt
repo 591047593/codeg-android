@@ -27,7 +27,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.datastore.ServerProfile
+import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.designsystem.theme.CodegTheme
 
 /**
@@ -101,6 +106,28 @@ fun GlobalDeviceBar(
     /** Long-press a device chip → "skip in All" (batch v137). The device keeps its
      *  chip and stays individually openable; it just stops joining the aggregate. */
     onSetIncludeInAll: (String, Boolean) -> Unit = { _, _ -> },
+    // ---- 批v160 W9 项目快切：the row's second dimension. All defaults keep the
+    // pre-W9 contract (devices only) so non-session surfaces pass nothing. ----
+    /** True = the chips after 全部 are projects + 未添加 instead of devices. */
+    projectMode: Boolean = false,
+    projects: List<SessionProject> = emptyList(),
+    /** The active REAL project id (null = 全部项目 or a device focus). */
+    selectedProjectId: String? = null,
+    /** True = the 未添加 bucket is the active scope. */
+    unassignedSelected: Boolean = false,
+    onSelectProject: (String) -> Unit = {},
+    onSelectUnassigned: () -> Unit = {},
+    /** Long-press 全部 → the 会话项目 sheet (select/create/manage) — the old
+     *  click behavior, moved to long-press by W9. Null = the surface has no
+     *  project sheet (search/tasks), the chip loses the long-press. */
+    onLongPressAll: (() -> Unit)? = null,
+    /** Long-press a project chip → hide it from the row and from 全部. */
+    onHideProject: (String) -> Unit = {},
+    /** The tiny 设备/项目 mode card anchored under 全部 (W9's click). */
+    showModeCard: Boolean = false,
+    onDismissModeCard: () -> Unit = {},
+    /** SESSION_CHIP_DEVICES | SESSION_CHIP_PROJECTS. */
+    onChipModeChange: (String) -> Unit = {},
 ) {
     val colors = CodegTheme.colors
     // Keep the ID, not the profile snapshot: the switch must track the live list so
@@ -120,70 +147,146 @@ fun GlobalDeviceBar(
         ) {
             if (showAll) {
                 item(key = "chip-all") {
-                    DeviceChip(
-                        isSelected = allSelected,
-                        leading = { iconTint -> Icon(Icons.Rounded.Dns, null, tint = iconTint, modifier = Modifier.size(14.dp)) },
-                        onClick = onSelectAll,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = stringResource(R.string.activity_all),
-                                fontSize = 15.sp,
-                                fontWeight = if (allSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (allSelected) colors.onAccent else colors.textSecondary,
-                                maxLines = 1,
-                            )
-                            // Collapsed slot when no project filter is active.
-                            if (allSubtitle != null) {
+                    Box {
+                        DeviceChip(
+                            isSelected = allSelected,
+                            leading = { iconTint -> Icon(Icons.Rounded.Dns, null, tint = iconTint, modifier = Modifier.size(14.dp)) },
+                            onClick = onSelectAll,
+                            // W9: 长按全部 → 会话项目 sheet（原点击行为挪长按）。
+                            onLongClick = onLongPressAll,
+                            longClickLabel = stringResource(R.string.project_filter_title),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    text = "· $allSubtitle",
-                                    fontSize = 12.sp,
-                                    color = if (allSelected) colors.onAccent.copy(alpha = 0.85f) else colors.textTertiary,
+                                    text = stringResource(R.string.activity_all),
+                                    fontSize = 15.sp,
+                                    fontWeight = if (allSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (allSelected) colors.onAccent else colors.textSecondary,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 88.dp),
                                 )
+                                // Collapsed slot when no project filter is active.
+                                if (allSubtitle != null) {
+                                    Text(
+                                        text = "· $allSubtitle",
+                                        fontSize = 12.sp,
+                                        color = if (allSelected) colors.onAccent.copy(alpha = 0.85f) else colors.textTertiary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 88.dp),
+                                    )
+                                }
+                            }
+                        }
+                        // W9: the 设备/项目 mode card — small, anchored, two rows.
+                        DropdownMenu(
+                            expanded = showModeCard,
+                            onDismissRequest = onDismissModeCard,
+                        ) {
+                            ModeCardOption(
+                                icon = Icons.Rounded.Dns,
+                                label = stringResource(R.string.sessions_filter_devices),
+                                selected = !projectMode,
+                            ) {
+                                onDismissModeCard()
+                                onChipModeChange(app.codeg.android.core.datastore.SESSION_CHIP_DEVICES)
+                            }
+                            ModeCardOption(
+                                icon = Icons.Rounded.Folder,
+                                label = stringResource(R.string.sessions_filter_projects),
+                                selected = projectMode,
+                            ) {
+                                onDismissModeCard()
+                                onChipModeChange(app.codeg.android.core.datastore.SESSION_CHIP_PROJECTS)
                             }
                         }
                     }
                 }
             }
-            items(servers.size, key = { servers[it].id }) { i ->
-                val server = servers[i]
-                val selected = !allSelected && server.id == selectedId
-                DeviceChip(
-                    isSelected = selected,
-                    dimmed = !server.includeInAll,
-                    leading = { iconTint ->
-                        Box(
-                            Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(deviceBadgeColor(server.name)),
-                        )
-                    },
-                    onClick = { onSelectServer(server.id) },
-                    onLongClick = { skipTargetId = server.id },
-                ) {
-                    Text(
-                        text = server.name,
-                        fontSize = 15.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = when {
-                            selected -> colors.onAccent
-                            server.includeInAll -> colors.textSecondary
-                            else -> colors.textTertiary
+            if (projectMode) {
+                // W9: 全部 + 项目一..N + 未添加. Hidden projects are already
+                // filtered out by the caller (the hide lives in the aggregate
+                // filter store, shared with the W2 filter sheet's project column).
+                items(projects.size, key = { projects[it].id }) { i ->
+                    val project = projects[i]
+                    val selected = !allSelected && !unassignedSelected && project.id == selectedProjectId
+                    DeviceChip(
+                        isSelected = selected,
+                        leading = { iconTint ->
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(deviceBadgeColor(project.name)),
+                            )
                         },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (!server.includeInAll) {
+                        onClick = { onSelectProject(project.id) },
+                        onLongClick = { onHideProject(project.id) },
+                        longClickLabel = stringResource(R.string.project_chip_hide),
+                    ) {
                         Text(
-                            text = "· " + stringResource(R.string.device_skipped_badge),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.textTertiary,
+                            text = project.name,
+                            fontSize = 15.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) colors.onAccent else colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                item(key = "chip-unassigned") {
+                    // 未添加：sessions with no project tag — the orphan-sweep bucket.
+                    DeviceChip(
+                        isSelected = unassignedSelected,
+                        leading = { iconTint -> Icon(Icons.Rounded.Inbox, null, tint = iconTint, modifier = Modifier.size(14.dp)) },
+                        onClick = onSelectUnassigned,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.sessions_unassigned),
+                            fontSize = 15.sp,
+                            fontWeight = if (unassignedSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (unassignedSelected) colors.onAccent else colors.textSecondary,
                             maxLines = 1,
                         )
+                    }
+                }
+            } else {
+                items(servers.size, key = { servers[it].id }) { i ->
+                    val server = servers[i]
+                    val selected = !allSelected && server.id == selectedId
+                    DeviceChip(
+                        isSelected = selected,
+                        dimmed = !server.includeInAll,
+                        leading = { iconTint ->
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(deviceBadgeColor(server.name)),
+                            )
+                        },
+                        onClick = { onSelectServer(server.id) },
+                        onLongClick = { skipTargetId = server.id },
+                    ) {
+                        Text(
+                            text = server.name,
+                            fontSize = 15.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = when {
+                                selected -> colors.onAccent
+                                server.includeInAll -> colors.textSecondary
+                                else -> colors.textTertiary
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (!server.includeInAll) {
+                            Text(
+                                text = "· " + stringResource(R.string.device_skipped_badge),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.textTertiary,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
@@ -268,12 +371,14 @@ private fun DeviceChip(
     leading: @Composable (Color) -> Unit,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    /** TalkBack label for the long-press action; defaults to the device skip. */
+    longClickLabel: String? = null,
     dimmed: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = CodegTheme.colors
     val shape = RoundedCornerShape(50)
-    val longClickLabel = stringResource(R.string.device_skip_in_all)
+    val resolvedLongClickLabel = longClickLabel ?: stringResource(R.string.device_skip_in_all)
     // 批v151 polish (mandate 图二): a 40dp visual chip inside a ≥48dp touch box —
     // the old ~30dp pill read as cramped little cards. Selected state is the solid
     // accent container + trailing check (filter-chip convention) instead of a tint.
@@ -282,7 +387,7 @@ private fun DeviceChip(
             .alpha(if (dimmed) 0.65f else 1f)
             .clip(shape)
             .combinedClickable(
-                onLongClickLabel = if (onLongClick != null) longClickLabel else null,
+                onLongClickLabel = if (onLongClick != null) resolvedLongClickLabel else null,
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
@@ -326,5 +431,38 @@ private fun HorizontalHairline() {
     androidx.compose.material3.HorizontalDivider(
         thickness = androidx.compose.ui.unit.Dp.Hairline,
         color = CodegTheme.colors.surfaceStroke,
+    )
+}
+
+/** One row of the W9 mode card: icon + label, check on the active dimension. */
+@Composable
+private fun ModeCardOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    DropdownMenuItem(
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(icon, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(16.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (selected) colors.textPrimary else colors.textSecondary,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        },
+        trailingIcon = if (selected) {
+            { Icon(Icons.Rounded.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp)) }
+        } else {
+            null
+        },
+        onClick = onClick,
     )
 }

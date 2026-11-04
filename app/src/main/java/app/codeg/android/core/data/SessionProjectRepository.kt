@@ -19,6 +19,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * 批v160 W9: sentinel scope id for 「未添加」 — the pseudo-project of every
+ * session that belongs to NO project at all. Legal value of
+ * [activeProjectId]; never a real project, and [setActive] accepts it without
+ * existence validation.
+ */
+const val UNASSIGNED_PROJECT_ID = "__unassigned__"
+
+/**
  * UI-facing holder for the cross-device session projects: the project list and
  * membership (persisted via [SessionProjectStore]) plus the currently active
  * filter (in-memory, like [ServerRepository.activityAll]). Lives in core/data
@@ -52,14 +60,35 @@ class SessionProjectRepository @Inject constructor(
     val activeProjectId: StateFlow<String?> = _activeProjectId.asStateFlow()
 
     /** Member keys ("serverId:conversationId") of the active project, or null
-     *  when no filter is active — the exact shape the section builders want. */
+     *  when no filter is active — the exact shape the section builders want.
+     *  The 未添加 sentinel yields null here: its complement-narrowing rides
+     *  [activeExcludeKeys] instead (a key-set can't express "everything else"). */
     val activeMemberKeys: Flow<Set<String>?> =
         combine(_activeProjectId, members) { id, mem ->
-            id?.let { pid -> mem[pid]?.map { it.key }?.toSet() }
+            id?.takeIf { it != UNASSIGNED_PROJECT_ID }?.let { pid -> mem[pid]?.map { it.key }?.toSet() }
         }
 
+    /** 批v160 W9: the complement of [activeMemberKeys] — every ASSIGNED ref key,
+     *  non-null only while the 未添加 scope is active. List layers filter
+     *  `refKey !in keys` with it. */
+    val activeExcludeKeys: Flow<Set<String>?> =
+        combine(_activeProjectId, members) { id, mem ->
+            if (id == UNASSIGNED_PROJECT_ID) {
+                mem.values.flatten().map { it.key }.toSet()
+            } else {
+                null
+            }
+        }
+
+    fun isUnassignedActive(): Boolean = _activeProjectId.value == UNASSIGNED_PROJECT_ID
+
     fun setActive(id: String?) {
-        _activeProjectId.value = id?.takeIf { pid -> projects.value.any { it.id == pid } }
+        _activeProjectId.value = when {
+            id == null -> null
+            id == UNASSIGNED_PROJECT_ID -> UNASSIGNED_PROJECT_ID
+            // A deleted project id degrades to no filter, never a phantom scope.
+            else -> id.takeIf { pid -> projects.value.any { it.id == pid } }
+        }
     }
 
     /**

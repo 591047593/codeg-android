@@ -3,9 +3,12 @@ package app.codeg.android.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.moveProjectInOrder
+import app.codeg.android.core.data.orderedProjectChips
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.DraftFolderPrefsStore
+import app.codeg.android.core.datastore.SessionProjectRepository
 import app.codeg.android.core.model.FolderDetail
 import app.codeg.android.core.model.FolderVisibility
 import app.codeg.android.core.network.CodegClient
@@ -39,6 +42,8 @@ class GeneralViewModel @Inject constructor(
     private val repository: ServerRepository,
     private val appSettingsStore: AppSettingsStore,
     private val draftFolderPrefs: DraftFolderPrefsStore,
+    /** 批v160 W9: the settings section's project list (names + order editing). */
+    val sessionProjectRepo: SessionProjectRepository,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -230,6 +235,33 @@ class GeneralViewModel @Inject constructor(
     /** 批v160 W5: task-board horizontal swipe semantics (segments|devices). */
     fun setTaskSwipeMode(mode: String) = launchPersist {
         appSettingsStore.setTaskSwipeMode(mode)
+    }
+
+    // ---- 批v160 W9: session chip row — project order + count sort ----
+
+    /** Sort the chip row by per-project session count (descending). When on, the
+     *  manual order is ignored (the counts change under the user's feet). */
+    fun setProjectChipSortByCount(enabled: Boolean) = launchPersist {
+        appSettingsStore.setProjectChipSortByCount(enabled)
+    }
+
+    /** Persist a reordered chip sequence (the row's left→right display order). */
+    fun setProjectChipOrder(order: List<String>) = launchPersist {
+        appSettingsStore.setProjectChipOrder(order)
+    }
+
+    /** Move one project [step] slots (+1 right / -1 left) in the manual order.
+     *  Operates on the row's EFFECTIVE display order (saved ids first, then the
+     *  never-moved rest) — a move on a partial saved list must still move the
+     *  row the user sees. Persists the materialized order. */
+    fun moveProjectChip(id: String, step: Int) {
+        val effective = orderedProjectChips(
+            sessionProjectRepo.projects.value,
+            settings.value.projectChipOrder,
+            sortByCount = false,
+            counts = emptyMap(),
+        ).map { it.id }
+        setProjectChipOrder(moveProjectInOrder(effective, id, step))
     }
 
     // ---- Floating ball + font scale (batch v126; device-local prefs) ----

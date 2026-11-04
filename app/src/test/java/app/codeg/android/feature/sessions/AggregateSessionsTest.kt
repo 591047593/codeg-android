@@ -154,6 +154,43 @@ class AggregateSessionsTest {
     }
 
     @Test
+    fun `excludeKeys keeps only rows with no project (未添加 scope)`() {
+        // 批v160 W9: a:2 has no membership — it alone survives the sentinel scope.
+        val sections = buildAggregateSessionSections(
+            listOf(
+                deviceA to listOf(conv(1, 5), conv(2, 10)),
+                deviceB to listOf(conv(3, 15)),
+            ),
+            excludeKeys = setOf("a:1", "b:3"),
+        )
+        assertEquals(listOf("agg-a"), sections.map { it.id })
+        assertEquals(listOf(2), sections.single().rows.map { it.conversation.id })
+    }
+
+    @Test
+    fun `excludeKeys with every row assigned yields no sections`() {
+        val sections = buildAggregateSessionSections(
+            listOf(deviceA to listOf(conv(1, 5), conv(2, 10))),
+            excludeKeys = setOf("a:1", "a:2"),
+        )
+        assertTrue(sections.isEmpty())
+    }
+
+    @Test
+    fun `memberKeys wins over excludeKeys when both would apply`() {
+        // The repo never emits both at once, but the builder's contract is that a
+        // non-null memberKeys owns the narrowing — excludeKeys must not stack on
+        // top of it (a project scope showing only ITS rows is correct even if an
+        // exclude list were stale).
+        val sections = buildAggregateSessionSections(
+            listOf(deviceA to listOf(conv(1, 5), conv(2, 10))),
+            memberKeys = setOf("a:1"),
+            excludeKeys = setOf("a:1"),
+        )
+        assertEquals(listOf(1), sections.single().rows.map { it.conversation.id })
+    }
+
+    @Test
     fun `unread derives from read marks and never flags live rows`() {
         val sections = buildAggregateSessionSections(
             listOf(

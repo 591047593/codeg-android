@@ -76,6 +76,10 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "notify_interactive_enabled" })
         assertEquals(1, keys.count { it == "keep_alive_enabled" })
         assertEquals(1, keys.count { it == "task_swipe_mode" })
+        // 批v160 W9: the session chip row's dimension, order and count sort.
+        assertEquals(1, keys.count { it == "session_chip_mode" })
+        assertEquals(1, keys.count { it == "project_chip_order" })
+        assertEquals(1, keys.count { it == "project_chip_sort_by_count" })
         // And no key collides with another at all.
         assertEquals(keys.size, keys.toSet().size)
     }
@@ -91,5 +95,17 @@ class AppSettingsStoreTest {
         assertEquals(setOf("segments", "devices"), TASK_SWIPE_MODES)
         assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_SEGMENTS))
         assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_DEVICES))
+    }
+
+    @Test
+    fun `session chip row defaults to devices, manual order empty, count sort off`() {
+        // 批v160 W9: the chip row keeps its pre-W9 shape for existing users —
+        // device chips, creation-ordered projects, no count sort.
+        val s = AppSettings()
+        assertEquals(SESSION_CHIP_DEVICES, s.sessionChipMode)
+        assertEquals(setOf("devices", "projects"), SESSION_CHIP_MODES)
+        assertTrue(SESSION_CHIP_MODES.contains(SESSION_CHIP_PROJECTS))
+        assertTrue(s.projectChipOrder.isEmpty())
+        assertFalse(s.projectChipSortByCount)
     }
 }
