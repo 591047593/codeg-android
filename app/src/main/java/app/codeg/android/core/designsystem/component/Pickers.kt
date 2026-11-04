@@ -2,6 +2,7 @@ package app.codeg.android.core.designsystem.component
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -86,17 +87,32 @@ fun PickerField(
     valueNote: String? = null,
 ) {
     val colors = CodegTheme.colors
+    // 批v160 W10: card treatment — radiusMd corners, elevated fill, hairline
+    // stroke and a 56dp row (the old 12dp-radius borderless fill read as a
+    // cramped list row, not a form control).
+    val shape = RoundedCornerShape(CodegTheme.dimens.radiusMd)
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.bgElevated, RoundedCornerShape(12.dp))
+            .heightIn(min = 56.dp)
+            .clip(shape)
+            .background(colors.bg.copy(alpha = 0.42f), shape)
+            .border(1.dp, colors.surfaceStroke, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = colors.accent,
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.accent.copy(alpha = 0.10f))
+                .padding(7.dp),
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
             Text(
@@ -111,7 +127,7 @@ fun PickerField(
                 Text(valueNote, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = colors.textTertiary)
+        Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(20.dp))
     }
 }
 

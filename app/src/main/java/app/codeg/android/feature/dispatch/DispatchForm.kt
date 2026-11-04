@@ -1,13 +1,12 @@
 package app.codeg.android.feature.dispatch
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -15,10 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
-import androidx.compose.material.icons.rounded.AttachFile
-import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Assignment
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -28,7 +27,6 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +59,10 @@ import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.designsystem.component.AgentChipRow
+import app.codeg.android.core.designsystem.component.CodegAttachActions
+import app.codeg.android.core.designsystem.component.CodegAttachmentRow
+import app.codeg.android.core.designsystem.component.CodegFormTextField
+import app.codeg.android.core.designsystem.component.CodegSectionLabel
 import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
 import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.OptionListSheet
@@ -369,17 +372,18 @@ fun DispatchForm(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 4.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // ① 执行方式（会话 / 任务卡）— doc1 §6.1 first field. 任务板新建模式
         // (批v155) locks task mode: no toggle, no session note.
         if (!newTaskMode) {
             FormSectionLabel(stringResource(R.string.dispatch_mode))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ModeCard(
                     label = stringResource(R.string.dispatch_mode_session),
                     note = stringResource(R.string.dispatch_mode_session_note),
                     selected = sessionMode,
+                    icon = Icons.Rounded.Forum,
                     onClick = { sessionMode = true },
                     modifier = Modifier.weight(1f),
                 )
@@ -387,6 +391,7 @@ fun DispatchForm(
                     label = stringResource(R.string.dispatch_mode_task),
                     note = stringResource(R.string.dispatch_mode_task_note),
                     selected = !sessionMode,
+                    icon = Icons.Rounded.Assignment,
                     onClick = { sessionMode = false },
                     modifier = Modifier.weight(1f),
                 )
@@ -537,18 +542,19 @@ fun DispatchForm(
         // ⑥ 标题 + 描述. 会话模式的描述就是首条指令，空描述派出去只会得到
         // 一个空会话 — the guard repeats at canDispatch.
         FormSectionLabel(stringResource(R.string.dispatch_section_description))
-        OutlinedTextField(
+        CodegFormTextField(
             value = title,
             onValueChange = { title = it },
-            label = { Text(stringResource(R.string.inbox_title_hint)) },
+            label = stringResource(R.string.inbox_title_hint),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
+        CodegFormTextField(
             value = description,
             onValueChange = { description = it },
-            label = { Text(stringResource(R.string.inbox_desc_hint)) },
+            label = stringResource(R.string.inbox_desc_hint),
             minLines = 3,
+            maxLines = 12,
             // 批v154: long descriptions get the same near-fullscreen editor as the
             // composer — a 3-line box on a phone hides the tail while typing.
             trailingIcon = {
@@ -575,81 +581,39 @@ fun DispatchForm(
             }
         }
         if (attachments.isNotEmpty()) {
-            attachments.forEach { att ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 40.dp)
-                        // 批v155 段3: image rows open the fullscreen viewer
-                        // across this form's images.
-                        .then(
-                            if (att.isImage) {
-                                Modifier.clickable {
-                                    imageViewerIndex = attachments.filter { it.isImage }
-                                        .indexOfFirst { it.id == att.id }
-                                        .takeIf { idx -> idx >= 0 }
-                                }
-                            } else Modifier,
-                        ),
-                ) {
-                    if (att.isImage) {
-                        app.codeg.android.core.designsystem.component.LocalImageThumbnail(
-                            path = att.localPath,
-                            modifier = Modifier.size(width = 52.dp, height = 36.dp),
-                        )
-                    } else {
-                        Icon(
-                            Icons.Rounded.AttachFile,
-                            contentDescription = null,
-                            tint = colors.textSecondary,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                    Text(
-                        att.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(start = 6.dp),
-                    )
-                    IconButton(
-                        onClick = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                attachments.forEach { att ->
+                    // 批v155 段3: image rows open the fullscreen viewer across
+                    // this form's images; W10 card styling via the shared row.
+                    CodegAttachmentRow(
+                        attachment = att,
+                        onRemove = {
                             attachments.removeAll { it.id == att.id }
                             if (att.id in stagedOwners) {
                                 stagedOwners -= att.id
                                 host.attachmentStager.discard(att)
                             }
                         },
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.attach_remove),
-                            tint = colors.textTertiary,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
+                        onClick = if (att.isImage) {
+                            {
+                                imageViewerIndex = attachments.filter { it.isImage }
+                                    .indexOfFirst { it.id == att.id }
+                                    .takeIf { idx -> idx >= 0 }
+                            }
+                        } else null,
+                    )
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                onClick = { pickDispatchImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                enabled = !stagingAttachments && attachments.size < MAX_DISPATCH_ATTACHMENTS,
-            ) {
-                Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(R.string.attach_add_image), modifier = Modifier.padding(start = 4.dp))
-            }
-            TextButton(
-                onClick = { pickDispatchFiles.launch(arrayOf("*/*")) },
-                enabled = !stagingAttachments && attachments.size < MAX_DISPATCH_ATTACHMENTS,
-            ) {
-                Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
-            }
-        }
+        CodegAttachActions(
+            pickImagesLabel = stringResource(R.string.attach_add_image),
+            pickFilesLabel = stringResource(R.string.attach_add_file),
+            enabled = !stagingAttachments && attachments.size < MAX_DISPATCH_ATTACHMENTS,
+            onPickImages = {
+                pickDispatchImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onPickFiles = { pickDispatchFiles.launch(arrayOf("*/*")) },
+        )
         // R3 P2-1: task mode needs it too — the server's validate_draft rejects
         // an empty prompt with 422 ("prompt is required"); a title-only create
         // used to pass the gate and die server-side.
@@ -879,39 +843,63 @@ fun DispatchForm(
 /** Small section label above a field group. */
 @Composable
 private fun FormSectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelMedium,
-        color = CodegTheme.colors.textTertiary,
-        modifier = Modifier.padding(top = 4.dp),
-    )
+    CodegSectionLabel(text, Modifier.padding(top = 6.dp))
 }
 
-/** One selectable 执行方式 card (会话 / 任务). */
+/** One selectable 执行方式 card (会话 / 任务). W10: a real selection card —
+ *  leading icon chip, radiusLg corners, accent wash + accent stroke when
+ *  selected, hairline otherwise. */
 @Composable
 private fun ModeCard(
     label: String,
     note: String,
     selected: Boolean,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    Column(
+    val shape = RoundedCornerShape(CodegTheme.dimens.radiusLg)
+    Row(
         modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) colors.accentDim else colors.bgElevated, RoundedCornerShape(12.dp))
+            .clip(shape)
+            .background(
+                if (selected) colors.accent.copy(alpha = 0.13f) else colors.bg.copy(alpha = 0.42f),
+                shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) colors.accent.copy(alpha = 0.55f) else colors.surfaceStroke,
+                shape = shape,
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = if (selected) colors.accent else colors.textPrimary,
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (selected) colors.accent else colors.textTertiary,
+            modifier = Modifier.size(20.dp),
         )
-        Text(note, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) colors.accent else colors.textPrimary,
+            )
+            Text(note, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary)
+        }
+        if (selected) {
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
@@ -936,10 +924,11 @@ private fun DispatchSummaryCard(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.bgElevated, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .clip(RoundedCornerShape(CodegTheme.dimens.radiusLg))
+            .background(colors.bg.copy(alpha = 0.42f), RoundedCornerShape(CodegTheme.dimens.radiusLg))
+            .border(1.dp, colors.surfaceStroke, RoundedCornerShape(CodegTheme.dimens.radiusLg))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Text(
             stringResource(R.string.dispatch_summary_title),

@@ -55,6 +55,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,7 +65,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -105,6 +106,9 @@ import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.IdeaEntry
 import app.codeg.android.core.datastore.INBOX_IDEA_STYLE_CENTER_WIDE
 import app.codeg.android.core.designsystem.component.AgentChipRow
+import app.codeg.android.core.designsystem.component.CodegAttachActions
+import app.codeg.android.core.designsystem.component.CodegAttachmentRow
+import app.codeg.android.core.designsystem.component.CodegFormTextField
 import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
@@ -943,13 +947,24 @@ private fun IdeaEditorDialog(
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
             ) {
                 Column(Modifier.fillMaxSize()) {
+                    // W10: the bottom-sheet affordance (drag handle) + header — the
+                    // handle reads as "this is a sheet" at a glance.
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .size(width = 36.dp, height = 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(colors.surfaceStroke),
+                        )
+                    }
                     Row(
-                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp),
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             stringResource(if (initial == null) R.string.inbox_new else R.string.inbox_edit),
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = colors.textPrimary,
                             modifier = Modifier.weight(1f),
                         )
@@ -966,22 +981,22 @@ private fun IdeaEditorDialog(
                             .weight(1f)
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp)
-                            .padding(bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            .padding(top = 4.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        OutlinedTextField(
+                        CodegFormTextField(
                             value = title,
                             onValueChange = { title = it },
-                            label = { Text(stringResource(R.string.inbox_title_hint)) },
+                            label = stringResource(R.string.inbox_title_hint),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        OutlinedTextField(
+                        CodegFormTextField(
                             value = description,
                             onValueChange = { description = it },
-                            label = { Text(stringResource(R.string.inbox_desc_hint)) },
+                            label = stringResource(R.string.inbox_desc_hint),
                             minLines = 4,
-                            maxLines = 10,
+                            maxLines = 12,
                             trailingIcon = {
                                 IconButton(onClick = { fullscreen = true }) {
                                     Icon(
@@ -1045,20 +1060,45 @@ private fun IdeaEditorDialog(
                             },
                         )
                     }
+                    // W10 footer: a hairline above, cancel as a ghost, 保存 as the
+                    // accent action — the old twin-TextButton footer read as two
+                    // equally-weighted escape hatches.
+                    androidx.compose.material3.HorizontalDivider(
+                        thickness = androidx.compose.ui.unit.Dp.Hairline,
+                        color = colors.surfaceStroke,
+                    )
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.End,
+                        Modifier
+                            .fillMaxWidth()
+                            .background(colors.bgElevated)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // Spacer keeps 保存/cancel right-aligned; no hint text here —
+                        // the save gate is self-evident (title/description/attachment).
+                        Spacer(Modifier.weight(1f))
                         TextButton(onClick = { close() }) { Text(stringResource(android.R.string.cancel)) }
-                        TextButton(
+                        Button(
                             onClick = {
                                 // Ownership moves to the idea row.
                                 stagedOwners.clear()
                                 onSave(title, description, attachments.toList())
                             },
                             enabled = !staging && (title.isNotBlank() || description.isNotBlank() || attachments.isNotEmpty()),
-                        ) { Text(stringResource(R.string.common_save)) }
+                            shape = RoundedCornerShape(CodegTheme.dimens.radiusMd),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.accent,
+                                contentColor = colors.onAccent,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
+                            modifier = Modifier.heightIn(min = 40.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.common_save),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
@@ -1386,69 +1426,34 @@ private fun AttachmentChips(
             )
         }
     }
-    attachments.forEach { att ->
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 36.dp)
-                .then(
-                    if (att.isImage) {
-                        Modifier.clickable {
+    // W10: the shared attachment card row (44dp card, thumbnail, hairline) —
+    // image rows still open the fullscreen viewer across the idea's images.
+    if (attachments.isNotEmpty()) {
+        androidx.compose.foundation.layout.Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            attachments.forEach { att ->
+                CodegAttachmentRow(
+                    attachment = att,
+                    onRemove = onRemove,
+                    onClick = if (att.isImage) {
+                        {
                             viewerIndex = attachments.filter { it.isImage }
                                 .indexOfFirst { it.id == att.id }
                                 .takeIf { idx -> idx >= 0 }
                         }
-                    } else Modifier,
-                ),
-        ) {
-            if (att.isImage) {
-                LocalImageThumbnail(
-                    path = att.localPath,
-                    modifier = Modifier.size(width = 52.dp, height = 34.dp),
-                )
-            } else {
-                Icon(
-                    Icons.Rounded.AttachFile,
-                    contentDescription = null,
-                    tint = colors.textSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            Text(
-                att.name,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 6.dp),
-            )
-            IconButton(onClick = { onRemove(att) }, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = stringResource(R.string.attach_remove),
-                    tint = colors.textTertiary,
-                    modifier = Modifier.size(16.dp),
+                    } else null,
                 )
             }
         }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(
-            onClick = onPickImages,
-            enabled = !staging && attachments.size < MAX_IDEA_ATTACHMENTS,
-        ) {
-            Icon(Icons.Rounded.Image, contentDescription = null, modifier = Modifier.size(16.dp))
-            Text(stringResource(R.string.attach_add_image), modifier = Modifier.padding(start = 4.dp))
-        }
-        TextButton(
-            onClick = onPickFiles,
-            enabled = !staging && attachments.size < MAX_IDEA_ATTACHMENTS,
-        ) {
-            Icon(Icons.Rounded.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
-            Text(stringResource(R.string.attach_add_file), modifier = Modifier.padding(start = 4.dp))
-        }
-    }
+    CodegAttachActions(
+        pickImagesLabel = stringResource(R.string.attach_add_image),
+        pickFilesLabel = stringResource(R.string.attach_add_file),
+        enabled = !staging && attachments.size < MAX_IDEA_ATTACHMENTS,
+        onPickImages = onPickImages,
+        onPickFiles = onPickFiles,
+    )
     viewerIndex?.let { idx ->
         ImageViewerDialog(
             images = attachments.filter { it.isImage }.map { ImageViewerSource.File(it.localPath) },
