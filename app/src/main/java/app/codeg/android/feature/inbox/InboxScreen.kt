@@ -943,7 +943,10 @@ private fun IdeaEditorDialog(
         ) {
             Surface(
                 color = colors.bgElevated,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                shape = RoundedCornerShape(
+                    topStart = CodegTheme.dimens.radiusLg,
+                    topEnd = CodegTheme.dimens.radiusLg,
+                ),
                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
             ) {
                 Column(Modifier.fillMaxSize()) {
@@ -1092,7 +1095,7 @@ private fun IdeaEditorDialog(
                                 contentColor = colors.onAccent,
                             ),
                             contentPadding = PaddingValues(horizontal = 22.dp, vertical = 10.dp),
-                            modifier = Modifier.heightIn(min = 40.dp),
+                            modifier = Modifier.heightIn(min = 44.dp),
                         ) {
                             Text(
                                 stringResource(R.string.common_save),
@@ -1237,8 +1240,8 @@ private fun InsertTodoSection(
         Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(colors.bgElevated, RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(CodegTheme.dimens.radiusMd))
+                .background(colors.bgElevated, RoundedCornerShape(CodegTheme.dimens.radiusMd))
                 .clickable { expanded = !expanded }
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

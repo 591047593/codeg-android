@@ -301,19 +301,12 @@ class SessionListViewModel @Inject constructor(
                 AggregateSectionsInput(agg, all, memberKeys, marks, hiddenDevices)
             },
             aggregateProjectFilter.hiddenProjects,
-            projectRepo.members,
+            projectRepo.memberProjects,
             // 批v160 W9: the 未添加 sentinel's complement flow (null unless that
             // scope is active) — rides the outer combine, which still fits the
             // typed 4-arity overload.
             projectRepo.activeExcludeKeys,
-        ) { input, hiddenProjects, members, excludeKeys ->
-            // Invert membership once per recomputation: refKey → project ids, the
-            // shape the row-level project filter consults.
-            val memberProjects = buildMap<String, MutableSet<String>> {
-                for ((projectId, refs) in members) {
-                    for (ref in refs) getOrPut(ref.key) { mutableSetOf() }.add(projectId)
-                }
-            }
+        ) { input, hiddenProjects, memberProjects, excludeKeys ->
             buildAggregateSessionSections(
                 input.servers,
                 input.memberKeys.takeIf { input.all },

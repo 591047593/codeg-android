@@ -56,6 +56,18 @@ class SessionProjectRepository @Inject constructor(
             .catch { /* keep the empty initial */ }
             .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
+    /** refKey → the project ids holding that session — [members] inverted once,
+     *  the shape the row-level hidden-project filters consult. Shared by the
+     *  Chats and Activity aggregates (R2-B P2-1) so both use one inversion. */
+    val memberProjects: Flow<Map<String, Set<String>>> =
+        members.map { mem ->
+            buildMap<String, MutableSet<String>> {
+                for ((projectId, refs) in mem) {
+                    for (ref in refs) getOrPut(ref.key) { mutableSetOf() }.add(projectId)
+                }
+            }
+        }
+
     private val _activeProjectId = MutableStateFlow<String?>(null)
     val activeProjectId: StateFlow<String?> = _activeProjectId.asStateFlow()
 

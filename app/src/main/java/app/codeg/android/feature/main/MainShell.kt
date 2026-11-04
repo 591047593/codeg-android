@@ -370,7 +370,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     var showProjectSheet by rememberSaveable { mutableStateOf(false) }
     // 批v160 W9: the mode card anchored under the 全部 chip (点击) — device ⇄
     // project dimension switch. The project sheet moved to long-press.
-    var showModeCard by rememberSaveable { mutableStateOf(false) }
+    // R2-A P3: plain remember — a mode card resurrecting from process-death
+    // restore (saveable true with no scope behind it) is worse than a menu that
+    // closes on rotation; transient popups don't cross recreations by design.
+    var showModeCard by remember { mutableStateOf(false) }
     // 批v150 quick-center sheets: the ball panel's 记录想法/创建任务/会话交接
     // cards land here — the shell owns them because the ball's actions do.
     var showQuickIdea by rememberSaveable { mutableStateOf(false) }
@@ -736,9 +739,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 appSettings.taskSwipeMode != app.codeg.android.core.datastore.TASK_SWIPE_DEVICES
             ) {
                 appViewModel.taskSegmentBus.step(step)
-            } else if (projectMode && (currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS)) {
+            } else if (projectMode && servers.size > 1 &&
+                (currentRoute == HomeTab.ACTIVITY.route || currentRoute == ROUTE_CHATS)
+            ) {
                 // 批v160 W9: project mode owns the swipe on the two session surfaces
                 // (the device layer stands down — the row shows projects now).
+                // R2-A P2: the same servers.size gate the device layer carries — on a
+                // single device the bar doesn't render, so an aggregate entered here
+                // would have no visible exit (the R1-4 cycleProject lesson, swipe cut).
                 when (val verdict = resolveProjectSwipeStep(
                     currentIndex = currentProjectIndex,
                     chipCount = projectChipCount,
@@ -1071,20 +1079,33 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             // the first fire so 【全部 → P1 → … → 全部】 works from anywhere on-tab.
             // Single/zero-device setups stay OUT: aggregate has no visible exit
             // there (the All chip needs >1 device) — R1-4.
-            "cycleProject" -> if (servers.size >= 2) when (currentRoute) {
-                HomeTab.ACTIVITY.route -> {
-                    if (!activityAll) appViewModel.setActivityAll(true)
-                    appViewModel.setActiveProject(
-                        nextProjectFilter(appViewModel.activeProjectId.value, appViewModel.sessionProjects.value),
-                    )
+            "cycleProject" -> if (servers.size >= 2) {
+                // R2-A P3: cycle the VISIBLE chip list (settings order + long-press
+                // hidden excluded) — a hidden project must never become the active
+                // scope its chip no longer renders for (mirror of projectChips,
+                // computed chip-mode-independently so the ball keeps working when
+                // the row shows devices).
+                val visibleProjects = orderedProjectChips(
+                    projects = appViewModel.sessionProjects.value,
+                    savedOrder = appSettings.projectChipOrder,
+                    sortByCount = appSettings.projectChipSortByCount,
+                    counts = sessionProjectMembers.mapValues { (_, refs) -> refs.size },
+                ).filter { it.id !in hiddenProjectIds }
+                when (currentRoute) {
+                    HomeTab.ACTIVITY.route -> {
+                        if (!activityAll) appViewModel.setActivityAll(true)
+                        appViewModel.setActiveProject(
+                            nextProjectFilter(appViewModel.activeProjectId.value, visibleProjects),
+                        )
+                    }
+                    ROUTE_CHATS -> {
+                        if (!chatsAll) appViewModel.setChatsAll(true)
+                        appViewModel.setActiveProject(
+                            nextProjectFilter(appViewModel.activeProjectId.value, visibleProjects),
+                        )
+                    }
+                    else -> {}
                 }
-                ROUTE_CHATS -> {
-                    if (!chatsAll) appViewModel.setChatsAll(true)
-                    appViewModel.setActiveProject(
-                        nextProjectFilter(appViewModel.activeProjectId.value, appViewModel.sessionProjects.value),
-                    )
-                }
-                else -> {}
             }
             "cycleSession" -> cycleFocusAndOpen()
             // 批v160: cycle only the most recent N sessions (owner-set depth).

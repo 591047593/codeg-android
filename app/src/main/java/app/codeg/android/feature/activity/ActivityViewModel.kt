@@ -21,6 +21,7 @@ import app.codeg.android.core.data.participating
 import app.codeg.android.core.data.retrying
 import app.codeg.android.core.data.retryableIds
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.datastore.AggregateProjectFilterStore
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.SessionRef
@@ -78,6 +79,7 @@ class ActivityViewModel @Inject constructor(
     private val repository: ServerRepository,
     settingsStore: AppSettingsStore,
     private val projectRepo: SessionProjectRepository,
+    private val aggregateProjectFilter: AggregateProjectFilterStore,
     /** Floating-ball session cycling (batch v132) — the aggregate list registers here. */
     val focusHub: SessionFocusHub,
     @ApplicationContext private val appContext: Context,
@@ -99,25 +101,52 @@ class ActivityViewModel @Inject constructor(
      * HERE (never in the fetch), so switching projects is instant and the filter is
      * gated on [ServerRepository.activityAll] — a single-device feed can never be
      * silently filtered by a leftover project selection (review #3).
+     *
+     * R2-B P2-1: the long-press-hidden projects fold in the same way — same shared
+     * store as the Chats aggregate, same row filter, gated on [ActivitySectionsInput.all]
+     * so the single-device feed stays untouched. 7 source flows exceed combine's typed
+     * 5-arity: the base tuple rides a data-class input (the SessionListViewModel pattern).
      */
+    private data class ActivitySectionsInput(
+        val conversations: List<ActivityRow>,
+        val readMarks: Map<String, Long>,
+        val all: Boolean,
+        val memberKeys: Set<String>?,
+        val excludeKeys: Set<String>?,
+    )
+
     val sections: StateFlow<List<ActivitySection>> =
         combine(
-            _ui.map { it.conversations }.distinctUntilChanged(),
-            settingsStore.sessionReadMarks,
-            repository.activityAll,
-            projectRepo.activeMemberKeys,
-            // 批v160 W9: the 未添加 scope's complement — every ASSIGNED ref key.
-            projectRepo.activeExcludeKeys,
-        ) { conversations, readMarks, all, memberKeys, excludeKeys ->
+            combine(
+                _ui.map { it.conversations }.distinctUntilChanged(),
+                settingsStore.sessionReadMarks,
+                repository.activityAll,
+                projectRepo.activeMemberKeys,
+                // 批v160 W9: the 未添加 scope's complement — every ASSIGNED ref key.
+                projectRepo.activeExcludeKeys,
+            ) { conversations, readMarks, all, memberKeys, excludeKeys ->
+                ActivitySectionsInput(conversations, readMarks, all, memberKeys, excludeKeys)
+            },
+            aggregateProjectFilter.hiddenProjects,
+            projectRepo.memberProjects,
+        ) { input, hiddenProjects, memberProjects ->
             // Project scope: membership narrows (memberKeys); the 未添加 sentinel
             // complements (excludeKeys — keep rows with NO project); no scope: all.
             val narrowed = when {
-                !all -> conversations
-                memberKeys != null -> conversations.filter { row -> row.refKey in memberKeys }
-                excludeKeys != null -> conversations.filter { row -> row.refKey !in excludeKeys }
-                else -> conversations
+                !input.all -> input.conversations
+                else -> input.conversations
+                    .filter { row ->
+                        when {
+                            input.memberKeys != null -> row.refKey in input.memberKeys
+                            input.excludeKeys != null -> row.refKey !in input.excludeKeys
+                            else -> true
+                        }
+                    }
+                    .filter { row ->
+                        hiddenProjects.intersect(memberProjects[row.refKey].orEmpty()).isEmpty()
+                    }
             }
-            buildActivitySections(narrowed, readMarks)
+            buildActivitySections(narrowed, input.readMarks)
         }
         .distinctUntilChanged()
         // DataStore failure upstream must not kill the sharing coroutine while

@@ -230,6 +230,7 @@ fun GeneralContent(
                                     FilledTonalIconButton(
                                         onClick = { viewModel.moveProjectChip(project.id, -1) },
                                         enabled = index > 0,
+                                        modifier = Modifier.size(44.dp),
                                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                                             containerColor = colors.textPrimary.copy(alpha = 0.08f),
                                             contentColor = colors.textPrimary,
@@ -240,6 +241,7 @@ fun GeneralContent(
                                     FilledTonalIconButton(
                                         onClick = { viewModel.moveProjectChip(project.id, 1) },
                                         enabled = index < projects.lastIndex,
+                                        modifier = Modifier.size(44.dp),
                                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                                             containerColor = colors.textPrimary.copy(alpha = 0.08f),
                                             contentColor = colors.textPrimary,

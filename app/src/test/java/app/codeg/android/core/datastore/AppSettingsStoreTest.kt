@@ -1,9 +1,18 @@
 package app.codeg.android.core.datastore
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * Pure mapping tests for the AppSettings decode (batch v123 regression follow-up):
@@ -107,5 +116,34 @@ class AppSettingsStoreTest {
         assertTrue(SESSION_CHIP_MODES.contains(SESSION_CHIP_PROJECTS))
         assertTrue(s.projectChipOrder.isEmpty())
         assertFalse(s.projectChipSortByCount)
+    }
+
+    @Test
+    fun `w9 chip keys survive a real datastore roundtrip`() = runBlocking {
+        // R2-A P3: the pure-default tests above never exercise the READ side
+        // (prefs → AppSettings). A real DataStore round-trip pins the three W9
+        // keys end to end, including the unknown-mode coerce branch.
+        val tmp = TemporaryFolder()
+        tmp.create()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "settings.preferences_pb")
+            }
+            val store = AppSettingsStore(dataStore)
+            store.setSessionChipMode("projects")
+            store.setProjectChipOrder(listOf("a", "b"))
+            store.setProjectChipSortByCount(true)
+            val s = store.settings.first()
+            assertEquals("projects", s.sessionChipMode)
+            assertEquals(listOf("a", "b"), s.projectChipOrder)
+            assertTrue(s.projectChipSortByCount)
+            // Corrupt input coerces instead of poisoning the chip row.
+            store.setSessionChipMode("nonsense")
+            assertEquals(SESSION_CHIP_DEVICES, store.settings.first().sessionChipMode)
+        } finally {
+            scope.cancel()
+            tmp.delete()
+        }
     }
 }

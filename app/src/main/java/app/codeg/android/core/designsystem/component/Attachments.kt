@@ -92,10 +92,12 @@ fun CodegAttachmentRow(
             contentDescription = null,
             tint = colors.textTertiary,
             modifier = Modifier
-                .size(32.dp)
+                // 44dp hit circle (R2-B: 32dp was under thumb target) — the glyph
+                // stays 16dp via padding.
+                .size(44.dp)
                 .clip(RoundedCornerShape(50))
                 .clickable { onRemove(attachment) }
-                .padding(8.dp),
+                .padding(14.dp),
         )
     }
 }
@@ -113,6 +115,8 @@ private fun AttachPillButton(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
+            // R2-B: 34dp of pill was under the 44dp thumb target.
+            .heightIn(min = 44.dp)
             .clip(shape)
             .background(if (enabled) colors.bgElevated.copy(alpha = 0.55f) else Color.Transparent)
             .border(1.dp, colors.surfaceStroke, shape)

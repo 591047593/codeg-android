@@ -41,6 +41,18 @@ class SessionProjectRepositoryTest {
         return SessionProjectRepository(SessionProjectStore(dataStore), scope) to scope
     }
 
+    /** R2-A P3: the `members` StateFlow is fed Eagerly on Dispatchers.Default — a
+     *  write's echo lags the suspend call by 1-2 hops with no happens-before edge.
+     *  The member-derived assertions poll instead of racing (the activateCreated
+     *  test below already does this for `projects`). */
+    private fun awaitMemberKey(repo: SessionProjectRepository, key: String) {
+        repeat(100) {
+            if (repo.members.value.values.any { refs -> refs.any { it.key == key } }) return
+            Thread.sleep(20)
+        }
+        error("members never echoed $key: ${repo.members.value}")
+    }
+
     @Test
     fun `activateCreated applies the fresh id immediately, setActive on it would drop it`() = runBlocking {
         val (repo, scope) = newRepo()
@@ -87,6 +99,7 @@ class SessionProjectRepositoryTest {
             repo.activateCreated(p.id)
             repo.setMembership(p.id, app.codeg.android.core.datastore.SessionRef("a", 1), true)
             repo.setMembership(p2.id, app.codeg.android.core.datastore.SessionRef("b", 2), true)
+            awaitMemberKey(repo, "a:1")
 
             val keys = repo.activeMemberKeys.first()
             assertEquals(setOf("a:1"), keys)
@@ -134,6 +147,7 @@ class SessionProjectRepositoryTest {
             val p = repo.create("P1")
             repo.setMembership(p.id, app.codeg.android.core.datastore.SessionRef("a", 1), true)
             repo.setMembership(p.id, app.codeg.android.core.datastore.SessionRef("a", 2), true)
+            awaitMemberKey(repo, "a:1")
 
             // No scope: null (the caller keeps every row).
             assertNull(repo.activeExcludeKeys.first())

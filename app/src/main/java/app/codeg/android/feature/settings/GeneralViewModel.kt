@@ -250,18 +250,25 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setProjectChipOrder(order)
     }
 
+    /** R2-A P3: the authoritative chip order while rearranging — rapid ↑/↓ taps
+     *  must not re-read the last-PERSISTED snapshot, whose DataStore echo can lag
+     *  the previous tap (a double-tap would move one slot instead of two). */
+    private var chipOrderOverride: List<String>? = null
+
     /** Move one project [step] slots (+1 right / -1 left) in the manual order.
      *  Operates on the row's EFFECTIVE display order (saved ids first, then the
      *  never-moved rest) — a move on a partial saved list must still move the
      *  row the user sees. Persists the materialized order. */
     fun moveProjectChip(id: String, step: Int) {
-        val effective = orderedProjectChips(
+        val effective = chipOrderOverride ?: orderedProjectChips(
             sessionProjectRepo.projects.value,
             settings.value.projectChipOrder,
             sortByCount = false,
             counts = emptyMap(),
         ).map { it.id }
-        setProjectChipOrder(moveProjectInOrder(effective, id, step))
+        val moved = moveProjectInOrder(effective, id, step)
+        chipOrderOverride = moved
+        setProjectChipOrder(moved)
     }
 
     // ---- Floating ball + font scale (batch v126; device-local prefs) ----
