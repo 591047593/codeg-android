@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +99,8 @@ fun FullscreenTextEditorDialog(
                 ) {
                     FilledTonalIconButton(
                         onClick = onDismiss,
+                        // R3-A: 44dp visual on our touch-target line (M3 default is 40).
+                        modifier = Modifier.size(44.dp),
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = colors.textPrimary.copy(alpha = 0.06f),
                             contentColor = colors.textSecondary,

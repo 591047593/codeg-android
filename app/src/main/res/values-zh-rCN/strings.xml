@@ -117,6 +117,7 @@
     <string name="attach_add_image">图片</string>
     <string name="attach_add_file">文件</string>
     <string name="attach_remove">移除附件</string>
+    <string name="card_more_actions">更多操作</string>
     <string name="attach_count">已附 %1$d 个</string>
     <string name="session_rename">重命名</string>
     <string name="rename_title_hint">会话名称</string>
@@ -1476,6 +1477,8 @@
     <string name="general_project_empty">还没有会话项目——在「动态」或「会话」页长按「全部」即可创建。</string>
     <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
     <string name="dispatch_task_desc_required">请填写描述或添加附件——服务端会拒绝空任务书。</string>
+    <!-- 批v160 R3-A: the title gate's missing hint -->
+    <string name="dispatch_title_required">填个标题就能派发了。</string>
     <string name="dispatch_model_pending">选择项目后探测</string>
     <!-- 批v155 R5 P3-2: viewer decode failure (corrupt/unreadable source) -->
     <string name="image_viewer_failed">图片加载失败</string>

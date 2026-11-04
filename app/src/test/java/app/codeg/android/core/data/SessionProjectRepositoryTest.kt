@@ -161,4 +161,58 @@ class SessionProjectRepositoryTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun `memberProjects inverts members into sessions-per-project`() = runBlocking {
+        // R2-B P2-1: the aggregate's hidden-project filter needs session →
+        // project ids without scanning every project's member list per row.
+        val (repo, scope) = newRepo()
+        try {
+            val p1 = repo.create("P1")
+            val p2 = repo.create("P2")
+            repo.setMembership(p1.id, app.codeg.android.core.datastore.SessionRef("a", 1), true)
+            repo.setMembership(p2.id, app.codeg.android.core.datastore.SessionRef("a", 1), true)
+            repo.setMembership(p1.id, app.codeg.android.core.datastore.SessionRef("a", 2), true)
+            awaitMemberKey(repo, "a:2")
+
+            val inverted = repo.memberProjects.first()
+            assertEquals(setOf(p1.id, p2.id), inverted["a:1"])
+            assertEquals(setOf(p1.id), inverted["a:2"])
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `remove drops the project and clears an active scope on it`() = runBlocking {
+        val (repo, scope) = newRepo()
+        try {
+            val p = repo.create("P1")
+            repo.activateCreated(p.id)
+            repo.remove(p.id)
+            // The in-memory scope clears synchronously (remove's first line).
+            assertNull(repo.activeProjectId.value)
+            var gone = false
+            repeat(100) {
+                if (repo.projects.value.none { it.id == p.id }) { gone = true; return@repeat }
+                Thread.sleep(20)
+            }
+            org.junit.Assert.assertTrue("projects flow must drop the removed id", gone)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `sentinel with zero members excludes nothing but is never null`() = runBlocking {
+        // Twin of the R1-B P2-3 empty-project rule, complement direction: a
+        // zero-member 未添加 scope means "exclude nobody", not "no guard".
+        val (repo, scope) = newRepo()
+        try {
+            repo.setActive(UNASSIGNED_PROJECT_ID)
+            assertEquals(emptySet<String>(), repo.activeExcludeKeys.first())
+        } finally {
+            scope.cancel()
+        }
+    }
 }

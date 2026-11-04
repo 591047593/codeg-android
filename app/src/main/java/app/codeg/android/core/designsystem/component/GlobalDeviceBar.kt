@@ -48,7 +48,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -384,7 +383,9 @@ private fun DeviceChip(
     // accent container + trailing check (filter-chip convention) instead of a tint.
     Box(
         modifier = Modifier
-            .alpha(if (dimmed) 0.65f else 1f)
+            // R3-A P2: no extra alpha on dimmed chips — textTertiary alone already
+            // reads dimmer (4.62:1 light / 5.7:1 dark); stacking alpha on top of
+            // the tertiary switch sank the label to 2.47:1, under WCAG AA.
             .clip(shape)
             .combinedClickable(
                 onLongClickLabel = if (onLongClick != null) resolvedLongClickLabel else null,

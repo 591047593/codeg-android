@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -433,7 +435,10 @@ fun DispatchForm(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { device?.let { host.loadTarget(it) } }) {
+                TextButton(
+                    onClick = { device?.let { host.loadTarget(it) } },
+                    modifier = Modifier.heightIn(min = 44.dp),
+                ) {
                     Text(stringResource(R.string.dispatch_retry))
                 }
             }
@@ -468,7 +473,8 @@ fun DispatchForm(
                     else -> R.string.dispatch_no_folder
                 },
             ),
-            onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
+            onClick = { folderSheet = true },
+            enabled = targets.folders.isNotEmpty(),
         )
 
         // ⑤b 模型（仅任务模式 + 具体 Agent）— the agent's live mode list via
@@ -490,7 +496,8 @@ fun DispatchForm(
                         else -> R.string.dispatch_model_none
                     },
                 ),
-                onClick = { if (modelOptions.isNotEmpty()) modelSheet = true },
+                onClick = { modelSheet = true },
+                enabled = modelOptions.isNotEmpty(),
             )
             if (modelFailed && !modelLoading) {
                 Text(
@@ -623,6 +630,15 @@ fun DispatchForm(
                     if (sessionMode) R.string.dispatch_session_desc_required
                     else R.string.dispatch_task_desc_required,
                 ),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+            )
+        }
+        // R3-A P3: the title gate had no hint — the user who filled everything
+        // else saw a grey 主按钮 with no reason why.
+        if (title.isBlank()) {
+            Text(
+                stringResource(R.string.dispatch_title_required),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textTertiary,
             )
@@ -872,7 +888,13 @@ private fun ModeCard(
                 color = if (selected) colors.accent.copy(alpha = 0.55f) else colors.surfaceStroke,
                 shape = shape,
             )
-            .clickable(onClick = onClick)
+            // R3-A P2: selectable (not bare clickable) carries the selected state
+            // into the semantics tree — TalkBack announces which card is on.
+            .selectable(
+                selected = selected,
+                role = androidx.compose.ui.semantics.Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import app.codeg.android.core.designsystem.theme.CodegTheme
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.codeg.android.R
@@ -303,14 +304,17 @@ fun LocalImageThumbnail(
         }
     }
     val bmp = bitmap
+    // R3-A P3: token-driven placeholder — hardcoded white-on-white was 1.0:1 in
+    // light mode (an invisible "[image]"); textPrimary washes adapt to theme.
+    val placeholder = CodegTheme.colors.textPrimary
     Box(
-        modifier.background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(cornerRadius.dp)),
+        modifier.background(placeholder.copy(alpha = 0.06f), RoundedCornerShape(cornerRadius.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (bmp != null) {
             Image(bitmap = bmp, contentDescription = null, modifier = Modifier.fillMaxSize())
         } else {
-            Text("[image]", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
+            Text("[image]", style = MaterialTheme.typography.labelSmall, color = placeholder.copy(alpha = 0.4f))
         }
     }
 }

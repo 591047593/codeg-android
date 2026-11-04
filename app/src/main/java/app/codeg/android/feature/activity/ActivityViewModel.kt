@@ -130,23 +130,17 @@ class ActivityViewModel @Inject constructor(
             aggregateProjectFilter.hiddenProjects,
             projectRepo.memberProjects,
         ) { input, hiddenProjects, memberProjects ->
-            // Project scope: membership narrows (memberKeys); the 未添加 sentinel
-            // complements (excludeKeys — keep rows with NO project); no scope: all.
-            val narrowed = when {
-                !input.all -> input.conversations
-                else -> input.conversations
-                    .filter { row ->
-                        when {
-                            input.memberKeys != null -> row.refKey in input.memberKeys
-                            input.excludeKeys != null -> row.refKey !in input.excludeKeys
-                            else -> true
-                        }
-                    }
-                    .filter { row ->
-                        hiddenProjects.intersect(memberProjects[row.refKey].orEmpty()).isEmpty()
-                    }
-            }
-            buildActivitySections(narrowed, input.readMarks)
+            buildActivitySections(
+                narrowActivityRows(
+                    conversations = input.conversations,
+                    all = input.all,
+                    memberKeys = input.memberKeys,
+                    excludeKeys = input.excludeKeys,
+                    hiddenProjects = hiddenProjects,
+                    memberProjects = memberProjects,
+                ),
+                input.readMarks,
+            )
         }
         .distinctUntilChanged()
         // DataStore failure upstream must not kill the sharing coroutine while
@@ -764,6 +758,36 @@ data class ActivitySection(
     val rows: List<ActivityRow>,
 ) {
     val count: Int get() = rows.size
+}
+
+/**
+ * R2-B P2-1 narrowing, extracted for unit tests. The aggregate gate lives on
+ * [all]: a single-device feed is NEVER narrowed — not by the project scope, not
+ * by the long-press-hidden set (a single-device view has no chip to escape a
+ * filter with). When both scopes are somehow non-null the member set owns the
+ * narrowing (same contract as the Chats aggregate's builder — the repo never
+ * emits both, but a stale exclude list must not stack on top).
+ */
+internal fun narrowActivityRows(
+    conversations: List<ActivityRow>,
+    all: Boolean,
+    memberKeys: Set<String>?,
+    excludeKeys: Set<String>?,
+    hiddenProjects: Set<String>,
+    memberProjects: Map<String, Set<String>>,
+): List<ActivityRow> {
+    if (!all) return conversations
+    return conversations
+        .filter { row ->
+            when {
+                memberKeys != null -> row.refKey in memberKeys
+                excludeKeys != null -> row.refKey !in excludeKeys
+                else -> true
+            }
+        }
+        .filter { row ->
+            hiddenProjects.intersect(memberProjects[row.refKey].orEmpty()).isEmpty()
+        }
 }
 
 /**

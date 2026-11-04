@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -77,6 +79,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -87,6 +94,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -95,6 +103,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
@@ -560,10 +569,15 @@ private fun IdeaCard(
                 )
                 if (!selectMode) {
                     Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                        IconButton(
+                            onClick = { menuOpen = true },
+                            // R3-A P2: the menu's only visible entry needs a name
+                            // (TalkBack) and a thumb-sized hit area.
+                            modifier = Modifier.size(44.dp),
+                        ) {
                             Icon(
                                 Icons.Rounded.MoreVert,
-                                contentDescription = null,
+                                contentDescription = stringResource(R.string.card_more_actions),
                                 tint = colors.textSecondary,
                                 modifier = Modifier.size(18.dp),
                             )
@@ -941,13 +955,22 @@ private fun IdeaEditorDialog(
                 .imePadding(),
             contentAlignment = Alignment.BottomCenter,
         ) {
+            // R3-A P3: the handle used to be a lie — a static drawing on a Dialog.
+            // Vertical drag now really dismisses: pull past ~96dp and the sheet
+            // closes, release short and it springs back. Confined to the handle
+            // so it never fights the scrolling form below.
+            val dragY = remember { Animatable(0f) }
+            val dismissPx = with(LocalDensity.current) { 96.dp.toPx() }
             Surface(
                 color = colors.bgElevated,
                 shape = RoundedCornerShape(
                     topStart = CodegTheme.dimens.radiusLg,
                     topEnd = CodegTheme.dimens.radiusLg,
                 ),
-                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.94f)
+                    .offset { IntOffset(0, dragY.value.roundToInt()) },
             ) {
                 Column(Modifier.fillMaxSize()) {
                     // W10: the bottom-sheet affordance (drag handle) + header — the
@@ -957,7 +980,27 @@ private fun IdeaEditorDialog(
                             Modifier
                                 .size(width = 36.dp, height = 4.dp)
                                 .clip(RoundedCornerShape(2.dp))
-                                .background(colors.surfaceStroke),
+                                .background(colors.surfaceStroke)
+                                // Touch target beyond the 4dp sliver; the drag lives
+                                // here only — the form's scroll below is untouched.
+                                .padding(horizontal = 24.dp, vertical = 14.dp)
+                                .pointerInput(Unit) {
+                                    detectVerticalDragGestures(
+                                        onVerticalDrag = { change, dy ->
+                                            change.consume()
+                                            scope.launch { dragY.snapTo((dragY.value + dy).coerceAtLeast(0f)) }
+                                        },
+                                        onDragEnd = {
+                                            scope.launch {
+                                                if (dragY.value >= dismissPx) close()
+                                                else dragY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            scope.launch { dragY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+                                        },
+                                    )
+                                },
                         )
                     }
                     Row(
@@ -1081,7 +1124,12 @@ private fun IdeaEditorDialog(
                         // Spacer keeps 保存/cancel right-aligned; no hint text here —
                         // the save gate is self-evident (title/description/attachment).
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { close() }) { Text(stringResource(android.R.string.cancel)) }
+                        TextButton(
+                            onClick = { close() },
+                            // R3-A: parity with the 44dp 保存 beside it — twin
+                            // footer actions at different heights read as broken.
+                            modifier = Modifier.heightIn(min = 44.dp),
+                        ) { Text(stringResource(android.R.string.cancel)) }
                         Button(
                             onClick = {
                                 // Ownership moves to the idea row.
@@ -1323,7 +1371,8 @@ private fun InsertTodoSection(
                         else -> R.string.dispatch_no_folder
                     },
                 ),
-                onClick = { if (targets.folders.isNotEmpty()) folderSheet = true },
+                onClick = { folderSheet = true },
+                enabled = targets.folders.isNotEmpty(),
             )
             // 模型（仅具体 Agent）— 自动 can't be probed (no concrete CLI), so the
             // row hides; an agent without modes inserts mode-less.
@@ -1343,7 +1392,8 @@ private fun InsertTodoSection(
                             else -> R.string.dispatch_model_none
                         },
                     ),
-                    onClick = { if (modelOptions.isNotEmpty()) modelSheet = true },
+                    onClick = { modelSheet = true },
+                    enabled = modelOptions.isNotEmpty(),
                 )
                 if (modelFailed && !modelLoading) {
                     Text(

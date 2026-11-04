@@ -82,4 +82,47 @@ class ProjectChipOrderTest {
         val order = listOf("a", "b")
         assertEquals(order, moveProjectInOrder(order, "ghost", -1))
     }
+
+    // ---- materializeChipMove (R3-B) ----
+
+    @Test
+    fun `materialized move operates on the effective display order`() {
+        // saved has only "c": the bar shows c (saved) then a, b (creation order).
+        // Moving "a" up swaps with the chip the user actually sees above it.
+        val projects = listOf(project("a", 0), project("b", 1), project("c", 2))
+        assertEquals(
+            listOf("a", "c", "b"),
+            materializeChipMove(projects, listOf("c"), "a", -1),
+        )
+    }
+
+    @Test
+    fun `materialized move persists the FULL order, not just saved ids`() {
+        // The point of materialization: one move on a partial saved list lands
+        // every id in the pref, so the next move works off the real sequence.
+        val projects = listOf(project("a", 0), project("b", 1), project("c", 2))
+        assertEquals(
+            listOf("c", "b", "a"),
+            materializeChipMove(projects, listOf("c"), "b", -1),
+        )
+    }
+
+    @Test
+    fun `materialized move clamps at the ends and ignores ghost ids`() {
+        val projects = listOf(project("a", 0), project("b", 1), project("c", 2))
+        // "c" already sits first in the effective order — clamped, unchanged.
+        assertEquals(listOf("c", "a", "b"), materializeChipMove(projects, listOf("c"), "c", -1))
+        assertEquals(listOf("c", "a", "b"), materializeChipMove(projects, listOf("c"), "ghost", 1))
+    }
+
+    @Test
+    fun `a duplicated id in the saved order renders one chip`() {
+        // R3-B: distinct() first — a corrupt pref holding "a,a" must not
+        // duplicate the chip row.
+        val projects = listOf(project("a", 0), project("b", 1))
+        assertEquals(
+            listOf("a", "b"),
+            ids(orderedProjectChips(projects, listOf("a", "a"), sortByCount = false, counts = emptyMap())),
+        )
+    }
 }

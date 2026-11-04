@@ -29,11 +29,34 @@ fun orderedProjectChips(
         )
     } else {
         val byId = projects.associateBy { it.id }
-        val ordered = savedOrder.mapNotNull { byId[it] }
+        // R3-B: distinct() first — a duplicate id in the saved list (corrupt
+        // pref, parallel writers) would otherwise render duplicate chips.
+        val ordered = savedOrder.distinct().mapNotNull { byId[it] }
         val seen = ordered.mapTo(mutableSetOf()) { it.id }
         ordered + projects.filter { it.id !in seen }.sortedBy { it.sortOrder }
     }
 }
+
+/**
+ * R3-B: the settings page's ↑/↓ operates on the row's EFFECTIVE display order —
+ * saved ids first, then the never-moved rest in creation order — because a move
+ * on a partial saved list must still move the row the user actually sees.
+ * Returns the FULL materialized order for persistence. Deliberately ignores the
+ * count sort: the editor only renders when it is off (GeneralScreen), and the
+ * manual order must keep accumulating underneath it.
+ */
+fun materializeChipMove(
+    projects: List<SessionProject>,
+    savedOrder: List<String>,
+    id: String,
+    step: Int,
+): List<String> =
+    moveProjectInOrder(
+        orderedProjectChips(projects, savedOrder, sortByCount = false, counts = emptyMap())
+            .map { it.id },
+        id,
+        step,
+    )
 
 /** 批v160 W9 settings-page helper: move one id one slot up (-1) / down (+1). */
 fun moveProjectInOrder(order: List<String>, id: String, step: Int): List<String> {

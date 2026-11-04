@@ -3,8 +3,8 @@ package app.codeg.android.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.materializeChipMove
 import app.codeg.android.core.data.moveProjectInOrder
-import app.codeg.android.core.data.orderedProjectChips
 import app.codeg.android.core.datastore.AppSettings
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.datastore.DraftFolderPrefsStore
@@ -260,13 +260,14 @@ class GeneralViewModel @Inject constructor(
      *  never-moved rest) — a move on a partial saved list must still move the
      *  row the user sees. Persists the materialized order. */
     fun moveProjectChip(id: String, step: Int) {
-        val effective = chipOrderOverride ?: orderedProjectChips(
-            sessionProjectRepo.projects.value,
-            settings.value.projectChipOrder,
-            sortByCount = false,
-            counts = emptyMap(),
-        ).map { it.id }
-        val moved = moveProjectInOrder(effective, id, step)
+        val moved = chipOrderOverride
+            ?.let { moveProjectInOrder(it, id, step) }
+            ?: materializeChipMove(
+                sessionProjectRepo.projects.value,
+                settings.value.projectChipOrder,
+                id,
+                step,
+            )
         chipOrderOverride = moved
         setProjectChipOrder(moved)
     }

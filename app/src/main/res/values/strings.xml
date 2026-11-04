@@ -117,6 +117,7 @@
     <string name="attach_add_image">Image</string>
     <string name="attach_add_file">File</string>
     <string name="attach_remove">Remove attachment</string>
+    <string name="card_more_actions">More actions</string>
     <string name="attach_count">%1$d attached</string>
     <string name="session_rename">Rename</string>
     <string name="rename_title_hint">Session title</string>
@@ -1490,6 +1491,8 @@
     <string name="general_project_empty">No session projects yet — long-press 全部 on the 动态 or 会话 tab to create one.</string>
     <!-- 批v155 R3: task-mode prompt gate + model probe pending + worktree/branch warning -->
     <string name="dispatch_task_desc_required">Add a description (or attach files) — the server rejects an empty prompt.</string>
+    <!-- 批v160 R3-A: the title gate's missing hint -->
+    <string name="dispatch_title_required">Add a title to dispatch.</string>
     <string name="dispatch_model_pending">Pick a project to probe</string>
     <!-- 批v155 R5 P3-2: viewer decode failure (corrupt/unreadable source) -->
     <string name="image_viewer_failed">Couldn\'t load this image</string>

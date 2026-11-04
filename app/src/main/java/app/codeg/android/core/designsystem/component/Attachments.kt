@@ -25,9 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.codeg.android.R
 import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.designsystem.theme.CodegTheme
 
@@ -89,7 +91,9 @@ fun CodegAttachmentRow(
         )
         Icon(
             Icons.Rounded.Close,
-            contentDescription = null,
+            // R3-A P1: this is the ONLY removal path — a destructive action with
+            // no name is un-usable (and dangerous) under TalkBack.
+            contentDescription = stringResource(R.string.attach_remove),
             tint = colors.textTertiary,
             modifier = Modifier
                 // 44dp hit circle (R2-B: 32dp was under thumb target) — the glyph
@@ -123,7 +127,14 @@ private fun AttachPillButton(
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            // R3-A P3: a disabled pill that keeps the accent icon reads as
+            // "still tappable" — dim the icon with the label.
+            tint = if (enabled) colors.accent else colors.textTertiary,
+            modifier = Modifier.size(16.dp),
+        )
         Spacer(Modifier.width(6.dp))
         Text(
             label,

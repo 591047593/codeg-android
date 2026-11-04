@@ -85,6 +85,9 @@ fun PickerField(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     valueNote: String? = null,
+    /** R3-A P3: a dead click (ripple fires, nothing happens) is a lie — callers
+     *  with loading/empty option states pass their real condition here. */
+    enabled: Boolean = true,
 ) {
     val colors = CodegTheme.colors
     // 批v160 W10: card treatment — radiusMd corners, elevated fill, hairline
@@ -98,14 +101,14 @@ fun PickerField(
             .clip(shape)
             .background(colors.bg.copy(alpha = 0.42f), shape)
             .border(1.dp, colors.surfaceStroke, shape)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             icon,
             contentDescription = null,
-            tint = colors.accent,
+            tint = if (enabled) colors.accent else colors.textTertiary,
             modifier = Modifier
                 .size(32.dp)
                 .clip(RoundedCornerShape(8.dp))
@@ -119,7 +122,7 @@ fun PickerField(
                 value ?: placeholder,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (value != null) FontWeight.Medium else FontWeight.Normal,
-                color = if (value != null) colors.textPrimary else colors.textTertiary,
+                color = if (value != null && enabled) colors.textPrimary else colors.textTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -127,7 +130,12 @@ fun PickerField(
                 Text(valueNote, style = MaterialTheme.typography.labelSmall, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(20.dp))
+        Icon(
+            Icons.Rounded.ExpandMore,
+            contentDescription = null,
+            tint = colors.textTertiary.copy(alpha = if (enabled) 1f else 0.5f),
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

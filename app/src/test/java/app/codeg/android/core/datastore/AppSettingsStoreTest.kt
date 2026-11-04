@@ -146,4 +146,59 @@ class AppSettingsStoreTest {
             tmp.delete()
         }
     }
+
+    @Test
+    fun `w5 swipe mode and w8 toggles survive a real datastore roundtrip`() = runBlocking {
+        // Same read-side gap the w9 test closes, for the W5 board swipe and the
+        // W8 notification/keepalive toggles — including the corrupt-mode coerce.
+        val tmp = TemporaryFolder()
+        tmp.create()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "settings.preferences_pb")
+            }
+            val store = AppSettingsStore(dataStore)
+            store.setTaskSwipeMode(TASK_SWIPE_DEVICES)
+            store.setNotifyInteractiveEnabled(false)
+            store.setKeepAliveEnabled(true)
+            val s = store.settings.first()
+            assertEquals(TASK_SWIPE_DEVICES, s.taskSwipeMode)
+            assertFalse(s.notifyInteractiveEnabled)
+            assertTrue(s.keepAliveEnabled)
+            // Corrupt swipe mode coerces back to the default instead of
+            // stranding the board.
+            store.setTaskSwipeMode("nonsense")
+            assertEquals(TASK_SWIPE_SEGMENTS, store.settings.first().taskSwipeMode)
+        } finally {
+            scope.cancel()
+            tmp.delete()
+        }
+    }
+
+    @Test
+    fun `project chip order drops blank ids and keeps a reordered sequence`() = runBlocking {
+        // R3-B defense in depth: a blank between commas (corrupt pref) is
+        // filtered on BOTH the write and the read side, so orderedProjectChips
+        // never even sees it.
+        val tmp = TemporaryFolder()
+        tmp.create()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "settings.preferences_pb")
+            }
+            val store = AppSettingsStore(dataStore)
+            store.setProjectChipOrder(listOf("b", "", "a"))
+            store.setProjectChipSortByCount(true)
+            val s = store.settings.first()
+            assertEquals(listOf("b", "a"), s.projectChipOrder)
+            assertTrue(s.projectChipSortByCount)
+            store.setProjectChipSortByCount(false)
+            assertFalse(store.settings.first().projectChipSortByCount)
+        } finally {
+            scope.cancel()
+            tmp.delete()
+        }
+    }
 }
