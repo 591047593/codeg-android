@@ -220,7 +220,16 @@ class GestureClassifier(
                 "U" -> "up"
                 "UL" -> "upLeft"
                 "UR" -> "upRight"
-                else -> null // D / DL / DR are deliberately unbound (misfire-prone).
+                // 批v160: D / DL / DR unbound — they were deliberately left out of
+                // the classifier at launch as misfire-prone (a scroll-like slip
+                // near the screen edge). The owner asked for them (↓ / ↙ / ↘ are
+                // high-frequency intents), so the recognizer now NAMES them; the
+                // misfire guard lives in DEFAULT_BINDINGS (all three default to
+                // null) instead of being hard-wired here.
+                "D" -> "down"
+                "DL" -> "downLeft"
+                "DR" -> "downRight"
+                else -> null
             }
             if (single != null) {
                 resetGesture()
@@ -284,7 +293,8 @@ private val OPP = mapOf(
 
 internal fun isOpposite(a: String, b: String): Boolean = OPP[a] == b
 
-/** Two-segment fold pairs → named gestures (the 9 compound bindings). */
+/** Two-segment fold pairs → named gestures (the 9 compound bindings, +5 more in
+ *  批v160: ↓↑ / ↙↑ / ↙→ / ↘↑ / ↘← — the owner's high-frequency set). */
 internal fun foldGesture(a: String, b: String): String? = when {
     a == "L" && b == "R" -> "leftThenRight"
     a == "R" && b == "L" -> "rightThenLeft"
@@ -295,5 +305,10 @@ internal fun foldGesture(a: String, b: String): String? = when {
     a == "UR" && b == "L" -> "upRightThenLeft"
     a == "UR" && b == "D" -> "upRightThenDown"
     a == "UL" && b == "D" -> "upLeftThenDown"
+    a == "D" && b == "U" -> "downThenUp"
+    a == "DL" && b == "U" -> "downLeftThenUp"
+    a == "DL" && b == "R" -> "downLeftThenRight"
+    a == "DR" && b == "U" -> "downRightThenUp"
+    a == "DR" && b == "L" -> "downRightThenLeft"
     else -> null
 }

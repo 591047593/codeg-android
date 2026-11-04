@@ -266,6 +266,34 @@ class SessionFocusHubTest {
     }
 
     @Test
+    fun `peekCycle limit truncates the ring and wraps inside it`() = runTest {
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val hub = SessionFocusHub(scope)
+        try {
+            hub.register("chats", listOf(item("a", 1), item("a", 2), item("a", 3), item("a", 4), item("a", 5)))
+            // Depth 3 (批v160 循环切最近会话): only the first three rows are
+            // walkable and total reads 3, so the preview card shows "1 / 3".
+            val step = hub.peekCycle("chats", limit = 3)!!
+            assertEquals(SessionRef("a", 1), step.item.ref)
+            assertEquals(1, step.position)
+            assertEquals(3, step.total)
+            hub.commitCycle(step)
+            assertEquals(SessionRef("a", 2), hub.peekCycle("chats", limit = 3)!!.item.ref)
+            hub.commitCycle(hub.peekCycle("chats", limit = 3)!!)
+            assertEquals(SessionRef("a", 3), hub.peekCycle("chats", limit = 3)!!.item.ref)
+            hub.commitCycle(hub.peekCycle("chats", limit = 3)!!)
+            // Wrapping happens inside the truncated ring: a:3 → a:1, never a:4.
+            assertEquals(SessionRef("a", 1), hub.peekCycle("chats", limit = 3)!!.item.ref)
+            // Depth below 1 clamps to 1; an anchor outside the window restarts at the top.
+            val single = hub.peekCycle("chats", current = SessionRef("a", 5), limit = 0)!!
+            assertEquals(SessionRef("a", 1), single.item.ref)
+            assertEquals(1, single.total)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `validServers filters cycles and highlight resolution`() = runTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val hub = SessionFocusHub(scope)

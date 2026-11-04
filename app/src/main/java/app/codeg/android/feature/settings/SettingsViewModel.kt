@@ -80,6 +80,11 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** 批v160: 「循环切最近会话」 depth (the store clamps to 1..10). */
+    fun setFloatBallCycleDepth(depth: Int) = viewModelScope.launch {
+        appSettingsStore.setFloatBallCycleDepth(depth)
+    }
+
     /** Copy the full crash report text (for pasting into a bug report). */
     fun copyCrashReport(crash: CrashRecord) {
         val manager = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return

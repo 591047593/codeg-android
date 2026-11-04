@@ -139,12 +139,30 @@ class GestureClassifierTest {
     }
 
     @Test
-    fun `plain down swipe is deliberately unbound`() {
+    fun `plain down swipe names down (the guard lives in the catalog)`() {
+        // 批v160: the classifier NAMES D/DL/DR again — the misfire guard moved to
+        // DEFAULT_BINDINGS (all three default to null), so recognition and firing
+        // are decoupled and the owner can bind them without a code change.
         val c = classifier()
         c.onDown(1000, 100f, 100f)
         c.onMove(1100, 100f, 150f)
         val r = c.onUp(1150, 100f, 250f)
-        assertTrue(r is GestureResult.None)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "down")
+    }
+
+    @Test
+    fun `fast diagonal down-left and down-right name their own gestures`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 100f)
+        c.onMove(1100, 160f, 150f) // 40 left, 50 down → DL
+        val r = c.onUp(1150, 140f, 170f)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downLeft")
+
+        val c2 = classifier()
+        c2.onDown(1000, 200f, 100f)
+        c2.onMove(1100, 240f, 150f) // 40 right, 50 down → DR
+        val r2 = c2.onUp(1150, 260f, 170f)
+        assertTrue("got $r2", r2 is GestureResult.Named && r2.gesture == "downRight")
     }
 
     // ---- folds (two-segment compounds) ----
@@ -192,6 +210,56 @@ class GestureClassifierTest {
         c.onMove(1200, 260f, 200f) // R
         val r = c.onUp(1250, 300f, 200f)
         assertTrue("got $r", r is GestureResult.Named && r.gesture == "leftThenRight")
+    }
+
+    @Test
+    fun `down then up folds to downThenUp even back near the origin`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 200f)
+        c.onMove(1100, 200f, 245f) // D
+        c.onMove(1200, 200f, 210f) // 35px up from the D anchor → U
+        val r = c.onUp(1250, 200f, 215f) // net displacement only ~15px
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downThenUp")
+    }
+
+    @Test
+    fun `down-left then up folds to downLeftThenUp`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 200f)
+        c.onMove(1100, 160f, 250f) // DL (40 left, 50 down)
+        c.onMove(1200, 165f, 210f) // 5 left, 40 up from the anchor → U
+        val r = c.onUp(1250, 165f, 215f)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downLeftThenUp")
+    }
+
+    @Test
+    fun `down-left then right folds to downLeftThenRight`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 200f)
+        c.onMove(1100, 160f, 250f) // DL
+        c.onMove(1200, 200f, 245f) // 40 right, 5 up from the anchor → R
+        val r = c.onUp(1250, 210f, 240f)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downLeftThenRight")
+    }
+
+    @Test
+    fun `down-right then up folds to downRightThenUp`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 200f)
+        c.onMove(1100, 240f, 250f) // DR (40 right, 50 down)
+        c.onMove(1200, 235f, 210f) // 5 left, 40 up from the anchor → U
+        val r = c.onUp(1250, 235f, 215f)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downRightThenUp")
+    }
+
+    @Test
+    fun `down-right then left folds to downRightThenLeft`() {
+        val c = classifier()
+        c.onDown(1000, 200f, 200f)
+        c.onMove(1100, 240f, 250f) // DR
+        c.onMove(1200, 200f, 255f) // 40 left, 5 down from the anchor → L
+        val r = c.onUp(1250, 190f, 260f)
+        assertTrue("got $r", r is GestureResult.Named && r.gesture == "downRightThenLeft")
     }
 
     @Test

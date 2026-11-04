@@ -50,6 +50,9 @@ data class AppSettings(
     val floatBallEnabled: Boolean = true,
     /** Floating ball size tier: "small" | "medium" | "large" (unknown → medium). */
     val floatBallSize: String = DEFAULT_FLOAT_BALL_SIZE,
+    /** 批v160: how many recent sessions 「循环切最近会话」 walks (1..10, running
+     *  sessions first per the list registration order). */
+    val floatBallCycleDepth: Int = DEFAULT_FLOAT_BALL_CYCLE_DEPTH,
     /** Inbox "new idea" button placement (批v151): "corner" = classic M3 FAB
      *  bottom-right (default) | "centerWide" = bottom-center pill half the
      *  screen wide (either thumb reaches it). */
@@ -72,6 +75,7 @@ data class AppSettings(
         // The app opens on the workbench unless the user picked another start tab.
         const val DEFAULT_START_TAB = "activity"
         const val DEFAULT_FLOAT_BALL_SIZE = "medium"
+        const val DEFAULT_FLOAT_BALL_CYCLE_DEPTH = 5
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
@@ -137,6 +141,8 @@ class AppSettingsStore @Inject constructor(
             activityDeviceSwipe = prefs[ACTIVITY_DEVICE_SWIPE] ?: false,
             floatBallEnabled = prefs[FLOAT_BALL_ENABLED] ?: true,
             floatBallSize = prefs[FLOAT_BALL_SIZE]?.takeIf { it in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE,
+            floatBallCycleDepth = (prefs[FLOAT_BALL_CYCLE_DEPTH] ?: AppSettings.DEFAULT_FLOAT_BALL_CYCLE_DEPTH)
+                .coerceIn(FLOAT_BALL_CYCLE_MIN, FLOAT_BALL_CYCLE_MAX),
             inboxNewIdeaStyle = prefs[INBOX_NEW_IDEA_STYLE]?.takeIf { it in INBOX_IDEA_STYLES }
                 ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
@@ -242,6 +248,11 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[FLOAT_BALL_SIZE] = size.takeIf { s -> s in FLOAT_BALL_SIZES } ?: AppSettings.DEFAULT_FLOAT_BALL_SIZE }
     }
 
+    /** 批v160: persist the 「循环切最近会话」 depth (clamped to 1..10). */
+    suspend fun setFloatBallCycleDepth(depth: Int) {
+        dataStore.edit { it[FLOAT_BALL_CYCLE_DEPTH] = depth.coerceIn(FLOAT_BALL_CYCLE_MIN, FLOAT_BALL_CYCLE_MAX) }
+    }
+
     /** Persist the inbox "new idea" button placement; unknown values coerce back. */
     suspend fun setInboxNewIdeaStyle(style: String) {
         dataStore.edit { it[INBOX_NEW_IDEA_STYLE] = style.takeIf { s -> s in INBOX_IDEA_STYLES } ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE }
@@ -324,6 +335,7 @@ class AppSettingsStore @Inject constructor(
         val SESSION_READ_MARKS = stringPreferencesKey("session_read_marks")
         val FLOAT_BALL_ENABLED = booleanPreferencesKey("float_ball_enabled")
         val FLOAT_BALL_SIZE = stringPreferencesKey("float_ball_size")
+        val FLOAT_BALL_CYCLE_DEPTH = intPreferencesKey("float_ball_cycle_depth")
         val FONT_SCALE = floatPreferencesKey("font_scale")
         val FLOAT_BALL_POS = stringPreferencesKey("float_ball_pos")
         val FLOAT_BALL_BINDINGS = stringPreferencesKey("float_ball_bindings")
@@ -337,6 +349,10 @@ class AppSettingsStore @Inject constructor(
 
 /** Legal floating-ball size tiers (mirrors the feature layer's dp ladder). */
 val FLOAT_BALL_SIZES = setOf("small", "medium", "large")
+
+/** Legal 「循环切最近会话」 depths (批v160). */
+const val FLOAT_BALL_CYCLE_MIN = 1
+const val FLOAT_BALL_CYCLE_MAX = 10
 
 /** Legal inbox "new idea" button placements (批v151) — screens branch on the
  *  constants, not raw literals, so a future style can't silently fall back. */

@@ -142,8 +142,14 @@ class SessionFocusHub @Inject constructor(
         current: SessionRef? = null,
         stale: Boolean = false,
         validServers: Set<String>? = null,
+        /** 批v160: walk only the first N entries of the owner's list (registration
+         *  order = running first, then most recent) — 「循环切最近会话」's depth.
+         *  The step's total reflects the truncated ring so the preview card reads
+         *  "3 / 5", and the cursor wraps inside the same N entries. */
+        limit: Int? = null,
     ): FocusStep? {
-        val list = listFor(owner, stale, validServers)
+        var list = listFor(owner, stale, validServers)
+        if (limit != null) list = list.take(limit.coerceAtLeast(1))
         if (list.isEmpty()) return null
         val anchor = current ?: _highlight.value?.takeIf { it.owner == owner }?.item?.ref
         val next = advanceFocusItems(list, anchor) ?: return null

@@ -34,6 +34,17 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun `cycle depth defaults to five and clamps to the one-to-ten band`() {
+        // 批v160 循环切最近会话: the depth is the ring size of recent sessions the
+        // ball walks. Loader clamps corrupt prefs into the band, so the store can
+        // never hand the hub a 0 / negative / huge ring.
+        val s = AppSettings()
+        assertEquals(5, s.floatBallCycleDepth)
+        assertEquals(1, FLOAT_BALL_CYCLE_MIN)
+        assertEquals(10, FLOAT_BALL_CYCLE_MAX)
+    }
+
+    @Test
     fun `preferences key names stay distinct`() {
         // The Key constants pin the wire keys: a copy-paste that made two toggles
         // read the same DataStore key would pass compile and silently corrupt
@@ -51,6 +62,7 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "font_scale" })
         assertEquals(1, keys.count { it == "float_ball_pos" })
         assertEquals(1, keys.count { it == "float_ball_bindings" })
+        assertEquals(1, keys.count { it == "float_ball_cycle_depth" })
         // And no key collides with another at all.
         assertEquals(keys.size, keys.toSet().size)
     }

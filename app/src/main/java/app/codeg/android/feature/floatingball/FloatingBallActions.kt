@@ -11,15 +11,17 @@ import app.codeg.android.R
  * defines ids, labels and the default binding table — no lambdas, fully testable.
  */
 object FloatingBallCatalog {
-    /** All 16 bindable gestures: 2 tap-class + 14 directions. The old
-     *  "longPress" action was removed in v129 — a 1s hold now moves the ball
-     *  (and firing nothing on a no-move release), so it is no longer bindable. */
+    /** All 24 bindable gestures: 2 tap-class + 8 directions + 14 folds (批v160
+     *  unbinds the classifier's D/DL/DR and adds the owner's five down-folds).
+     *  The old "longPress" action was removed in v129 — a 1s hold now moves the
+     *  ball (and firing nothing on a no-move release), so it is no longer bindable. */
     val GESTURES = listOf(
         "tap", "doubleTap",
-        "left", "right", "up", "upLeft", "upRight",
+        "left", "right", "up", "upLeft", "upRight", "down", "downLeft", "downRight",
         "upDown", "upThenLeft", "upThenRight",
         "upLeftThenRight", "upRightThenLeft", "upRightThenDown", "upLeftThenDown",
         "rightThenLeft", "leftThenRight",
+        "downThenUp", "downLeftThenUp", "downLeftThenRight", "downRightThenUp", "downRightThenLeft",
     )
 
     val ACTIONS: List<Pair<String, Int>> = listOf(
@@ -53,6 +55,9 @@ object FloatingBallCatalog {
         "switchServerPrev" to R.string.ball_action_server_prev,
         "cycleProject" to R.string.ball_action_cycle_project,
         "cycleSession" to R.string.ball_action_cycle_session,
+        // 批v160: cycle only the most recent N sessions (AppSettings
+        // floatBallCycleDepth, running ones first) — the full-list cycle stays.
+        "cycleSessionCustom" to R.string.ball_action_cycle_session_custom,
         "openHighlighted" to R.string.ball_action_open_highlighted,
         // 批v151: aggregate-mode flip for the current list surface + feed refresh.
         "toggleAllDevices" to R.string.ball_action_toggle_all,
@@ -66,8 +71,8 @@ object FloatingBallCatalog {
      * Defaults keep the web version's muscle memory (tap=panel, left=new session)
      * mapped onto app-native actions. The 1s hold is the fixed drag-to-move entry
      * (v129) and fires no action, so settings stay reachable via the tap panel.
-     * Exactly one gesture is deliberately unbound (upRightThenLeft) as a misfire
-     * guard.
+     * 批v160: the eight down-gestures join the deliberately-unbound set (nine
+     * total) — they stay misfire-guarded until the user binds them himself.
      */
     val DEFAULT_BINDINGS: Map<String, String?> = mapOf(
         "tap" to "panel",
@@ -86,6 +91,14 @@ object FloatingBallCatalog {
         "upLeftThenDown" to "fontScaleDown",
         "rightThenLeft" to "fontScaleReset",
         "leftThenRight" to "nextAccent",
+        "down" to null,
+        "downLeft" to null,
+        "downRight" to null,
+        "downThenUp" to null,
+        "downLeftThenUp" to null,
+        "downLeftThenRight" to null,
+        "downRightThenUp" to null,
+        "downRightThenLeft" to null,
     )
 
     /** Web loadBindings semantics: defaults as the base, known gesture keys
@@ -118,6 +131,15 @@ object FloatingBallCatalog {
         "upLeftThenDown" -> R.string.ball_gesture_up_left_then_down
         "rightThenLeft" -> R.string.ball_gesture_right_then_left
         "leftThenRight" -> R.string.ball_gesture_left_then_right
+        // 批v160: the eight down-gestures.
+        "down" -> R.string.ball_gesture_down
+        "downLeft" -> R.string.ball_gesture_down_left
+        "downRight" -> R.string.ball_gesture_down_right
+        "downThenUp" -> R.string.ball_gesture_down_then_up
+        "downLeftThenUp" -> R.string.ball_gesture_down_left_then_up
+        "downLeftThenRight" -> R.string.ball_gesture_down_left_then_right
+        "downRightThenUp" -> R.string.ball_gesture_down_right_then_up
+        "downRightThenLeft" -> R.string.ball_gesture_down_right_then_left
         else -> R.string.ball_action_none
     }
 }

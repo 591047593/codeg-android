@@ -1,22 +1,41 @@
 package app.codeg.android.feature.floatingball
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * Catalog invariants for the floating ball (batch v126; v129 dropped the
- * longPress gesture — the 1s hold now moves the ball): the 16-gesture /
- * 30-action tables (v150 added the four quick-center actions; v151 the five
- * quick-shell ones) and the binding sanitize semantics (web loadBindings port),
- * plus the font ladder the ball's font actions step through.
+ * longPress gesture — the 1s hold now moves the ball): the 24-gesture /
+ * 31-action tables (v150 added the four quick-center actions; v151 the five
+ * quick-shell ones; v160 the ↓/↙/↘ family and cycleSessionCustom) and the
+ * binding sanitize semantics (web loadBindings port), plus the font ladder the
+ * ball's font actions step through.
  */
 class FloatingBallCatalogTest {
 
     @Test
-    fun `sixteen unique gestures`() {
-        assertEquals(16, FloatingBallCatalog.GESTURES.size)
+    fun `twenty-four unique gestures`() {
+        assertEquals(24, FloatingBallCatalog.GESTURES.size)
         assertEquals(FloatingBallCatalog.GESTURES.size, FloatingBallCatalog.GESTURES.toSet().size)
+    }
+
+    @Test
+    fun `batch v160 adds the down family unbound plus cycleSessionCustom`() {
+        // The owner's high-frequency set: ↓ ↙ ↘ singles and ↓↑ ↙↑ ↙→ ↘↑ ↘←
+        // folds. The classifier now NAMES them; the misfire guard (a scroll-like
+        // slip near the screen edge) moved into DEFAULT_BINDINGS — all eight ship
+        // null so nothing fires until the user binds one in settings.
+        val added = setOf(
+            "down", "downLeft", "downRight",
+            "downThenUp", "downLeftThenUp", "downLeftThenRight", "downRightThenUp", "downRightThenLeft",
+        )
+        assertTrue(FloatingBallCatalog.GESTURES.toSet().containsAll(added))
+        assertTrue("missing action cycleSessionCustom", "cycleSessionCustom" in FloatingBallCatalog.ACTION_IDS)
+        for (gesture in added) {
+            assertNull("gesture $gesture must ship unbound", FloatingBallCatalog.DEFAULT_BINDINGS[gesture])
+        }
     }
 
     @Test
@@ -43,8 +62,9 @@ class FloatingBallCatalogTest {
         }
         // v150 appended the four quick-center actions; v151 the five quick-shell
         // ones (tabInbox/tabTasks/quickNewSession/toggleAllDevices/refreshActivity);
-        // the count guard stays so an accidental catalog change is caught in CI.
-        assertEquals(30, FloatingBallCatalog.ACTIONS.size)
+        // v160 added cycleSessionCustom. The count guard stays so an accidental
+        // catalog change is caught in CI.
+        assertEquals(31, FloatingBallCatalog.ACTIONS.size)
         assertEquals("recentSession1", FloatingBallCatalog.DEFAULT_BINDINGS["upThenRight"])
         assertEquals("recentSession2", FloatingBallCatalog.DEFAULT_BINDINGS["upRightThenDown"])
         assertEquals("recentSession3", FloatingBallCatalog.DEFAULT_BINDINGS["upLeftThenRight"])
@@ -79,9 +99,16 @@ class FloatingBallCatalogTest {
     }
 
     @Test
-    fun `exactly one gesture ships deliberately unbound`() {
+    fun `unbound-by-default gestures are exactly the down family plus upRightThenLeft`() {
         val unbound = FloatingBallCatalog.DEFAULT_BINDINGS.filterValues { it == null }.keys
-        assertEquals(setOf("upRightThenLeft"), unbound)
+        assertEquals(
+            setOf(
+                "upRightThenLeft",
+                "down", "downLeft", "downRight",
+                "downThenUp", "downLeftThenUp", "downLeftThenRight", "downRightThenUp", "downRightThenLeft",
+            ),
+            unbound,
+        )
     }
 
     @Test
@@ -115,7 +142,7 @@ class FloatingBallCatalogTest {
     }
 
     @Test
-    fun `sanitize always emits the full sixteen-key table`() {
+    fun `sanitize always emits the full gesture-key table`() {
         val out = FloatingBallCatalog.sanitize(mapOf("up" to "tabChats"))
         assertEquals(FloatingBallCatalog.GESTURES.toSet(), out.keys)
     }

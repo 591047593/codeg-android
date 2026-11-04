@@ -819,6 +819,44 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         }
     }
 
+    // 批v160: 「循环切最近会话」 — same ring as cycleSession (running sessions
+    // first, then most recent) but truncated to the owner-set depth N (1..10,
+    // AppSettings.floatBallCycleDepth): N fires walk exactly those N sessions.
+    // The highlight/preview card reads position N of N, and the cursor wraps
+    // inside the truncated ring. Cold start (no list ever registered) and an
+    // empty ring degrade to the most recent session, like cycleSession.
+    fun cycleRecentCustom() {
+        val hub = appViewModel.focusHub
+        val current = currentConversationRef()
+        val onListTab = currentRoute != null && currentRoute in listRoutes
+        val target = resolveCycleTarget(
+            currentRoute = currentRoute,
+            isTabRoute = onListTab,
+            hasLiveList = hub::hasLiveList,
+            lastOwner = hub.lastOwner,
+        )
+        val depth = appViewModel.settings.value.floatBallCycleDepth
+        if (target == null) {
+            quickSwitchTo(1)
+            return
+        }
+        val step = hub.peekCycle(
+            owner = target.owner,
+            current = current,
+            stale = target.stale,
+            validServers = servers.map { it.id }.toSet(),
+            limit = depth,
+        ) ?: run {
+            quickSwitchTo(1)
+            return
+        }
+        handoffTo(step.item.ref.serverId) {
+            if (openConversationAndMark(step.item.ref.serverId, step.item.ref.conversationId, replaceTop = true)) {
+                hub.commitCycle(step)
+            }
+        }
+    }
+
     // Ring-step the focused device (wraps); leaves every aggregate context first so
     // the step always lands on a concrete device with no hidden project filter.
     fun switchServerBy(step: Int) {
@@ -918,6 +956,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 else -> {}
             }
             "cycleSession" -> cycleFocusAndOpen()
+            // 批v160: cycle only the most recent N sessions (owner-set depth).
+            "cycleSessionCustom" -> cycleRecentCustom()
             "openHighlighted" -> {
                 // The visible tab's own highlight wins; otherwise open whatever owner
                 // currently holds it. Passing the tab route as a FILTER (old behaviour)

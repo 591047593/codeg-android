@@ -39,14 +39,17 @@ import app.codeg.android.feature.floatingball.FloatingBallCatalog
 
 /**
  * Floating-ball gesture binding editor (batch v126; v129 removed the longPress
- * gesture — the 1s hold now moves the ball): all 16 gestures, one row each, tap
- * a row to pick its action (or unbind) from a radio dialog.
+ * gesture — the 1s hold now moves the ball): 批v160 groups the 24 gestures into
+ * 点按 / 方向滑动 / 组合手势, one row each, tap a row to pick its action (or
+ * unbind) from a radio dialog. The 「循环切最近会话」 depth row sits on top.
  */
 @Composable
 fun FloatingBallContent(viewModel: SettingsViewModel = hiltViewModel()) {
     val colors = CodegTheme.colors
     val bindings by viewModel.floatBallBindings.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf<String?>(null) }
+    var pickingDepth by remember { mutableStateOf(false) }
 
     @Composable
     fun actionLabel(actionId: String?): String = when (actionId) {
@@ -65,9 +68,31 @@ fun FloatingBallContent(viewModel: SettingsViewModel = hiltViewModel()) {
             color = colors.textTertiary,
             modifier = Modifier.padding(start = 12.dp),
         )
+        // 批v160: the depth behind 「循环切最近会话」 — only the newest N sessions
+        // (running ones first) participate in that ring.
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.ball_cycle_depth_title)) },
+            supportingContent = { Text(stringResource(R.string.ball_cycle_depth_hint)) },
+            trailingContent = {
+                Text(
+                    settings.floatBallCycleDepth.toString(),
+                    color = colors.accent,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = colors.bgElevated.copy(alpha = 0.5f),
+                headlineColor = colors.textPrimary,
+                supportingColor = colors.textTertiary,
+            ),
+            modifier = Modifier.clickable { pickingDepth = true },
+        )
         listOf(
             stringResource(R.string.ball_bindings_group_taps) to listOf("tap", "doubleTap"),
-            stringResource(R.string.ball_bindings_group_swipes) to FloatingBallCatalog.GESTURES.drop(2),
+            stringResource(R.string.ball_bindings_group_swipes) to
+                listOf("left", "right", "up", "upLeft", "upRight", "down", "downLeft", "downRight"),
+            stringResource(R.string.ball_bindings_group_folds) to
+                FloatingBallCatalog.GESTURES.drop(10),
         ).forEach { (groupTitle, gestures) ->
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(groupTitle, style = MaterialTheme.typography.labelLarge, color = colors.textTertiary, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
@@ -102,6 +127,28 @@ fun FloatingBallContent(viewModel: SettingsViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+
+    pickingDepth.let { open ->
+        if (!open) return@let
+        val depth = settings.floatBallCycleDepth
+        AlertDialog(
+            onDismissRequest = { pickingDepth = false },
+            confirmButton = {
+                TextButton(onClick = { pickingDepth = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+            title = { Text(stringResource(R.string.ball_cycle_depth_title)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    (1..10).forEach { n ->
+                        pickRowDepth(n, depth) {
+                            viewModel.setFloatBallCycleDepth(n)
+                            pickingDepth = false
+                        }
+                    }
+                }
+            },
+        )
     }
 
     picking?.let { gesture ->
@@ -140,5 +187,25 @@ private fun pickRow(id: String?, label: String, current: String?, onPick: () -> 
     ) {
         RadioButton(selected = current == id, onClick = onPick)
         Text(label, color = colors.textPrimary, modifier = Modifier.padding(top = 12.dp))
+    }
+}
+
+/** 批v160: depth 1..10 picker row for the cycle-recent setting. */
+@Composable
+private fun pickRowDepth(depth: Int, current: Int, onPick: () -> Unit) {
+    val colors = CodegTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPick)
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = current == depth, onClick = onPick)
+        Text(
+            stringResource(R.string.ball_cycle_depth_default, depth),
+            color = colors.textPrimary,
+        )
     }
 }
