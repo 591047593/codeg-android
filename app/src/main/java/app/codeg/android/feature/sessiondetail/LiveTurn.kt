@@ -10,6 +10,10 @@ import app.codeg.android.core.model.TurnRole
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 
+/** Statuses that close a tool call (shared by [LiveToolCallState.isFinished] and the
+ *  builder's args-settled rule). */
+internal val TERMINAL_TOOL_STATUSES = setOf("completed", "failed", "error", "cancelled", "canceled")
+
 /** Immutable, render-ready snapshot of one in-flight tool call. */
 data class LiveToolCallState(
     val id: String,
@@ -22,9 +26,12 @@ data class LiveToolCallState(
     /** The agent's opaque ACP metadata for this call (context compaction, Grok's
      *  `x.ai/tool` identity, …). Null for most tools and hosts. */
     val meta: JsonObject? = null,
+    /** False while the call's arguments are still streaming via updates — the card
+     *  title holds at the announced name instead of re-deriving from partial args. */
+    val argsSettled: Boolean = true,
 ) {
     val isFinished: Boolean
-        get() = status in setOf("completed", "failed", "error", "cancelled", "canceled")
+        get() = status in TERMINAL_TOOL_STATUSES
     val isError: Boolean get() = status == "failed" || status == "error"
 }
 
@@ -78,6 +85,13 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         val rawOutput: StringBuilder,
         var content: String?,
         var meta: JsonObject?,
+        // False while the call's arguments are still streaming in via updates
+        // (CodeBuddy re-sends the accumulated JSON on every tool_call_update), so
+        // the card title holds at the agent's announced name instead of being
+        // re-derived from half-written args at ~20Hz. A `tool_call` for the id —
+        // the announce, or CodeBuddy's final re-announce — and a terminal status
+        // both settle it.
+        var argsSettled: Boolean,
     )
 
     private val segments = mutableListOf<Seg>()
@@ -130,6 +144,7 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
             // all preserves what the call was announced with (codex sends the
             // compaction tag once, on the opening `tool_call`).
             if (meta != null) existing.meta = meta
+            existing.argsSettled = true
         } else {
             val call = ToolBuilder(
                 id = id,
@@ -140,6 +155,7 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
                 rawOutput = StringBuilder(rawOutput ?: ""),
                 content = content,
                 meta = meta,
+                argsSettled = true,
             )
             toolIndex[id] = call
             segments.add(Seg.Tool(call))
@@ -165,8 +181,14 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
         if (!status.isNullOrEmpty()) call.status = status
         // Some hosts deliver a tool's arguments only on a later update (iOS parity), so adopt a
         // non-empty raw_input even when the initial event carried none — but never let an empty
-        // update erase arguments we already have.
-        if (!rawInput.isNullOrEmpty()) call.rawInput = rawInput
+        // update erase arguments we already have. Args arriving via updates may be a partial
+        // snapshot of a stream still in flight (CodeBuddy), so un-settle the title until the
+        // call finishes or the agent re-announces the call.
+        if (!rawInput.isNullOrEmpty()) {
+            call.rawInput = rawInput
+            call.argsSettled = false
+        }
+        if (call.status in TERMINAL_TOOL_STATUSES) call.argsSettled = true
         if (content != null) call.content = content
         if (rawOutput != null) {
             if (append) appendCapped(call.rawOutput, rawOutput) else { call.rawOutput.setLength(0); call.rawOutput.append(rawOutput) }
@@ -251,6 +273,7 @@ class LiveTurnBuilder(val id: String = "live-${java.util.UUID.randomUUID()}") {
                         rawOutput = seg.call.rawOutput.toString(),
                         content = seg.call.content,
                         meta = seg.call.meta,
+                        argsSettled = seg.call.argsSettled,
                     ),
                 )
             }

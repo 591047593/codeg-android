@@ -306,7 +306,14 @@ object TranscriptTimeline {
             is RenderPart.Reasoning -> listOf(TimelineNode(base, NodeContent.Reasoning(part.text), agent))
             is RenderPart.Tool -> listOf(TimelineNode("tool-${part.vm.id}", NodeContent.Tool(part.vm), agent))
             is RenderPart.ToolGroup -> {
-                val gid = part.items.firstOrNull()?.let { "toolgroup-${it.id}" } ?: base
+                // The group INHERITS its first tool's row id (`tool-<firstId>`, same
+                // scheme a standalone tool uses): when a second consecutive tool arrives
+                // mid-turn and the single card folds into a group, the row key does not
+                // change, so the LazyColumn updates the row in place instead of deleting
+                // and re-inserting it (which played an animateItem blink on every group
+                // formation). A group's first tool is never also a standalone row, so
+                // the key stays unique within a timeline.
+                val gid = part.items.firstOrNull()?.let { "tool-${it.id}" } ?: base
                 listOf(TimelineNode(gid, NodeContent.ToolGroup(part.items, part.streaming), agent))
             }
             is RenderPart.Image -> listOf(TimelineNode(base, NodeContent.Image(part.image, part.caption), agent))
@@ -381,5 +388,5 @@ private fun LiveToolCallState.toVM(): ToolCallVM {
         isError -> ToolCallState.ERROR
         else -> ToolCallState.DONE
     }
-    return ToolCallVM.of(id, title, kind, state, rawInput, rawOutput, content, isError)
+    return ToolCallVM.of(id, title, kind, state, rawInput, rawOutput, content, isError, meta, argsSettled)
 }

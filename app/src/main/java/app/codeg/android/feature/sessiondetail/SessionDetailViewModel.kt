@@ -1018,21 +1018,22 @@ class SessionDetailViewModel @Inject constructor(
             is AcpEvent.Thinking -> { builder?.appendThinking(event.text); scheduleLiveEmit() }
             is AcpEvent.ToolCall -> {
                 builder?.upsertToolCall(event.id, event.title, event.kind, event.status, event.rawInput, event.rawOutput, event.content, event.meta)
-                _ui.update { if (it.isInFlight) it.copy(sendStatus = runningStatus()) else it }
                 scheduleLiveEmit()
             }
             is AcpEvent.ToolCallUpdate -> {
                 builder?.updateToolCall(event.id, event.title, event.status, event.rawInput, event.rawOutput, event.content, event.append, event.meta)
-                // A tool finishing must revert the status line from "Running <tool>…" back to
-                // "Thinking…" (or to the next still-running tool); iOS recomputes on every update.
-                _ui.update { if (it.isInFlight) it.copy(sendStatus = runningStatus()) else it }
                 scheduleLiveEmit()
             }
             is AcpEvent.PlanUpdate -> { builder?.updatePlan(event.entries); scheduleLiveEmit() }
             is AcpEvent.UsageUpdate -> if (event.used > 0 && event.size > 0) _ui.update {
                 val max = event.size.toInt()
                 val used = event.used.toInt()
-                it.copy(
+                // Agents re-send identical occupancy every few seconds (CodeBuddy does it
+                // mid-turn); skip the write when nothing moved or this fires a full
+                // screen-state pass for a value nobody can see change.
+                val cur = it.sessionStats
+                if (cur?.contextWindowUsedTokens == used && cur.contextWindowMaxTokens == max) it
+                else it.copy(
                     sessionStats = (it.sessionStats ?: SessionStats()).copy(
                         contextWindowUsedTokens = used,
                         contextWindowMaxTokens = max,
@@ -1089,13 +1090,15 @@ class SessionDetailViewModel @Inject constructor(
             // surface as a slash command regardless of which channel advertised it.
             is AcpEvent.AvailableCommands -> _ui.update {
                 val filtered = event.commands.filter { cmd -> cmd.name !in expertIds }
-                if (filtered.isEmpty()) it else it.copy(availableCommands = filtered)
+                // CodeBuddy re-publishes the full command list mid-turn; an identical
+                // payload must not churn the screen state.
+                if (filtered.isEmpty() || filtered == it.availableCommands) it else it.copy(availableCommands = filtered)
             }
             // The agent (re)published its config options — the model selector's current
             // value is what the status line shows. Replace wholesale: this event is the
             // connection's authoritative option state (web parity).
             is AcpEvent.SessionConfigOptions -> _ui.update {
-                if (event.options.isNotEmpty()) it.copy(configOptions = event.options) else it
+                if (event.options.isNotEmpty() && event.options != it.configOptions) it.copy(configOptions = event.options) else it
             }
             else -> Unit // user_message / etc. are informational
         }
@@ -1125,13 +1128,6 @@ class SessionDetailViewModel @Inject constructor(
             )
         }
     }
-
-    /** The status-line copy for the current live state: the running tool's title, else
-     *  "Thinking…". Recomputed on tool start/finish so it never sticks on a done tool.
-     *  Hardcoded English to match the send-flow literals (transient status micro-copy is
-     *  intentionally not localized — see the app's i18n notes). */
-    private fun runningStatus(): String =
-        liveBuilder?.activeToolTitle()?.let { "Running ${it.ifBlank { "tool" }}…" } ?: STATUS_THINKING
 
     /** A new task's first prompt links a server-side conversation. Android creates that
      *  row up front (so [conversationId] is already set), but has no summary for it yet —

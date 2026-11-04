@@ -53,6 +53,7 @@ data class ToolCallVM(
             content: String?,
             isError: Boolean,
             meta: JsonObject? = null,
+            argsSettled: Boolean = true,
         ): ToolCallVM {
             // Grok's plan-mode tools carry their authoritative identity in
             // `meta["x.ai/tool"].kind`, while the `title` we're handed as [rawName]
@@ -72,7 +73,13 @@ data class ToolCallVM(
                 output = output,
                 content = content,
                 isError = isError,
-                displayTitle = ToolDerive.title(resolvedName, parsed),
+                // While a call's arguments are still streaming in via updates
+                // ([argsSettled] false — CodeBuddy re-sends the accumulated JSON on every
+                // tool_call_update), the derived title would be a half-written command
+                // that rewrites itself at flush cadence. Hold the agent's announced name
+                // instead; the re-announce (or the terminal status) settles it.
+                displayTitle = if (argsSettled || resolvedName.isBlank()) ToolDerive.title(resolvedName, parsed)
+                    else resolvedName,
                 bucket = bucket,
                 diffFiles = ToolDerive.diff(bucket, input, output, content, parsed),
                 meta = meta,
