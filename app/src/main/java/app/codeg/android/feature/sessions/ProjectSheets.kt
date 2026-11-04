@@ -47,17 +47,6 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
  * off the table (same constraint as the row menus).
  */
 
-/** One-way "jump to Settings → session projects" signal (same shape as
- *  FloatingBallSettingsBus): fired by the sheets' 管理 link in MainShell, consumed
- *  by SettingsScreen on composition. */
-object ProjectSettingsBus {
-    val pending = kotlinx.coroutines.flow.MutableStateFlow(false)
-
-    fun open() {
-        pending.value = true
-    }
-}
-
 /** Long-press → "添加到项目": pick an existing project or create-and-join inline. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

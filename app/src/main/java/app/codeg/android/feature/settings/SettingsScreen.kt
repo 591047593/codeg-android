@@ -116,15 +116,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel(), configSyncVie
             }
         }
     }
-    // Same dance for the project sheets' 管理 link → 会话项目管理 leaf (batch v132).
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        app.codeg.android.feature.sessions.ProjectSettingsBus.pending.collect { requested ->
-            if (requested) {
-                leaf = SettingsLeaf.PROJECTS
-                app.codeg.android.feature.sessions.ProjectSettingsBus.pending.value = false
-            }
-        }
-    }
+    // 批v160: the ProjectSettingsBus dance is gone — the sheets' 管理 link pushes
+    // the standalone session_projects destination directly, so Back returns to
+    // wherever the link lived. The Settings root's own entry still opens the
+    // PROJECTS leaf in place (leaf = SettingsLeaf.PROJECTS below).
 
     Scaffold(
         containerColor = Color.Transparent,

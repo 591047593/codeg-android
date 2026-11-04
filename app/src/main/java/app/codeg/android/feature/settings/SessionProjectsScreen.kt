@@ -14,11 +14,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,8 +28,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +63,41 @@ import javax.inject.Inject
  * projects. Removing a project never deletes sessions — membership only; the
  * confirm dialog says so explicitly.
  */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SessionProjectsRoute(onBack: () -> Unit) {
+    // 批v160: the standalone push destination — own top bar with a back arrow,
+    // so Back returns to wherever the 管理 link was tapped (chats/activity
+    // bookmark, project filter sheet). The Settings tab embeds the bare
+    // SessionProjectsScreen inside its own Scaffold instead.
+    val colors = CodegTheme.colors
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_leaf_projects)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                            tint = colors.textPrimary,
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    titleContentColor = colors.textPrimary,
+                ),
+            )
+        },
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            SessionProjectsScreen()
+        }
+    }
+}
+
 @Composable
 fun SessionProjectsScreen(viewModel: SessionProjectsViewModel = hiltViewModel()) {
     val colors = CodegTheme.colors

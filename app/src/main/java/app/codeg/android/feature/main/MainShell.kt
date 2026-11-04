@@ -100,7 +100,6 @@ import app.codeg.android.feature.settings.SettingsScreen
 import app.codeg.android.feature.server.ServerListScreen
 import app.codeg.android.feature.sessiondetail.SessionDetailScreen
 import app.codeg.android.feature.sessions.ProjectFilterSheet
-import app.codeg.android.feature.sessions.ProjectSettingsBus
 import app.codeg.android.feature.sessions.SessionListScreen
 import app.codeg.android.feature.sessions.nextProjectFilter
 import app.codeg.android.feature.taskhub.TaskHubScreen
@@ -164,6 +163,11 @@ internal fun resolveStartTab(savedStart: String?, tabs: List<HomeTab>): HomeTab 
 private const val ROUTE_SERVERS = "servers"
 private const val ROUTE_EDITOR = "editor"
 private const val ROUTE_NEW_TASK = "conversation_new"
+// 批v160: 会话项目管理 was a Settings leaf reached via a global bus + tab jump —
+// Back landed on Settings instead of where the 管理 link lived. It is a real
+// destination now, entered by push from the chats/activity bookmark and the
+// project filter sheet.
+private const val ROUTE_SESSION_PROJECTS = "session_projects"
 
 // Demoted former tabs, now full-screen pushes. The strings MUST stay stable:
 // persisted homeTabOrder/startTab entries, codeg://tab/ deep links and floating
@@ -535,6 +539,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         appViewModel.launchDeviceDefaultApplied = true
     }
 
+    // 批v160: "从哪里跳转过去的，还跳转回哪里" — programmatic cross-jumps (回执 →
+    // 任务板, workbench quick entries, deep links, ball settings) remember the tab
+    // they left in [pendingReturnTab]; the shell-level BackHandler under the
+    // NavHost spends it once to send Back there. Free navigation (bar/rail/ball
+    // tab actions/tab swipe) clears it instead — the user has moved on
+    // deliberately, and Back from the new tab must behave as before. Route
+    // string, not enum: survives process death alongside the restored nav stack.
+    var pendingReturnTab by rememberSaveable { mutableStateOf<String?>(null) }
+
     val onTab: (HomeTab) -> Unit = { tab ->
         nav.navigate(tab.route) {
             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
@@ -577,6 +590,22 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // 成 no-op），两分支都不会叠出第二张同名屏。
         if (tab in homeTabs) onTab(tab)
         else if (!nav.popBackStack(tab.route, inclusive = false)) pushSurface(tab.route)
+    }
+    // 批v160: a programmatic cross-jump — records where the user is leaving so
+    // Back can bring them back. No-ops the record when the jump starts off a
+    // tab root (nothing to return to that a plain pop wouldn't already do).
+    fun jumpToTab(tab: HomeTab) {
+        if (currentRoute != null && currentRoute in listRoutes && currentRoute != tab.route) {
+            pendingReturnTab = currentRoute
+        }
+        enterTab(tab)
+    }
+    // 批v160: free navigation — bar taps, the rail, the ball's tab actions, the
+    // tab swipe. Never records; always clears a pending return so a stale one
+    // can't hijack a later Back.
+    fun freeTab(tab: HomeTab) {
+        pendingReturnTab = null
+        enterTab(tab)
     }
 
     // Horizontal swipe between the bottom tabs: drag left → next tab, right →
@@ -654,13 +683,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                             // 批v152 审查修正: a swipe IS a tab entry — route it
                             // through enterTab so 会话/任务板 land on 全部 like a
                             // bar tap does (bare onTab skipped the aggregate flag).
-                            if (next in homeTabs.indices) enterTab(homeTabs[next])
+                            if (next in homeTabs.indices) freeTab(homeTabs[next])
                         }
                     }
                 }
             } else if (currentTabIndex >= 0) {
                 val next = currentTabIndex + step
-                if (next in homeTabs.indices) enterTab(homeTabs[next])
+                if (next in homeTabs.indices) freeTab(homeTabs[next])
             }
         }
     } else Modifier
@@ -669,12 +698,14 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     val pendingLink by app.codeg.android.core.common.DeepLinkBus.pending.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(pendingLink) {
         val route = pendingLink ?: return@LaunchedEffect
-        fun toTab(it: HomeTab) = enterTab(it)
+        fun toTab(it: HomeTab) = jumpToTab(it)
         when (route) {
             is app.codeg.android.core.common.DeepLinkRoute.OpenTab -> when (route.tab) {
                 // 批v152: Chats is a first-class tab again — the deep link lands on
                 // the tab (All-devices per enterTab), not a pushed copy on top of it.
-                "chats" -> enterTab(HomeTab.CHATS)
+                // 批v160: notification-style links record the origin tab so Back
+                // returns there (jumpToTab).
+                "chats" -> jumpToTab(HomeTab.CHATS)
                 "projects", "folders" -> pushSurface(ROUTE_FOLDERS)
                 "activity" -> toTab(HomeTab.ACTIVITY)
                 "inbox" -> toTab(HomeTab.INBOX)
@@ -835,15 +866,16 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             // 批v151: global new-session sheet — pick device, then folder, then jump.
             "quickNewSession" -> { showQuickTask = false; showQuickNewSession = true }
             // 批v152: Chats is a tab again — the ball entry goes through enterTab
-            // (All-devices on entry); folders/search stay pushes.
-            "tabChats" -> enterTab(HomeTab.CHATS)
+            // (All-devices on entry); folders/search stay pushes. 批v160: the ball
+            // is free navigation — never records, clears any pending return.
+            "tabChats" -> freeTab(HomeTab.CHATS)
             "tabFolders" -> pushSurface(ROUTE_FOLDERS)
-            "tabActivity" -> enterTab(HomeTab.ACTIVITY)
+            "tabActivity" -> freeTab(HomeTab.ACTIVITY)
             "tabSearch" -> pushSurface(ROUTE_SEARCH)
-            "tabSettings" -> enterTab(HomeTab.SETTINGS)
+            "tabSettings" -> freeTab(HomeTab.SETTINGS)
             // 批v151: the two remaining quick-entry tabs join the ball catalog.
-            "tabInbox" -> enterTab(HomeTab.INBOX)
-            "tabTasks" -> enterTab(HomeTab.TASKS)
+            "tabInbox" -> freeTab(HomeTab.INBOX)
+            "tabTasks" -> freeTab(HomeTab.TASKS)
             "toggleThemeMode" -> appViewModel.toggleThemeMode()
             "nextAccent" -> appViewModel.cycleAccent()
             "fontScaleUp", "fontScaleDown", "fontScaleReset" -> {
@@ -914,7 +946,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             // same channel the workbench's manual refresh uses, no new bus.
             "refreshActivity" -> appViewModel.refreshActivityAll()
             "ballSettings" -> {
-                enterTab(HomeTab.SETTINGS)
+                // 批v160: a cross-jump like the others — Back returns to the tab
+                // the ball was floating over (the FLOATING_BALL leaf still opens).
+                jumpToTab(HomeTab.SETTINGS)
                 FloatingBallSettingsBus.open()
             }
         }
@@ -929,7 +963,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 CodegBottomBar(
                     currentRoute,
                     homeTabs,
-                    enterTab,
+                    // 批v160: bar taps are free navigation — clear any pending return.
+                    { tab -> freeTab(tab) },
                     inboxBadge = inboxBadge,
                     // Report a shrinking height as the bar hides so the Scaffold gives the
                     // freed strip back to the content (the whole point — reclaim the space);
@@ -1032,7 +1067,7 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 )
             }
             androidx.compose.foundation.layout.Row {
-                if (showBottomBar && wide) CodegNavRail(currentRoute, homeTabs, enterTab)
+                if (showBottomBar && wide) CodegNavRail(currentRoute, homeTabs, { tab -> freeTab(tab) })
             NavHost(
                 navController = nav,
                 startDestination = startTab.route,
@@ -1088,10 +1123,9 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                             // back on the 全部 surface the user came from.
                             handoffTo(serverId) { nav.navigate(handoffRoute(folderId, ref)) }
                         },
-                        onManageProjects = {
-                            ProjectSettingsBus.open()
-                            onTab(HomeTab.SETTINGS)
-                        },
+                        // 批v160: push the real destination — Back returns to this tab
+                        // (was: bus + Settings tab jump, which stranded the user there).
+                        onManageProjects = { nav.navigate(ROUTE_SESSION_PROJECTS) },
                     )
                 }
             }
@@ -1122,22 +1156,23 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         else nav.navigate(handoffRoute(folderId, ref))
                     },
                     onOpenConversation = { id -> openConversationAndMark(selectedProfile?.id, id) },
-                    onManageProjects = {
-                        ProjectSettingsBus.open()
-                        onTab(HomeTab.SETTINGS)
-                    },
-                    // 批v150 工作台接线（批v152：会话已回到五栏，全部走 enterTab，
-                    // 由它负责「进入即全部」；任务板段位直达用一次性请求）。
+                    // 批v160: push, not the Settings tab jump — Back returns to the
+                    // activity tab (从哪里跳转过去的，还跳转回哪里).
+                    onManageProjects = { nav.navigate(ROUTE_SESSION_PROJECTS) },
+                    // 批v150 工作台接线（批v152：会话已回到五栏；批v160：直达改
+                    // jumpToTab，Back 回工作台；任务板段位直达用一次性请求）。
                     // 批v153（UX 审查）：快捷行会话卡与底栏重复，换成「创建任务」
                     // 直达球的快速任务 sheet。
                     onQuickTask = { showQuickTask = true },
-                    onOpenAllChats = { enterTab(HomeTab.CHATS) },
+                    // 批v160: workbench quick entries are cross-jumps — Back returns
+                    // to the workbench tab (jumpToTab).
+                    onOpenAllChats = { jumpToTab(HomeTab.CHATS) },
                     onOpenFolders = { pushSurface(ROUTE_FOLDERS) },
                     onOpenSearch = { pushSurface(ROUTE_SEARCH) },
                     onOpenNewSession = openNewTask,
                     onOpenTasks = { segment ->
                         appViewModel.requestTaskSegment(segment)
-                        enterTab(HomeTab.TASKS)
+                        jumpToTab(HomeTab.TASKS)
                         // 批v152 审查修正: the stat cards count the workbench's
                         // scope (single device unless the Activity tab is in 全部).
                         // enterTab defaults the board to 全部, which would show a
@@ -1175,8 +1210,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         // selection lands before the push (Back returns to the inbox).
                         handoffTo(serverId) { openConversationAndMark(serverId, conversationId) }
                     },
-                    // 批v153（UX 审查）：任务模式派发回执直达任务板。
-                    onOpenTasks = { enterTab(HomeTab.TASKS) },
+                    // 批v153（UX 审查）：任务模式派发回执直达任务板。批v160: cross-jump.
+                    onOpenTasks = { jumpToTab(HomeTab.TASKS) },
                 )
             }
             composable(HomeTab.TASKS.route) {
@@ -1292,10 +1327,34 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
             ) {
                 ServerEditorScreen(onDone = { nav.popBackStack() })
             }
+
+            // 批v160: standalone 会话项目管理 (SessionProjectsRoute owns its top bar).
+            // Pushed from the chats/activity bookmark and the project filter sheet —
+            // Back pops to that origin. The Settings tab keeps its in-place leaf.
+            composable(ROUTE_SESSION_PROJECTS) {
+                SessionProjectsRoute(onBack = { nav.popBackStack() })
+            }
             }
             }
         }
     }
+
+        // 批v160: Back from a jumped-to tab returns to the tab the jump came from
+        // ("从哪里跳转过去的，还跳转回哪里"). One-shot — the record is consumed here
+        // and cleared by free navigation (bar/rail/ball/swipe). Composed AFTER the
+        // NavHost so it outranks NavHost's own back callback; gated to tab roots so
+        // a pushed detail (conversation/editor/…) still pops first, and NavHost's
+        // pop handles it. If the recorded tab is not a visible tab, enterTab's
+        // hidden-tab branch (pop/push) still lands there.
+        androidx.activity.compose.BackHandler(
+            enabled = pendingReturnTab != null &&
+                currentRoute != null && currentRoute in listRoutes &&
+                currentRoute != pendingReturnTab,
+        ) {
+            val target = pendingReturnTab ?: return@BackHandler
+            pendingReturnTab = null
+            enterTab(HomeTab.byRoute(target))
+        }
 
         // Tapping the 全部 chip (either list tab) opens the project filter sheet
         // (batch v132): 全部会话 / a project / create-and-activate. Rendered here —
@@ -1318,8 +1377,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 },
                 onManage = {
                     showProjectSheet = false
-                    ProjectSettingsBus.open()
-                    onTab(HomeTab.SETTINGS)
+                    // 批v160: push — Back returns to the tab the 全部 chip lives on.
+                    nav.navigate(ROUTE_SESSION_PROJECTS)
                 },
                 onDismiss = { showProjectSheet = false },
             )
@@ -1410,7 +1469,8 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         if (ref.state == DispatchState.CONFIRMED) {
                             TextButton(onClick = {
                                 quickActionViewModel.clearConfirmed()
-                                enterTab(HomeTab.TASKS)
+                                // 批v160: cross-jump — Back from the board returns here.
+                                jumpToTab(HomeTab.TASKS)
                             }) {
                                 Text(stringResource(R.string.receipt_open_task_board))
                             }
