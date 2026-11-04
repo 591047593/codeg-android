@@ -6,11 +6,16 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.codeg.android.core.crash.CrashReporter
 import app.codeg.android.core.crash.CrashStore
+import app.codeg.android.core.datastore.AppSettingsStore
+import app.codeg.android.core.notify.KeepAliveService
+import app.codeg.android.core.notify.InteractiveNotifier
 import app.codeg.android.di.ApplicationScope
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -37,6 +42,12 @@ class CodegApplication : Application() {
     lateinit var crashStore: CrashStore
 
     @Inject
+    lateinit var interactiveNotifier: InteractiveNotifier
+
+    @Inject
+    lateinit var appSettingsStore: AppSettingsStore
+
+    @Inject
     @ApplicationScope
     lateinit var appScope: CoroutineScope
 
@@ -60,5 +71,25 @@ class CodegApplication : Application() {
         // Promote a crash persisted by the previous process into the store
         // (About page). Process-lifetime scope: must survive any screen.
         appScope.launch { runCatching { crashStore.promoteFromFile(crashDir) } }
+        // 批v160 W8: notification channels up front; the keep-alive foreground
+        // service simply FOLLOWS its setting — the settings toggle only writes
+        // the pref, this collector owns the Android side effect (start/stop),
+        // so cold start and in-UI toggles take the same path.
+        interactiveNotifier.ensureChannels()
+        appScope.launch {
+            appSettingsStore.settings
+                .map { it.keepAliveEnabled }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    try {
+                        if (enabled) KeepAliveService.start(this@CodegApplication)
+                        else KeepAliveService.stop(this@CodegApplication)
+                    } catch (_: Exception) {
+                        // Android 12+ forbids FGS starts from the background; a
+                        // cold start in that state just stays without the service
+                        // until the next foreground toggle.
+                    }
+                }
+        }
     }
 }

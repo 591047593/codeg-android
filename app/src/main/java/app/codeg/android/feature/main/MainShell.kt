@@ -724,7 +724,19 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                 "settings" -> toTab(HomeTab.SETTINGS)
                 else -> {}
             }
-            is app.codeg.android.core.common.DeepLinkRoute.OpenConversation -> openConversationAndMark(null, route.id)
+            is app.codeg.android.core.common.DeepLinkRoute.OpenConversation -> {
+                // 批v160 W8: notification links carry the OWNING device — switch to
+                // it first (same single-flight dance as every cross-device open),
+                // otherwise server-local ids resolve against the wrong device.
+                // Unknown / stale device ids degrade to the legacy selected-device
+                // open (target = null).
+                val target = route.serverId?.takeIf { s -> servers.any { it.id == s } }
+                if (target != null && target != selectedProfile?.id) {
+                    handoffTo(target) { openConversationAndMark(target, route.id) }
+                } else {
+                    openConversationAndMark(target, route.id)
+                }
+            }
             is app.codeg.android.core.common.DeepLinkRoute.OpenProject -> nav.navigate("project/${route.id}")
             is app.codeg.android.core.common.DeepLinkRoute.OpenSettings -> toTab(HomeTab.SETTINGS)
         }
@@ -752,6 +764,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // a quick switch could hand out the conversation already on screen.
         val device = top.arguments?.getString("serverId") ?: selectedProfile?.id ?: return null
         return app.codeg.android.core.datastore.SessionRef(device, id)
+    }
+
+    // 批v160 W8: mirror "which conversation is on screen" to the notifier so the
+    // system alert for the session the user is ALREADY looking at is suppressed
+    // (and comes back the moment they navigate away while it still waits).
+    LaunchedEffect(nav) {
+        nav.currentBackStackEntryFlow.collect {
+            app.codeg.android.core.notify.ForegroundConversation.set(currentConversationRef())
+        }
     }
 
     // Quick switch · depth N: walk the N most recently opened conversations as a stable

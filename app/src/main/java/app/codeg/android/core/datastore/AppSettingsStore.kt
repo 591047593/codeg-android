@@ -60,6 +60,13 @@ data class AppSettings(
     /** 批v160: idea list columns — 1 = classic single column (default),
      *  2 = two-column grid for denser scanning. */
     val inboxColumns: Int = DEFAULT_INBOX_COLUMNS,
+    /** 批v160 W8: system notification when an agent blocks waiting on the user
+     *  (permission / question / plan approval). Default ON. */
+    val notifyInteractiveEnabled: Boolean = true,
+    /** 批v160 W8: keep the interaction listener alive in the background via a
+     *  foreground service (dataSync). Default OFF — it costs battery; users on
+     *  aggressive OEM ROMs opt in. */
+    val keepAliveEnabled: Boolean = false,
     /** Multiplier ladder over the system font scale (0.85 / 1.0 / 1.15 / 1.3). */
     val fontScale: Float = 1f,
     /** Dispatch-sheet defaults (v1.0.1-fengx.34): preselected device id, folder
@@ -150,6 +157,8 @@ class AppSettingsStore @Inject constructor(
             inboxNewIdeaStyle = prefs[INBOX_NEW_IDEA_STYLE]?.takeIf { it in INBOX_IDEA_STYLES }
                 ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE,
             inboxColumns = (prefs[INBOX_COLUMNS] ?: AppSettings.DEFAULT_INBOX_COLUMNS).coerceIn(1, 2),
+            notifyInteractiveEnabled = prefs[NOTIFY_INTERACTIVE_ENABLED] ?: true,
+            keepAliveEnabled = prefs[KEEP_ALIVE_ENABLED] ?: false,
             fontScale = (prefs[FONT_SCALE] ?: 1f).coerceIn(0.5f, 2f),
             dispatchDefaultDevice = prefs[DISPATCH_DEFAULT_DEVICE] ?: "",
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
@@ -268,6 +277,17 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[INBOX_COLUMNS] = columns.coerceIn(1, 2) }
     }
 
+    /** 批v160 W8: persist the "agent needs you" system-notification toggle. */
+    suspend fun setNotifyInteractiveEnabled(enabled: Boolean) {
+        dataStore.edit { it[NOTIFY_INTERACTIVE_ENABLED] = enabled }
+    }
+
+    /** 批v160 W8: persist the keep-alive foreground-service toggle (the service
+     *  itself is started/stopped by whoever observes this flow — Application). */
+    suspend fun setKeepAliveEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEEP_ALIVE_ENABLED] = enabled }
+    }
+
     /** Persist the font-scale multiplier (coerced to the usable band on read too). */
     suspend fun setFontScale(scale: Float) {
         dataStore.edit { it[FONT_SCALE] = scale.coerceIn(0.5f, 2f) }
@@ -355,6 +375,8 @@ class AppSettingsStore @Inject constructor(
         val DISPATCH_DEFAULT_AGENT = stringPreferencesKey("dispatch_default_agent")
         val INBOX_NEW_IDEA_STYLE = stringPreferencesKey("inbox_new_idea_style")
         val INBOX_COLUMNS = intPreferencesKey("inbox_columns")
+        val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")
+        val KEEP_ALIVE_ENABLED = booleanPreferencesKey("keep_alive_enabled")
     }
 }
 

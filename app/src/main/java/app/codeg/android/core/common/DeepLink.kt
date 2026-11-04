@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 sealed interface DeepLinkRoute {
     data class OpenTab(val tab: String) : DeepLinkRoute
-    data class OpenConversation(val id: Int) : DeepLinkRoute
+    /** [serverId] = the owning device (批v160 W8 notification links); null for the
+     *  legacy shape → the shell opens on the current selection. */
+    data class OpenConversation(val id: Int, val serverId: String? = null) : DeepLinkRoute
     data class OpenProject(val id: Int) : DeepLinkRoute
     data class OpenSettings(val slug: String) : DeepLinkRoute
 
@@ -23,7 +25,9 @@ sealed interface DeepLinkRoute {
             val seg = uri.pathSegments.firstOrNull()
             return when (host) {
                 "tab" -> seg?.let { OpenTab(it.lowercase()) }
-                "conversation" -> seg?.toIntOrNull()?.let { OpenConversation(it) }
+                "conversation" -> seg?.toIntOrNull()?.let {
+                    OpenConversation(it, uri.getQueryParameter("serverId"))
+                }
                 "project", "folder" -> seg?.toIntOrNull()?.let { OpenProject(it) }
                 "settings" -> seg?.let { OpenSettings(it.lowercase()) }
                 else -> null

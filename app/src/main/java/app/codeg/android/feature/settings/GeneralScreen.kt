@@ -161,6 +161,106 @@ fun GeneralContent(
                 onChange = viewModel::setWorkbenchAttentionDefaultExpanded,
             )
         }
+        // 批v160 W8: 会话交互提醒——智能体等确认（权限/提问/计划）时发系统通知；
+        // 可选的前台服务把监听带进后台；电池白名单引导给国产 ROM 兜底。
+        Section(stringResource(R.string.general_notify_section)) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            // POST_NOTIFICATIONS is a runtime permission on 33+; below that a
+            // granted state is implicit and the toggle just persists.
+            var permissionGranted by remember {
+                mutableStateOf(
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.POST_NOTIFICATIONS,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED,
+                )
+            }
+            val requestPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+            ) { granted ->
+                permissionGranted = granted
+                // Deny stays un-persisted: the switch snaps back to off and the
+                // user can retry (or grant from the system settings).
+                if (granted) viewModel.setNotifyInteractiveEnabled(true)
+            }
+            val notifyOn = appSettings.notifyInteractiveEnabled
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.notify_interactive_toggle_title)) },
+                supportingContent = { Text(stringResource(R.string.notify_interactive_toggle_subtitle)) },
+                trailingContent = {
+                    Switch(
+                        checked = notifyOn,
+                        onCheckedChange = { on ->
+                            if (on) {
+                                val needsRequest =
+                                    android.os.Build.VERSION.SDK_INT >= 33 && !permissionGranted
+                                if (needsRequest) requestPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                else viewModel.setNotifyInteractiveEnabled(true)
+                            } else {
+                                viewModel.setNotifyInteractiveEnabled(false)
+                            }
+                        },
+                        colors = SwitchDefaults.colors(checkedTrackColor = colors.accent, checkedThumbColor = colors.onAccent),
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                    headlineColor = colors.textPrimary,
+                    supportingColor = colors.textTertiary,
+                ),
+                modifier = Modifier.clickable {
+                    if (!notifyOn) {
+                        val needsRequest = android.os.Build.VERSION.SDK_INT >= 33 && !permissionGranted
+                        if (needsRequest) requestPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        else viewModel.setNotifyInteractiveEnabled(true)
+                    } else viewModel.setNotifyInteractiveEnabled(false)
+                },
+            )
+            ToggleRow(
+                title = stringResource(R.string.notify_keepalive_title),
+                subtitle = stringResource(
+                    if (notifyOn) R.string.notify_keepalive_subtitle else R.string.notify_keepalive_disabled_subtitle,
+                ),
+                checked = appSettings.keepAliveEnabled,
+                onChange = viewModel::setKeepAliveEnabled,
+                // Without notifications there is nothing to keep alive.
+                enabled = notifyOn,
+            )
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.notify_battery_title)) },
+                supportingContent = { Text(stringResource(R.string.notify_battery_subtitle)) },
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = colors.textTertiary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent,
+                    headlineColor = colors.textPrimary,
+                    supportingColor = colors.textTertiary,
+                ),
+                modifier = Modifier.clickable {
+                    // The dedicated screen needs no special permission; some ROMs
+                    // drop it — fall back to the app details page.
+                    val intents = listOf(
+                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS,
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    )
+                    intents.firstNotNullOfOrNull { action ->
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    action,
+                                    android.net.Uri.parse("package:${context.packageName}"),
+                                ),
+                            )
+                        }.getOrNull()
+                    }
+                },
+            )
+        }
         Section(stringResource(R.string.general_floating_ball_section)) {
             ToggleRow(
                 stringResource(R.string.ball_enable_title),

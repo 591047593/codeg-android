@@ -3,6 +3,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 批v160 W8: "agent needs you" alerts + the optional keep-alive service.
+      FOREGROUND_SERVICE_DATA_SYNC is the API-34 typed-foreground requirement;
+      on <33 the base FOREGROUND_SERVICE covers it. POST_NOTIFICATIONS is a
+      runtime request on 33+ (Settings toggle); below 33 grants implicitly. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:name=".CodegApplication"
@@ -44,6 +51,12 @@
           `${applicationId}.fileprovider` — the fork's per-variant applicationId
           suffixes (fengx / .legacy) make a literal authority collide when both
           flavors are installed on one device. -->
+        <!-- 批v160 W8: optional keep-alive (后台保持监听) foreground service. -->
+        <service
+            android:name=".core.notify.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

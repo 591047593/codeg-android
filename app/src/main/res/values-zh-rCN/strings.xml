@@ -56,6 +56,22 @@
     <string name="workbench_kind_question">提问</string>
     <string name="workbench_kind_plan">计划待批</string>
     <string name="workbench_interactive_open">打开会话处理</string>
+    <!-- 批v160 W8: 会话交互通知 + 后台保持服务。 -->
+    <string name="general_notify_section">会话交互提醒</string>
+    <string name="notify_interactive_toggle_title">智能体等确认时通知</string>
+    <string name="notify_interactive_toggle_subtitle">有权限、提问、计划等待你确认时发系统通知</string>
+    <string name="notify_keepalive_title">后台保持监听</string>
+    <string name="notify_keepalive_subtitle">前台服务在 APP 退到后台后继续监听（更耗电）</string>
+    <string name="notify_keepalive_disabled_subtitle">先开启通知</string>
+    <string name="notify_battery_title">电池优化白名单</string>
+    <string name="notify_battery_subtitle">激进的省电策略可能杀掉监听导致提醒收不到</string>
+    <string name="notif_channel_interactive">会话交互提醒</string>
+    <string name="notif_channel_interactive_desc">智能体在会话里等你确认</string>
+    <string name="notif_channel_keepalive">后台监听</string>
+    <string name="notif_channel_keepalive_desc">保持会话监听连接</string>
+    <string name="notif_keepalive_title">会话监听运行中</string>
+    <string name="notif_keepalive_text">智能体等你确认时会提醒你</string>
+    <string name="notif_interactive_multi">%1$d 项等待确认</string>
     <string name="workbench_overview_summary">%1$d 运行中 · %2$d 需要处理 · %3$s 在线</string>
     <string name="workbench_overview_collapse">收起总览</string>
     <string name="workbench_overview_expand">展开总览</string>

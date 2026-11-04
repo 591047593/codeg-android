@@ -241,6 +241,17 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setInboxNewIdeaStyle(style)
     }
 
+    /** 批v160 W8: 「会话交互提醒」通知 toggle（权限申请是 UI 层的事）. */
+    fun setNotifyInteractiveEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setNotifyInteractiveEnabled(enabled)
+    }
+
+    /** 批v160 W8: keep-alive 前台服务 toggle——只写偏好；服务的启停由
+     *  Application 的设置收集器执行（唯一事实源，冷启动与改设置同路）. */
+    fun setKeepAliveEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setKeepAliveEnabled(enabled)
+    }
+
     fun setFontScale(scale: Float) = launchPersist {
         appSettingsStore.setFontScale(scale)
     }

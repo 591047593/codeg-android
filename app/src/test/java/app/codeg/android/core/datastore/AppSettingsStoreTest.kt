@@ -45,6 +45,16 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun `session alert defaults are notify on and keepalive off`() {
+        // 批v160 W8: the "agent needs you" notification ships ON (it is the point
+        // of the batch); the battery-costing foreground service ships OFF —
+        // opting in is the user's call, never a default.
+        val s = AppSettings()
+        assertTrue(s.notifyInteractiveEnabled)
+        assertFalse(s.keepAliveEnabled)
+    }
+
+    @Test
     fun `preferences key names stay distinct`() {
         // The Key constants pin the wire keys: a copy-paste that made two toggles
         // read the same DataStore key would pass compile and silently corrupt
@@ -63,6 +73,8 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "float_ball_pos" })
         assertEquals(1, keys.count { it == "float_ball_bindings" })
         assertEquals(1, keys.count { it == "float_ball_cycle_depth" })
+        assertEquals(1, keys.count { it == "notify_interactive_enabled" })
+        assertEquals(1, keys.count { it == "keep_alive_enabled" })
         // And no key collides with another at all.
         assertEquals(keys.size, keys.toSet().size)
     }

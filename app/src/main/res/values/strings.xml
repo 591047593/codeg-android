@@ -56,6 +56,22 @@
     <string name="workbench_kind_question">Question</string>
     <string name="workbench_kind_plan">Plan</string>
     <string name="workbench_interactive_open">Open the conversation</string>
+    <!-- 批v160 W8: session-alert notifications + keep-alive service. -->
+    <string name="general_notify_section">Session alerts</string>
+    <string name="notify_interactive_toggle_title">Notify when an agent needs you</string>
+    <string name="notify_interactive_toggle_subtitle">System notification for pending permission requests, questions and plan approvals</string>
+    <string name="notify_keepalive_title">Keep listening in background</string>
+    <string name="notify_keepalive_subtitle">A foreground service keeps the listener alive while the app is backgrounded (uses battery)</string>
+    <string name="notify_keepalive_disabled_subtitle">Enable notifications first</string>
+    <string name="notify_battery_title">Ignore battery optimizations</string>
+    <string name="notify_battery_subtitle">Aggressive battery managers can kill the listener and swallow alerts</string>
+    <string name="notif_channel_interactive">Session alerts</string>
+    <string name="notif_channel_interactive_desc">Agents waiting for your confirmation</string>
+    <string name="notif_channel_keepalive">Background listening</string>
+    <string name="notif_channel_keepalive_desc">Keeps the session listener alive</string>
+    <string name="notif_keepalive_title">Listening for agents</string>
+    <string name="notif_keepalive_text">You will be alerted when an agent needs you</string>
+    <string name="notif_interactive_multi">%1$d requests waiting</string>
     <string name="workbench_overview_summary">%1$d running · %2$d need attention · %3$s online</string>
     <string name="workbench_overview_collapse">Collapse overview</string>
     <string name="workbench_overview_expand">Expand overview</string>
