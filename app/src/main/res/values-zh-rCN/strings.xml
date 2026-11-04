@@ -87,6 +87,9 @@
     <!-- 批v154：全部视图按设备筛选 + 派发/想法附件 -->
     <string name="sessions_device_filter">按设备筛选</string>
     <string name="sessions_device_filter_show_all">全部显示</string>
+    <string name="sessions_filter_devices">设备</string>
+    <string name="sessions_filter_projects">项目</string>
+    <string name="sessions_filter_hide_all">全部隐藏</string>
     <string name="sessions_devices_hidden_title">所有设备都被隐藏了</string>
     <string name="sessions_devices_hidden_message">筛选里每个设备都没勾选——勾选任一台即可看到它的会话。</string>
     <string name="attach_add_image">图片</string>

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -746,6 +748,8 @@ private fun AggregateChatsList(
     val activeProjectId by viewModel.activeProjectId.collectAsStateWithLifecycle()
     // 批v154: multi-select device filter — a view filter, so toggling it never refetches.
     val hiddenDevices by viewModel.hiddenDevices.collectAsStateWithLifecycle()
+    // 批v160: the project column of that filter sheet.
+    val hiddenProjects by viewModel.hiddenProjects.collectAsStateWithLifecycle()
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     val listState = rememberLazyListState()
@@ -827,15 +831,18 @@ private fun AggregateChatsList(
                 title = { Text(stringResource(R.string.activity_all)) },
                 actions = {
                     // 批v154: device multi-select filter, next to the project
-                    // bookmark. Accent tint = some device is unchecked; hidden
-                    // with a single device (nothing to filter) UNLESS something
-                    // is unchecked — otherwise the only way back would be a wipe.
-                    if (hiddenDevices.isNotEmpty() || ui.deviceStates.size > 1) {
+                    // bookmark. 批v160: the sheet gains a project column — the
+                    // funnel shows whenever either column hides something (or
+                    // there are ≥2 devices to filter at all). Accent tint = some
+                    // device or project is unchecked; hidden with a single device
+                    // (nothing to filter) UNLESS something is unchecked —
+                    // otherwise the only way back would be a wipe.
+                    if (hiddenDevices.isNotEmpty() || hiddenProjects.isNotEmpty() || ui.deviceStates.size > 1) {
                         IconButton(onClick = { showDeviceFilter = true }) {
                             Icon(
                                 Icons.Rounded.FilterList,
                                 contentDescription = stringResource(R.string.sessions_device_filter),
-                                tint = if (hiddenDevices.isEmpty()) colors.textSecondary else colors.accent,
+                                tint = if (hiddenDevices.isEmpty() && hiddenProjects.isEmpty()) colors.textSecondary else colors.accent,
                             )
                         }
                     }
@@ -1072,30 +1079,59 @@ private fun AggregateChatsList(
     }
 
     if (showDeviceFilter) {
-        DeviceFilterSheet(
+        SessionFilterSheet(
             devices = ui.deviceStates,
-            hidden = hiddenDevices,
-            onToggle = viewModel::setDeviceVisible,
-            onShowAll = viewModel::showAllDevices,
+            projects = projects,
+            projectCounts = members.mapValues { (_, refs) -> refs.size },
+            hiddenDevices = hiddenDevices,
+            hiddenProjects = hiddenProjects,
+            onToggleDevice = viewModel::setDeviceVisible,
+            onToggleProject = viewModel::setProjectVisible,
+            onShowColumnDevices = viewModel::showAllDevices,
+            onHideColumnDevices = { viewModel.hideAllDevices(ui.deviceStates.map { it.serverId }) },
+            onShowColumnProjects = viewModel::showAllProjects,
+            onHideColumnProjects = { viewModel.hideAllProjects(projects.map { it.id }) },
+            onShowAll = viewModel::showAllFilters,
+            onHideAll = {
+                viewModel.hideAllFilters(
+                    ui.deviceStates.map { it.serverId },
+                    projects.map { it.id },
+                )
+            },
             onDismiss = { showDeviceFilter = false },
         )
     }
 }
 
 /**
- * Multi-select device filter for the 全部 aggregate (批v154). Every device is
- * checked by default (the store keeps the HIDDEN ids, so a newly paired device is
- * visible automatically); unchecking one removes its section from the list.
- * Devices come from the fetch round's [deviceStates] — including a FAILED one,
- * which must stay listed so the user can re-check it after it comes back.
+ * Two-column multi-select filter for the 全部 aggregate (批v154 devices +
+ * 批v160 projects). Left column = devices, right = session projects; a row is
+ * hidden when its device is unchecked OR any project it belongs to is unchecked,
+ * so the two dimensions stack (设备A + 项目A = that one conversation stream).
+ * Every row is checked by default (both stores keep the HIDDEN ids).
+ *
+ * Three toggles, per the owner's spec: the sheet's global button flips EVERYTHING
+ * (全部显示 ⇄ 全部隐藏, label derived from state; 全部隐藏 legitimately empties
+ * the list); each column's own header flips just that column; the two interlock
+ * without conflicting because they only ever write whole-column or whole-sheet
+ * sets of the same hidden-id stores.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceFilterSheet(
+private fun SessionFilterSheet(
     devices: List<DeviceLoad>,
-    hidden: Set<String>,
-    onToggle: (String, Boolean) -> Unit,
+    projects: List<SessionProject>,
+    projectCounts: Map<String, Int>,
+    hiddenDevices: Set<String>,
+    hiddenProjects: Set<String>,
+    onToggleDevice: (String, Boolean) -> Unit,
+    onToggleProject: (String, Boolean) -> Unit,
+    onShowColumnDevices: () -> Unit,
+    onHideColumnDevices: () -> Unit,
+    onShowColumnProjects: () -> Unit,
+    onHideColumnProjects: () -> Unit,
     onShowAll: () -> Unit,
+    onHideAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val colors = CodegTheme.colors
@@ -1114,41 +1150,150 @@ private fun DeviceFilterSheet(
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onShowAll, enabled = hidden.isNotEmpty()) {
-                    Text(stringResource(R.string.sessions_device_filter_show_all))
-                }
-            }
-            if (devices.isEmpty()) {
-                Text(
-                    stringResource(R.string.common_loading),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textTertiary,
-                    modifier = Modifier.padding(vertical = 12.dp),
-                )
-            }
-            devices.forEach { device ->
-                val checked = device.serverId !in hidden
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable { onToggle(device.serverId, !checked) }
-                        .heightIn(min = 48.dp)
-                        .padding(vertical = 2.dp),
-                ) {
-                    Checkbox(checked = checked, onCheckedChange = { onToggle(device.serverId, it) })
+                val anyHidden = hiddenDevices.isNotEmpty() || hiddenProjects.isNotEmpty()
+                TextButton(onClick = { if (anyHidden) onShowAll() else onHideAll() }) {
                     Text(
-                        device.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        stringResource(
+                            if (anyHidden) R.string.sessions_device_filter_show_all else R.string.sessions_filter_hide_all,
+                        ),
                     )
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                FilterColumn(
+                    title = stringResource(R.string.sessions_filter_devices),
+                    titleReveals = hiddenDevices.isNotEmpty(),
+                    onTitleClick = { if (hiddenDevices.isNotEmpty()) onShowColumnDevices() else onHideColumnDevices() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (devices.isEmpty()) {
+                        Text(
+                            stringResource(R.string.common_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textTertiary,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
+                    }
+                    devices.forEach { device ->
+                        val checked = device.serverId !in hiddenDevices
+                        FilterCheckRow(
+                            label = device.name,
+                            checked = checked,
+                            onToggle = { onToggleDevice(device.serverId, !checked) },
+                        )
+                    }
+                }
+                FilterColumn(
+                    title = stringResource(R.string.sessions_filter_projects),
+                    titleReveals = hiddenProjects.isNotEmpty(),
+                    onTitleClick = { if (hiddenProjects.isNotEmpty()) onShowColumnProjects() else onHideColumnProjects() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (projects.isEmpty()) {
+                        Text(
+                            stringResource(R.string.projects_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textTertiary,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
+                    }
+                    projects.forEach { project ->
+                        val checked = project.id !in hiddenProjects
+                        FilterCheckRow(
+                            label = project.name,
+                            badge = projectCounts[project.id]?.takeIf { it > 0 }?.toString(),
+                            icon = Icons.Rounded.Bookmark,
+                            checked = checked,
+                            onToggle = { onToggleProject(project.id, !checked) },
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/** One filter column: a clickable header (flips the whole column) + its rows. */
+@Composable
+private fun FilterColumn(
+    title: String,
+    titleReveals: Boolean,
+    onTitleClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Column(modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onTitleClick)
+                .padding(vertical = 4.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (titleReveals) colors.accent else colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (titleReveals) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        content()
+    }
+}
+
+/** A single filter row: checkbox + (optional icon) + label + (optional count). */
+@Composable
+private fun FilterCheckRow(
+    label: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+    icon: ImageVector? = null,
+    badge: String? = null,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onToggle)
+            .heightIn(min = 44.dp)
+            .padding(vertical = 2.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = { onToggle() })
+        icon?.let {
+            Icon(
+                it,
+                contentDescription = null,
+                tint = colors.textTertiary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        badge?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
         }
     }
 }

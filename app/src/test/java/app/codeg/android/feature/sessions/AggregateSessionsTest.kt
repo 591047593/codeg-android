@@ -126,6 +126,34 @@ class AggregateSessionsTest {
     }
 
     @Test
+    fun `hidden projects drop their member rows but keep the rest of the device`() {
+        // 批v160: the project column hides a:1 and b:4 (members of p1); a:2 has
+        // no project, so device a's section survives with just that row.
+        val sections = buildAggregateSessionSections(
+            listOf(
+                deviceA to listOf(conv(1, 5), conv(2, 10)),
+                deviceB to listOf(conv(4, 25)),
+            ),
+            hiddenProjectIds = setOf("p1"),
+            memberProjects = mapOf("a:1" to setOf("p1"), "b:4" to setOf("p1")),
+        )
+        assertEquals(listOf("agg-a"), sections.map { it.id })
+        assertEquals(listOf(2), sections.single().rows.map { it.conversation.id })
+    }
+
+    @Test
+    fun `device and project filters stack`() {
+        // 批v160: 设备A + 项目A hides everything — the documented 全部隐藏 semantic.
+        val sections = buildAggregateSessionSections(
+            listOf(deviceA to listOf(conv(1, 5), conv(2, 10))),
+            hiddenServerIds = setOf("a"),
+            hiddenProjectIds = setOf("p1"),
+            memberProjects = mapOf("a:1" to setOf("p1")),
+        )
+        assertTrue(sections.isEmpty())
+    }
+
+    @Test
     fun `unread derives from read marks and never flags live rows`() {
         val sections = buildAggregateSessionSections(
             listOf(

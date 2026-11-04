@@ -43,6 +43,14 @@ class AggregateDeviceFilterStore @Inject constructor(
         dataStore.edit { prefs -> prefs.remove(KEY) }
     }
 
+    /** Uncheck the given devices (the sheet column's hide-all, 批v160). */
+    suspend fun hideAll(serverIds: Collection<String>) {
+        if (serverIds.isEmpty()) return
+        dataStore.edit { prefs ->
+            prefs[KEY] = (prefs[KEY] ?: emptySet()) + serverIds
+        }
+    }
+
     companion object {
         private val KEY = stringSetPreferencesKey("aggregate_hidden_devices")
     }

@@ -87,6 +87,9 @@
     <!-- 批v154：全部视图按设备筛选 + 派发/想法附件 -->
     <string name="sessions_device_filter">Filter by device</string>
     <string name="sessions_device_filter_show_all">Show all</string>
+    <string name="sessions_filter_devices">Devices</string>
+    <string name="sessions_filter_projects">Projects</string>
+    <string name="sessions_filter_hide_all">Hide all</string>
     <string name="sessions_devices_hidden_title">All devices hidden</string>
     <string name="sessions_devices_hidden_message">Every device is unchecked in the filter — check one to see its sessions.</string>
     <string name="attach_add_image">Image</string>

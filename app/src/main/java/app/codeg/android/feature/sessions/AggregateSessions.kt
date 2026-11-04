@@ -49,14 +49,20 @@ data class AggregateSection(
  * the project-filter application point, so switching projects never refetches.
  * [readMarks] drives the unread dots (same convention as the Activity feed).
  * [hiddenServerIds] is the device multi-select filter (批v154) — a pure VIEW filter,
- * so re-checking a device never refetches; rows from hidden devices are dropped
- * before the pinned bucket so a hidden device can't leave a stray pin behind.
+ * so re-checking a device never refetches. [hiddenProjectIds] (批v160) is the
+ * project column of that filter sheet: a row is hidden when its device is hidden
+ * OR any project it belongs to is hidden — [memberProjects] maps refKey → the
+ * project ids holding that session. Both filters run per-ROW (a device section
+ * shrinks instead of vanishing when only some of its sessions are filtered),
+ * and a section left with zero rows drops out below.
  */
 fun buildAggregateSessionSections(
     perServer: List<Pair<ServerProfile, List<ConversationSummary>>>,
     memberKeys: Set<String>? = null,
     readMarks: Map<String, Long> = emptyMap(),
     hiddenServerIds: Set<String> = emptySet(),
+    hiddenProjectIds: Set<String> = emptySet(),
+    memberProjects: Map<String, Set<String>> = emptyMap(),
 ): List<AggregateSection> {
     fun rowsOf(profile: ServerProfile, convs: List<ConversationSummary>): List<AggregateRow> =
         convs.map { conv ->
@@ -75,9 +81,11 @@ fun buildAggregateSessionSections(
         }
 
     val filtered = perServer
-        .filter { (profile, _) -> profile.id !in hiddenServerIds }
         .map { (profile, convs) ->
-            val rows = rowsOf(profile, convs)
+            val rows = rowsOf(profile, convs).filter { row ->
+                row.serverId !in hiddenServerIds &&
+                    hiddenProjectIds.intersect(memberProjects[row.refKey].orEmpty()).isEmpty()
+            }
             if (memberKeys == null) rows else rows.filter { it.refKey in memberKeys }
         }
 

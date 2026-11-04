@@ -71,6 +71,9 @@ class SessionListViewModel @Inject constructor(
     val chatListDisplayStore: ChatListDisplayStore,
     /** Device multi-select filter for the "全部" aggregate (批v154). */
     private val aggregateDeviceFilter: AggregateDeviceFilterStore,
+    /** Project multi-select filter for the "全部" aggregate (批v160) — the
+     *  second column of the filter sheet, stacking with the device column. */
+    private val aggregateProjectFilter: app.codeg.android.core.datastore.AggregateProjectFilterStore,
     /** Floating-ball session cycling (batch v132) — the Chats list registers here. */
     val focusHub: app.codeg.android.core.data.SessionFocusHub,
 ) : ViewModel() {
@@ -106,6 +109,16 @@ class SessionListViewModel @Inject constructor(
     private data class GroupingInput(
         val folders: List<FolderDetail>,
         val conversations: List<ConversationSummary>,
+    )
+
+    /** 批v160: base tuple of [aggregateSections] — the inner combine's output (7
+     *  flows exceed combine's typed arity, so the sheet's project flows nest). */
+    private data class AggregateSectionsInput(
+        val servers: List<Pair<ServerProfile, List<ConversationSummary>>>,
+        val all: Boolean,
+        val memberKeys: Set<String>?,
+        val readMarks: Map<String, Long>,
+        val hiddenDevices: Set<String>,
     )
 
     private var client: CodegClient? = null
@@ -276,17 +289,34 @@ class SessionListViewModel @Inject constructor(
      */
     val aggregateSections: StateFlow<List<AggregateSection>> =
         combine(
-            _agg,
-            repository.chatsAll,
-            projectRepo.activeMemberKeys,
-            appSettingsStore.sessionReadMarks,
-            aggregateDeviceFilter.hiddenDevices,
-        ) { agg, all, memberKeys, marks, hidden ->
+            // 批v160: 7 flows exceed combine's typed arity — the base tuple rides
+            // the existing data-class pattern (see [AggregateInput]).
+            combine(
+                _agg,
+                repository.chatsAll,
+                projectRepo.activeMemberKeys,
+                appSettingsStore.sessionReadMarks,
+                aggregateDeviceFilter.hiddenDevices,
+            ) { agg, all, memberKeys, marks, hiddenDevices ->
+                AggregateSectionsInput(agg, all, memberKeys, marks, hiddenDevices)
+            },
+            aggregateProjectFilter.hiddenProjects,
+            projectRepo.members,
+        ) { input, hiddenProjects, members ->
+            // Invert membership once per recomputation: refKey → project ids, the
+            // shape the row-level project filter consults.
+            val memberProjects = buildMap<String, MutableSet<String>> {
+                for ((projectId, refs) in members) {
+                    for (ref in refs) getOrPut(ref.key) { mutableSetOf() }.add(projectId)
+                }
+            }
             buildAggregateSessionSections(
-                agg.servers,
-                memberKeys.takeIf { all },
-                marks,
-                hiddenServerIds = hidden,
+                input.servers,
+                input.memberKeys.takeIf { input.all },
+                input.readMarks,
+                hiddenServerIds = input.hiddenDevices,
+                hiddenProjectIds = hiddenProjects,
+                memberProjects = memberProjects,
             )
         }
             .distinctUntilChanged()
@@ -296,6 +326,11 @@ class SessionListViewModel @Inject constructor(
     /** Devices the 全部 list currently hides (multi-select filter, 批v154). */
     val hiddenDevices: StateFlow<Set<String>> =
         aggregateDeviceFilter.hiddenDevices
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Projects the 全部 list currently hides (multi-select filter, 批v160). */
+    val hiddenProjects: StateFlow<Set<String>> =
+        aggregateProjectFilter.hiddenProjects
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** Check/uncheck one device in the 全部 list (pure view filter, no refetch). */
@@ -322,6 +357,67 @@ class SessionListViewModel @Inject constructor(
             } catch (_: Exception) {
             }
         }
+    }
+
+    /** Uncheck every listed device (the sheet's 设备-column header, 批v160). */
+    fun hideAllDevices(deviceIds: Collection<String>) {
+        viewModelScope.launch {
+            try {
+                aggregateDeviceFilter.hideAll(deviceIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Check/uncheck one project in the 全部 list (pure view filter, 批v160). */
+    fun setProjectVisible(projectId: String, visible: Boolean) {
+        viewModelScope.launch {
+            try {
+                aggregateProjectFilter.setVisible(projectId, visible)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Check every project again (the sheet's 项目-column header, 批v160). */
+    fun showAllProjects() {
+        viewModelScope.launch {
+            try {
+                aggregateProjectFilter.showAll()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Uncheck every listed project (the sheet's 项目-column header, 批v160). */
+    fun hideAllProjects(projectIds: Collection<String>) {
+        viewModelScope.launch {
+            try {
+                aggregateProjectFilter.hideAll(projectIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** 批v160: the sheet's global toggle — reveal everything again. */
+    fun showAllFilters() {
+        showAllDevices()
+        showAllProjects()
+    }
+
+    /** 批v160: the sheet's global toggle — hide every device and project (an
+     *  empty list is the documented 「全部隐藏」 semantic, owner-approved). */
+    fun hideAllFilters(deviceIds: Collection<String>, projectIds: Collection<String>) {
+        hideAllDevices(deviceIds)
+        hideAllProjects(projectIds)
     }
 
     /** One progressive fan-out over every participating device (batch v137: 3s
