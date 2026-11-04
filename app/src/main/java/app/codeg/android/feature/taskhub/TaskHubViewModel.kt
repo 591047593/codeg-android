@@ -12,6 +12,7 @@ import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.buildBoard
+import app.codeg.android.core.data.taskSegmentOf
 import app.codeg.android.core.data.participating
 import app.codeg.android.core.data.retryableIds
 import app.codeg.android.core.data.retrying
@@ -115,6 +116,17 @@ class TaskHubViewModel @Inject constructor(
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    /** 批v156: the segment an acted task just landed in, consumed once by the
+     *  screen. After 启动 the card leaves 待办 for 进行中 — the board used to keep
+     *  sitting on the (now empty) old segment, so the card "vanished" one tab
+     *  away. The screen auto-follows the task to its new segment. */
+    private val _actedLandedSegment = MutableStateFlow<TaskSegment?>(null)
+    val actedLandedSegment: StateFlow<TaskSegment?> = _actedLandedSegment.asStateFlow()
+
+    fun consumeActedLandedSegment() {
+        _actedLandedSegment.value = null
+    }
 
     private val foreground = (appContext as CodegApplication).appForeground
 
@@ -508,6 +520,13 @@ class TaskHubViewModel @Inject constructor(
                 // one 25s poll cycle — inviting a second click).
                 generation += 1
                 fetchDevices(setOf(serverId))
+                // 批v156: the action moved the task; report where it landed so the
+                // screen can follow it (the board stays on the user's segment
+                // otherwise — an empty 待办 with the card one tab away). Not found
+                // (deleted/archived-away) → null → no jump.
+                _actedLandedSegment.value = _ui.value.tasks
+                    .firstOrNull { it.serverId == serverId && it.task.id == taskId }
+                    ?.let { taskSegmentOf(it.task) }
             } catch (e: CancellationException) {
                 ok = false
                 throw e

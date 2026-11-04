@@ -389,16 +389,21 @@ class SessionDetailViewModel @Inject constructor(
                     }
                     // 批v154: the chip's selection mirrors the SERVER membership.
                     observeProjects(p.id)
-                    // Reattach only when a turn is GENUINELY executing:
-                    // in_flight_user_turn_id is sourced from the live connection's
-                    // pending user message (set on UserMessage, cleared on
-                    // TurnComplete), so it is null for an idle conversation. The
+                    // Reattach only when a turn is GENUINELY executing. The
                     // conversation STATUS cannot play this role — every freshly
                     // created row is born in_progress (server create_inner), so
                     // status.isLive is true for a conversation that has never seen
                     // a turn, and gating on it skipped the dispatch auto-send
                     // below forever (v149.1: session-mode detail always blank).
-                    val liveTurn = detail.inFlightUserTurnId != null
+                    // 批v156: in_flight_user_turn_id 并不可靠——工作台启动的整轮运行
+                    // 与 qoder 等 agent 自驱轮次实测都停在 null（它只在主链路
+                    // AcpEvent::UserMessage 落库时置位），而 pet_list_active_sessions
+                    // 的活跃连接表是准的。detail 说空闲时再查一次活跃表兜底：在表中
+                    // →重连直播；旧服务端或查询失败返回 null→维持旧行为。
+                    var liveTurn = detail.inFlightUserTurnId != null
+                    if (!liveTurn) {
+                        liveTurn = id in (runCatching { c.liveConversationIds() }.getOrNull() ?: emptySet())
+                    }
                     if (liveTurn) reattachIfLive()
                     // 批v149 会话模式派发：收件箱"会话"方式创建会话后跳进来，这里
                     // 消费armed 的首条指令并发送。只在真有轮次在跑时让位（live 轮
@@ -658,7 +663,15 @@ class SessionDetailViewModel @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiError.TurnInProgress) {
-            discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = "A turn is already running on this session.")
+            // 批v156: 服务端说忙就是忙（它的 gate 是权威信号，客户端的 in-flight
+            // 感知与它可能失同步——qoder 实测 detail 报空闲而 gate 拦人）。回滚本次
+            // 乐观发送后立刻重连活跃连接：UI 采纳运行态（停止按钮+实时流），横幅
+            // 用本地化文案，不再直出服务端英文原话。
+            discardOptimistic(
+                userTurn, text, attachments, createdConversation, createdId,
+                notice = appContext.getString(R.string.session_turn_in_progress),
+            )
+            reattachIfLive()
         } catch (e: Exception) {
             discardOptimistic(userTurn, text, attachments, createdConversation, createdId, notice = e.displayMessage())
         }

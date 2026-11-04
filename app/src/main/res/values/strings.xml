@@ -111,6 +111,7 @@
     <string name="session_agent_options">Agent options</string>
     <string name="session_open_folder">Open project folder</string>
     <string name="fork_from_here">Fork from here</string>
+    <string name="session_turn_in_progress">A turn is already running on this session — reattached to the live run</string>
     <string name="fork_turn_in_progress">A turn is in progress — try again when it finishes</string>
     <string name="fork_unavailable">No session connection available to fork</string>
     <string name="fork_succeeded">Forked into a new session</string>

@@ -131,6 +131,15 @@ fun TaskHubScreen(
     LaunchedEffect(viewModel) {
         viewModel.consumeSegmentRequest()?.let { segmentName = it.name }
     }
+    // 批v156: after an action (启动/取消/重试…) the card moves segments — follow it
+    // so it never "vanishes" one tab away (the board used to stay on the old,
+    // now-empty segment). The VM emits the landed segment once per action.
+    val actedLanded by viewModel.actedLandedSegment.collectAsStateWithLifecycle()
+    LaunchedEffect(actedLanded) {
+        val landed = actedLanded ?: return@LaunchedEffect
+        if (landed != segment) segmentName = landed.name
+        viewModel.consumeActedLandedSegment()
+    }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var folderSheet by remember { mutableStateOf(false) }
     // The detail sheet holds a KEY, not a row snapshot: the 25s poll keeps
