@@ -556,6 +556,8 @@ fun TaskHubScreen(
                 detail = ui.details[entry.serverId]?.get(entry.task.id),
                 busy = ui.busyKey != null,
                 spinning = ui.busyKey == "${entry.serverId}:${entry.task.id}",
+                actionError = ui.actionError,
+                actionNote = ui.actionNote,
                 onAction = { action ->
                     if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
                 },
@@ -2314,6 +2316,9 @@ private fun CardPrimaryPill(
             .heightIn(min = 32.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
+            // 批v161.1 Bug B: a disabled pill used to look exactly like an
+            // enabled one — the tap died with zero feedback. Dim it.
+            .alpha(if (enabled) 1f else 0.38f)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
@@ -2338,6 +2343,7 @@ private fun CardIconAction(action: CardAction, enabled: Boolean, onClick: () -> 
             .size(32.dp)
             .clip(CircleShape)
             .border(1.dp, colors.textPrimary.copy(alpha = 0.18f), CircleShape)
+            .alpha(if (enabled) 1f else 0.38f)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -2463,6 +2469,8 @@ private fun TaskDetailSheet(
     detail: TaskHubViewModel.TaskDetail?,
     busy: Boolean,
     spinning: Boolean,
+    actionError: String?,
+    actionNote: String?,
     onAction: (ConfirmAction) -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onOpen: () -> Unit,
@@ -2553,6 +2561,34 @@ private fun TaskDetailSheet(
                         color = colors.textPrimary,
                     )
                 }
+            }
+            // 批v161.1 Bug B: the board-top banners sit behind this sheet's
+            // scrim — while the sheet is open, every action failure/note was
+            // literally invisible (「合并无反应」). Echo them next to the zone
+            // buttons they belong to.
+            actionError?.let { err ->
+                Text(
+                    stringResource(R.string.task_action_failed) + " · " + err,
+                    color = colors.danger,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                )
+            }
+            actionNote?.let { note ->
+                Text(
+                    note,
+                    color = colors.textSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                )
             }
             DetailZonePanel(entry, busy, onAction)
             InfoGrid(entry, folderName)
@@ -2825,6 +2861,9 @@ private fun ZoneFilled(
             .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
+            // 批v161.1 Bug B: disabled zones were visually identical to live
+            // ones — a tap died without a dialog, a request or a message. Dim.
+            .alpha(if (enabled) 1f else 0.38f)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp),
     ) {
@@ -2857,6 +2896,7 @@ private fun ZoneGhost(
             .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(10.dp))
             .border(1.dp, colors.textPrimary.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+            .alpha(if (enabled) 1f else 0.38f)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp),
     ) {

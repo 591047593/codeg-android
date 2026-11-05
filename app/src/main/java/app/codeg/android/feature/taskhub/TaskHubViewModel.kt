@@ -48,6 +48,8 @@ import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import javax.inject.Inject
@@ -466,14 +468,27 @@ class TaskHubViewModel @Inject constructor(
                     result.fold(
                         onSuccess = { tasks ->
                             _ui.update { state ->
+                                val fresh = tasks.orEmpty().map { t -> TaskBoardEntry(profile.id, profile.name, t) }
+                                // 批v161.1 Bug A: a card moved by the engine or
+                                // another client used to teleport across pager
+                                // pages with zero cue (「删一张另一张也消失」—
+                                // the other card had just landed on another
+                                // page). Announce where it went; rounds caused
+                                // by the user's own action hold the busy slot
+                                // and are skipped (they already jump segments).
+                                val moveNote = boardMoveNote(
+                                    old = state.tasks.filter { it.serverId == profile.id },
+                                    new = fresh,
+                                    busy = state.busyKey != null,
+                                )
                                 state.copy(
                                     deviceStates = state.deviceStates.map {
                                         if (it.serverId == profile.id) {
                                             it.copy(status = DeviceLoadStatus.OK, error = null)
                                         } else it
                                     },
-                                    tasks = state.tasks.filter { e -> e.serverId != profile.id } +
-                                        (tasks.orEmpty().map { t -> TaskBoardEntry(profile.id, profile.name, t) }),
+                                    tasks = state.tasks.filter { e -> e.serverId != profile.id } + fresh,
+                                    actionNote = moveNote ?: state.actionNote,
                                 )
                             }
                         },
@@ -687,6 +702,11 @@ class TaskHubViewModel @Inject constructor(
         block: suspend (CodegClient) -> Unit,
     ) {
         if (_ui.value.busyKey != null) {
+            // 批v161.1 Bug B: the gate message used to ride onSettled only, and
+            // every action caller passes the default no-op — the tap died with
+            // zero on-screen feedback. Surface it like any other note (board
+            // banner + detail sheet both render actionNote).
+            _ui.update { it.copy(actionNote = "已有操作进行中，请稍候") }
             onSettled(false, "已有操作进行中，请稍候")
             return
         }
@@ -715,7 +735,16 @@ class TaskHubViewModel @Inject constructor(
         try {
             val profile = deviceById(serverId) ?: error("设备不存在")
             val client = repository.client(profile) ?: error("Token 缺失")
-            block(client)
+            // 批v161.1 Bug B: bound the action round. OkHttp's 30s read timeout
+            // covers a silent socket, but a trickling/half-open response could
+            // still hold the global busy slot well past any sane wait — and a
+            // held slot disables every zone button with no visible reason (the
+            // reported 合并无反应). Past this ceiling the round is an error.
+            try {
+                withTimeout(ACTION_TIMEOUT_MS) { block(client) }
+            } catch (e: TimeoutCancellationException) {
+                throw ApiError.Transport("操作超时（45 秒无响应），请重试")
+            }
             // The action moved the task (status/列/events); the cached detail
             // is a pre-action snapshot and loadDetail's existing!=null check
             // would keep serving it — drop it so the next expand refetches.
@@ -1076,4 +1105,46 @@ class TaskHubViewModel @Inject constructor(
 
 private inline fun MutableStateFlow<TaskHubViewModel.UiState>.update(transform: (TaskHubViewModel.UiState) -> TaskHubViewModel.UiState) {
     value = transform(value)
+}
+
+/** 批v161.1 Bug B: ceiling for one user action round (the mutation call only,
+ *  not the post-action refreshes). Past it the busy slot is force-released and
+ *  the wait becomes a visible timeout error instead of a silent global freeze. */
+internal const val ACTION_TIMEOUT_MS = 45_000L
+
+/** Column label used in [boardMoveNote] copy (matches the board's zh UI). */
+internal fun segmentMoveLabel(seg: TaskSegment): String = when (seg) {
+    TaskSegment.TODO -> "待办"
+    TaskSegment.RUNNING -> "进行中"
+    TaskSegment.ATTENTION -> "等你处理"
+    TaskSegment.DONE -> "已完成"
+}
+
+/**
+ * 批v161.1 Bug A: diff the previous slice against the fresh one and describe
+ * the most recent externally-driven move, so a card that jumps across pager
+ * pages (取消后落进已完成、被别的端归档/删除) never vanishes without a cue.
+ * Returns null when nothing moved, the caller acted (busy — their own round
+ * already follows the card via actedLandedSegment), or only brand-new cards
+ * appeared. Deletions/archives-away count as a move ("已从看板移除").
+ */
+internal fun boardMoveNote(old: List<TaskBoardEntry>, new: List<TaskBoardEntry>, busy: Boolean): String? {
+    if (busy || old.isEmpty()) return null
+    val oldById = old.associateBy { it.task.id }
+    val newIds = new.mapTo(HashSet()) { it.task.id }
+    var note: String? = null
+    for (entry in new) {
+        val prev = oldById[entry.task.id] ?: continue
+        val from = taskSegmentOf(prev.task)
+        val to = taskSegmentOf(entry.task)
+        if (from != to && from != null && to != null) {
+            note = "「${entry.task.title}」已从「${segmentMoveLabel(from)}」移到「${segmentMoveLabel(to)}」"
+        }
+    }
+    for (prev in old) {
+        if (prev.task.id !in newIds) {
+            note = "「${prev.task.title}」已从看板移除"
+        }
+    }
+    return note
 }

@@ -1060,6 +1060,8 @@
     <string name="context_usage_chip">%1$s</string>
     <string name="context_usage_title">上下文窗口</string>
     <string name="context_usage_used_max">%1$s / %2$s</string>
+    <string name="context_usage_used_unknown_window">已用 %1$s（窗口未知）</string>
+    <string name="context_usage_window_unknown_hint">该 Agent 未上报上下文窗口大小。</string>
     <string name="context_usage_cache_hit">缓存命中率</string>
     <string name="context_usage_tokens">Token 用量</string>
     <string name="context_usage_input">输入</string>

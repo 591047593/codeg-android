@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.codeg.android.R
 import app.codeg.android.core.designsystem.theme.CodegTheme
+import app.codeg.android.core.model.inferContextWindowMaxTokens
 
 /**
  * The context-window popup: usage gauge, cache hit rate, and the session's cumulative
@@ -39,7 +40,11 @@ fun ContextUsageSheet(ui: SessionDetailUiState, onDismiss: () -> Unit) {
         val stats = ui.sessionStats
         val usage = stats?.totalUsage
         val used = stats?.contextWindowUsedTokens
+        // 批v161.1 R1: the server omits the window for model families its
+        // parser doesn't know (every CodeBuddy/DeepSeek session) — infer it
+        // client-side from the summary's model name before calling it missing.
         val max = stats?.contextWindowMaxTokens
+            ?: inferContextWindowMaxTokens(ui.summary?.model)
         // Fall back to deriving the percent from the raw used/max when the server
         // didn't report it (the web client does the same).
         val percent = stats?.contextWindowUsagePercent
@@ -75,8 +80,8 @@ fun ContextUsageSheet(ui: SessionDetailUiState, onDismiss: () -> Unit) {
                     color = colors.textPrimary,
                     modifier = Modifier.weight(1f),
                 )
-                if (used != null && max != null) {
-                    Text(
+                when {
+                    used != null && max != null -> Text(
                         stringResource(
                             R.string.context_usage_used_max,
                             formatTokens(used.toLong()),
@@ -85,7 +90,22 @@ fun ContextUsageSheet(ui: SessionDetailUiState, onDismiss: () -> Unit) {
                         fontSize = 13.sp,
                         color = colors.textSecondary,
                     )
+                    // 批v161.1 R1: a known used count with an unknown window used
+                    // to hide the number entirely (the "空白" bug) — show it and
+                    // say what's missing instead.
+                    used != null -> Text(
+                        stringResource(R.string.context_usage_used_unknown_window, formatTokens(used.toLong())),
+                        fontSize = 13.sp,
+                        color = colors.textSecondary,
+                    )
                 }
+            }
+            if (used == null && max == null) {
+                Text(
+                    stringResource(R.string.context_usage_window_unknown_hint),
+                    fontSize = 12.sp,
+                    color = colors.textSecondary,
+                )
             }
             LinearProgressIndicator(
                 progress = { ((percent ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f) },

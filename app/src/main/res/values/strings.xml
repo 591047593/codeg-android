@@ -1074,6 +1074,8 @@
     <string name="context_usage_chip">%1$s</string>
     <string name="context_usage_title">Context window</string>
     <string name="context_usage_used_max">%1$s / %2$s</string>
+    <string name="context_usage_used_unknown_window">Used %1$s (window unknown)</string>
+    <string name="context_usage_window_unknown_hint">This agent did not report a context window size.</string>
     <string name="context_usage_cache_hit">Cache hit rate</string>
     <string name="context_usage_tokens">Token usage</string>
     <string name="context_usage_input">Input</string>
