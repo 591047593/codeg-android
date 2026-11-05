@@ -123,6 +123,15 @@ interface DispatchFormHost {
         configValues: Map<String, String> = emptyMap(),
     ): app.codeg.android.core.model.AgentOptionsSnapshot?
 
+    /** M1: the server's configured model providers for one agent (`list_model_
+     *  providers`) — the 模型 row's server truth. Never throws: empty list on
+     *  any failure (old server, no token), and the form falls back to the
+     *  probe-only picker. */
+    suspend fun modelProviderEntries(
+        serverId: String,
+        agentType: AgentType,
+    ): List<app.codeg.android.core.model.ModelProviderInfo>
+
     /** P0-5: remember the 「创建后立即开始」 choice for the next time the form opens. */
     fun setTaskAutoStartDefault(value: Boolean)
 
@@ -258,6 +267,12 @@ fun DispatchForm(
     // output back into the next probe (no feedback loop) and an untouched form
     // sends no config_values at all.
     var agentOptions by remember { mutableStateOf<app.codeg.android.core.model.AgentOptionsSnapshot?>(null) }
+    // M1: the server's configured provider models (list_model_providers) — the
+    // 模型 row's server truth. Merged into the display snapshot below: they top
+    // up a live probe catalog and carry the row alone when the probe fails.
+    var providerModels by remember {
+        mutableStateOf<List<app.codeg.android.core.model.ModelProviderInfo>>(emptyList())
+    }
     val configPicks = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
     var configSheetId by remember { mutableStateOf<String?>(null) }
     var optionsLoading by remember { mutableStateOf(false) }
@@ -346,6 +361,13 @@ fun DispatchForm(
         modeOptions = modes
         modeId = snapshot.modes?.currentModeId?.takeIf { cur -> modes.any { it.id == cur } }
     }
+    // M1: what the 模型/推理 rows actually render — the probe catalog with the
+    // server's provider models merged in (and, on a failed probe, carried by
+    // the provider models alone). The config sheet resolves options from THIS
+    // snapshot too, so a synthesized model row opens its picker like any other.
+    val displayOptions = remember(agentOptions, providerModels) {
+        mergeProviderModels(agentOptions, providerModels)
+    }
     LaunchedEffect(device, probeAgent, folder?.path) {
         modeId = null
         modeOptions = emptyList()
@@ -389,6 +411,21 @@ fun DispatchForm(
             null
         }
         if (snapshot != null) agentOptions = snapshot
+    }
+    // M1: provider models per (device, agent) — fresh on every target change
+    // (the settings page may have edited them since). The host never throws;
+    // the belt-and-suspenders catch keeps a stray failure from killing the form.
+    LaunchedEffect(device, probeAgent) {
+        providerModels = emptyList()
+        val d = device ?: return@LaunchedEffect
+        val a = probeAgent ?: return@LaunchedEffect
+        providerModels = try {
+            host.modelProviderEntries(d, a)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
     // Process-death restore (v146 invariant): saved device/folder/agent come back
     // but the loaded folders/agents died with the process — re-request once.
@@ -603,10 +640,11 @@ fun DispatchForm(
         // ⑤c 模型 / ⑤d 推理强度 — the agent's config catalog. Shown in BOTH
         // modes: a conversation pins them through its first acp_connect, a task
         // sends them as config_values. Untouched rows = the agent's own default.
-        val modelOption = agentOptions?.configOptions?.firstOrNull {
+        // M1: reads the MERGED snapshot (probe + server provider models).
+        val modelOption = displayOptions?.configOptions?.firstOrNull {
             it.id == "model" || it.category == "model"
         }
-        val effortOption = agentOptions?.configOptions?.firstOrNull {
+        val effortOption = displayOptions?.configOptions?.firstOrNull {
             it.id != modelOption?.id &&
                 (it.category == "thought_level" || it.id == "reasoning_effort")
         }
@@ -648,7 +686,7 @@ fun DispatchForm(
                 onClick = { configSheetId = effortOption.id },
             )
         }
-        if (optionsFailed && !optionsLoading) {
+        if (optionsFailed && !optionsLoading && modelOption == null) {
             Text(
                 stringResource(R.string.dispatch_model_failed_note),
                 style = MaterialTheme.typography.labelSmall,
@@ -1016,7 +1054,8 @@ fun DispatchForm(
     }
     // P0-2 config sheet: one generic list for whichever row opened it (model or
     // reasoning effort). Grouped catalogs are flattened in declaration order.
-    agentOptions?.configOptions?.firstOrNull { it.id == configSheetId }?.let { option ->
+    // M1: resolves from the MERGED snapshot so a provider-carried model row opens.
+    displayOptions?.configOptions?.firstOrNull { it.id == configSheetId }?.let { option ->
         OptionListSheet(
             title = option.name.ifBlank { stringResource(R.string.dispatch_model) },
             options = option.selectValues().map {
@@ -1238,4 +1277,56 @@ private fun app.codeg.android.core.model.SessionConfigOption.displayValue(
     val current = picks[id] ?: kind.currentValue?.takeIf { it.isNotBlank() } ?: return null
     return selectValues().firstOrNull { it.value == current }?.name?.takeIf { it.isNotBlank() }
         ?: current
+}
+
+/**
+ * M1: fold the server's configured provider models (`list_model_providers`,
+ * agent-filtered by the prober) into the probed config catalog. They top up a
+ * live model catalog (never duplicating ids) and carry the 模型 row alone when
+ * the probe failed or hasn't run — server truth beats an unavailable CLI spawn.
+ * Grouped catalogs get the providers as their own trailing group:
+ * [selectValues] prefers a non-empty flat list, so appending there would
+ * silently drop the probed groups.
+ */
+internal fun mergeProviderModels(
+    probe: app.codeg.android.core.model.AgentOptionsSnapshot?,
+    providers: List<app.codeg.android.core.model.ModelProviderInfo>,
+): app.codeg.android.core.model.AgentOptionsSnapshot? {
+    val choices = providers.mapNotNull { p ->
+        val model = p.model?.trim().orEmpty()
+        if (model.isEmpty()) null
+        else app.codeg.android.core.model.SessionConfigSelectOption(
+            value = model,
+            name = model,
+            description = p.name,
+        )
+    }
+    if (choices.isEmpty()) return probe
+    fun carried() = app.codeg.android.core.model.SessionConfigOption(
+        id = "model",
+        name = "",
+        category = "model",
+        kind = app.codeg.android.core.model.SessionConfigKind(options = choices),
+    )
+    val probed = probe ?: return app.codeg.android.core.model.AgentOptionsSnapshot(
+        configOptions = listOf(carried()),
+    )
+    val modelOption = probed.configOptions.firstOrNull { it.id == "model" || it.category == "model" }
+        ?: return probed.copy(configOptions = probed.configOptions + carried())
+    val known = modelOption.selectValues().map { it.value }.toSet()
+    val missing = choices.filter { it.value !in known }
+    if (missing.isEmpty()) return probed
+    val merged = if (modelOption.kind.groups.isEmpty()) {
+        modelOption.copy(kind = modelOption.kind.copy(options = modelOption.kind.options + missing))
+    } else {
+        modelOption.copy(
+            kind = modelOption.kind.copy(
+                groups = modelOption.kind.groups + app.codeg.android.core.model.SessionConfigSelectGroup(
+                    group = "provider_models",
+                    options = missing,
+                ),
+            ),
+        )
+    }
+    return probed.copy(configOptions = probed.configOptions.map { if (it.id == modelOption.id) merged else it })
 }

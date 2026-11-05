@@ -414,6 +414,12 @@ class InboxViewModel @Inject constructor(
     ): app.codeg.android.core.model.AgentOptionsSnapshot? =
         agentOptionsProber.probe(serverId, agentType, workingDir, configValues)
 
+    override suspend fun modelProviderEntries(
+        serverId: String,
+        agentType: AgentType,
+    ): List<app.codeg.android.core.model.ModelProviderInfo> =
+        agentOptionsProber.modelProviderEntries(serverId, agentType)
+
     // region Dispatch
 
 

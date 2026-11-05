@@ -8,6 +8,7 @@ import app.codeg.android.core.model.WorkTaskWire
 import app.codeg.android.core.model.ConversationConnectionInfo
 import app.codeg.android.core.model.ForkResult
 import app.codeg.android.core.model.ConversationDetail
+import app.codeg.android.core.model.ConversationTurnsPage
 import app.codeg.android.core.model.AcpForkBody
 import app.codeg.android.core.model.ConversationIdBody
 import app.codeg.android.core.model.ConnectBody
@@ -231,11 +232,46 @@ class CodegClient(
             ListSerializer(ConversationSummary.serializer()),
         )
 
-    /** Full session detail incl. message history. */
-    suspend fun conversationDetail(id: Int): ConversationDetail =
+    /**
+     * Session detail incl. message history. [tailTurns] (last N turns,
+     * user-round-aligned) / [fromIndex] (exact slice `full[fromIndex..]`) ask
+     * the server for a TURN WINDOW (fleet M1, server 0.41.3+ web parity):
+     * `turns` then holds only the window and the response's window metadata
+     * carries the splice coordinates — a null [ConversationDetail.turnsOffset]
+     * on the response means the server ignored the window (legacy build) and
+     * `turns` is the FULL list, exactly what old callers expect.
+     */
+    suspend fun conversationDetail(id: Int, tailTurns: Int? = null, fromIndex: Int? = null): ConversationDetail =
         decode(
-            send("get_folder_conversation", encode(ConversationIdBody(id))),
+            send(
+                "get_folder_conversation",
+                buildJsonObject {
+                    put("conversationId", id)
+                    tailTurns?.let { put("tailTurns", it) }
+                    fromIndex?.let { put("fromIndex", it) }
+                }.toString(),
+            ),
             ConversationDetail.serializer(),
+        )
+
+    /**
+     * One page of older history ending just before [beforeIndex]
+     * (`get_folder_conversation_turns`, fleet M1, server 0.41.3+). Light path —
+     * no summary, no stats. The caller must verify
+     * [ConversationTurnsPage.prefixHashBeforeIndex] against the loaded window's
+     * [ConversationDetail.prefixHash] before splicing (web `requestOlderPage`).
+     */
+    suspend fun conversationTurnsPage(id: Int, beforeIndex: Int, limit: Int): ConversationTurnsPage =
+        decode(
+            send(
+                "get_folder_conversation_turns",
+                buildJsonObject {
+                    put("conversationId", id)
+                    put("beforeIndex", beforeIndex)
+                    put("limit", limit)
+                }.toString(),
+            ),
+            ConversationTurnsPage.serializer(),
         )
 
     /** Create a conversation row up front and return its id (a bare JSON int). */
@@ -709,6 +745,7 @@ class CodegClient(
             CodegJson.response.decodeFromString(String.serializer(), text)
         }.getOrDefault("")
 
+
     /** Decode a camelCase-wire response (e.g. `list_directory_with_files`). */
     private fun <T> decodeCamel(text: String, deserializer: DeserializationStrategy<T>): T =
         runCatching { camelJson.decodeFromString(deserializer, text) }
@@ -772,6 +809,38 @@ class CodegClient(
 
     suspend fun workTaskListForFolder(folderId: Int): List<WorkTaskInfo> =
         decodeWorkTaskList(send("work_task_list", buildJsonObject { put("folderId", folderId) }.toString()))
+
+    /**
+     * fleet M1: the server's own 「等你处理」 count — tasks in
+     * awaiting_input/review/failed, not deleted/archived/deferred (the web
+     * sidebar badge's exact definition; note it EXCLUDES `merging`, which the
+     * app board files under attention). Bare JSON number; null on ANY failure
+     * so the caller degrades to the board-derived count (老服务端兼容闸雏形).
+     */
+    suspend fun workTaskAttentionCount(): Int? =
+        try {
+            decodeBareInt(send("work_task_attention_count", encode(EmptyBody)))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
+     * fleet M1: batch-start every claimable `todo` task — [folderId] null
+     * sweeps ALL folders with todos (preflight-broken folders are skipped
+     * server-side), a non-null id scopes to that one folder (its preflight
+     * failure fails the whole call). Planned (scheduledAt) todos are NOT
+     * claimed. Returns the claimed count (bare JSON number).
+     */
+    suspend fun workTaskStartAll(folderId: Int? = null): Int {
+        val text = send(
+            "work_task_start_all",
+            buildJsonObject { folderId?.let { put("folderId", it) } }.toString(),
+        )
+        return decodeBareInt(text)
+            ?: throw ApiError.Decoding("work_task_start_all returned a non-number body")
+    }
 
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())
@@ -1465,6 +1534,20 @@ class CodegClient(
         /** Trim a trailing slash so `"$baseUrl/api/<name>"` never doubles up. */
         fun normalizeBaseUrl(raw: String): String =
             raw.trim().trimEnd('/')
+        /**
+         * fleet M1: parse a bare JSON number response (`3`), lenient about quotes
+         * (`"3"`) and whitespace. Null = not a number (caller decides degrade).
+         * Companion-level for the decode-fixture tests (same shape as
+         * [decodeConnectionId]).
+         */
+        internal fun decodeBareInt(text: String): Int? =
+            text.trim().toIntOrNull()
+                ?: runCatching {
+                    CodegJson.response.parseToJsonElement(text).let { el ->
+                        (el as? JsonPrimitive)?.content?.trim()?.toIntOrNull()
+                    }
+                }.getOrNull()
+
 
         /**
          * `acp_connect` returns a bare JSON string connection id. Require exactly

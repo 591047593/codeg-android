@@ -1329,6 +1329,10 @@
     <string name="dispatch_schedule_past">所选时间已经过去，任务会立即执行。请重新选择未来的时间。</string>
     <string name="task_confirm_start_title">开始此任务？</string>
     <string name="task_confirm_start_msg">将在对应设备上立即开始执行。如果该任务来自其他设备或另有安排，开始可能打断原计划。</string>
+    <string name="task_start_all_title">全部启动</string>
+    <string name="task_start_all_msg">将对下列目标批量启动待办任务——共 %1$d 个、%2$d 个目标。已排期或被阻塞的任务会自动跳过。</string>
+    <string name="task_start_all_more">…还有 %1$d 项</string>
+    <string name="task_start_all_go">启动</string>
     <string name="task_confirm_retry_title">重试此任务？</string>
     <string name="task_confirm_retry_msg">将在对应设备上重新执行该任务。</string>
     <string name="task_confirm_requeue_title">重新排队？</string>

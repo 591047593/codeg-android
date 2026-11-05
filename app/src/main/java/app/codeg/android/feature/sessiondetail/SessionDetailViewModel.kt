@@ -36,6 +36,7 @@ import app.codeg.android.core.model.QuickMessage
 import android.content.ContentResolver
 import android.net.Uri
 import app.codeg.android.core.model.ConversationConnectionInfo
+import app.codeg.android.core.model.ConversationDetail
 import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.FolderDetail
@@ -100,6 +101,12 @@ private const val MODE_KEY = "mode"
 
 /** RPC session snapshot freshness window (see snapshotFor in the VM). */
 private const val SNAPSHOT_TTL_MS = 30_000L
+
+/** M1 turn windowing (web parity): the transcript opens on the last N turns and
+ *  older pages join through [SessionDetailViewModel.loadOlderTurns]. Same values
+ *  as the web client's conversation-runtime-store. */
+private const val TAIL_TURNS_DEFAULT = 120
+private const val OLDER_TURNS_PAGE_SIZE = 120
 
 /** Server-side folder (inside the working directory) that receives session handoff JSON. */
 private const val HANDOFF_DIR = ".codeg-handoff"
@@ -373,7 +380,11 @@ class SessionDetailViewModel @Inject constructor(
 
                 val id = conversationId
                 if (id != null) {
-                    val detail = c.conversationDetail(id)
+                    // M1: open on a TAIL window (web parity) — a 100+ turn session
+                    // paints its first frame without the whole transcript. Older
+                    // pages join through [loadOlderTurns]; the window fields ride
+                    // the response (null = legacy server, windowing stays off).
+                    val detail = c.conversationDetail(id, tailTurns = TAIL_TURNS_DEFAULT)
                     agent = detail.summary.agentType
                     externalId = detail.summary.externalId
                     folder = allFolders.firstOrNull { it.id == detail.summary.folderId }
@@ -385,6 +396,9 @@ class SessionDetailViewModel @Inject constructor(
                             serverName = p.name,
                             serverId = p.id,
                             turns = detail.turns,
+                            turnsOffset = detail.turnsOffset,
+                            turnsTotal = detail.turnsTotal,
+                            windowPrefixHash = detail.prefixHash,
                             sessionStats = detail.sessionStats,
                             externalId = detail.summary.externalId,
                             agent = detail.summary.agentType,
@@ -583,7 +597,7 @@ class SessionDetailViewModel @Inject constructor(
         )
         val builder = LiveTurnBuilder()
         liveBuilder = builder
-        turnBaseline = _ui.value.turns.size
+        turnBaseline = (_ui.value.turnsOffset ?: 0) + _ui.value.turns.size
         _ui.update {
             it.copy(
                 pendingUserTurns = it.pendingUserTurns + userTurn,
@@ -1017,7 +1031,7 @@ class SessionDetailViewModel @Inject constructor(
             // streaming; the snapshot's live message + active tools are seeded on arrival.
             val builder = LiveTurnBuilder()
             liveBuilder = builder
-            turnBaseline = _ui.value.turns.size
+            turnBaseline = (_ui.value.turnsOffset ?: 0) + _ui.value.turns.size
             _ui.update { it.copy(isInFlight = true, sendStatus = "Reattaching…", live = builder.snapshot()) }
             try {
                 openStream(found.connectionId, seedOnAttach = true)
@@ -1284,16 +1298,93 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     /** Server reported a live turn at load but no in-flight state surfaced — refetch so
-     *  the transcript shows the final reply rather than the beat-stale load. */
+     *  the transcript shows the final reply rather than the beat-stale load. M1: a
+     *  windowed session refetches its slice (fromIndex = window start) instead of the
+     *  full transcript; a seam mismatch (the prefix was rewritten underneath us) falls
+     *  back to a full tail reload, same as the web client. */
     private fun reconcileAfterMissedLive() {
         val c = client ?: return
         val id = conversationId ?: return
         viewModelScope.launch {
-            runCatching { c.conversationDetail(id) }.getOrNull()?.let { d ->
-                _ui.update {
-                    it.copy(turns = d.turns, sessionStats = d.sessionStats ?: it.sessionStats, summary = d.summary)
-                }
+            val offset = _ui.value.turnsOffset
+            val d = runCatching {
+                if (offset != null) c.conversationDetail(id, fromIndex = offset)
+                else c.conversationDetail(id)
+            }.getOrNull() ?: return@launch
+            val state = _ui.value
+            if (state.windowPrefixHash != null && d.prefixHash != null && d.prefixHash != state.windowPrefixHash) {
+                reloadTailWindow()
+            } else {
+                adoptWindowDetail(d)
             }
+        }
+    }
+
+    /** M1: fold a fetched detail (windowed or legacy) into the transcript state —
+     *  the single place that owns the window fields on a wholesale replace. */
+    private fun adoptWindowDetail(d: ConversationDetail) {
+        _ui.update {
+            it.copy(
+                turns = d.turns,
+                turnsOffset = d.turnsOffset,
+                turnsTotal = d.turnsTotal,
+                windowPrefixHash = d.prefixHash,
+                sessionStats = d.sessionStats ?: it.sessionStats,
+                summary = d.summary,
+            )
+        }
+    }
+
+    /** M1 reverse-infinite-scroll: prepend the page of turns just before the
+     *  window start. The page's `prefix_hash_before_index` must equal our window
+     *  fingerprint — the seam proof that the prefix did not change between the
+     *  original load and now; a mismatch (or an offset/page-size inconsistency)
+     *  means the page cannot legally join, and we reload the tail window whole.
+     *  Compose's LazyListState anchors the viewport by item key, so the prepend
+     *  never shifts what the user is looking at. Silent on failure: the sentinel
+     *  row just re-fires on the next scroll attempt. */
+    fun loadOlderTurns() {
+        val c = client ?: return
+        val id = conversationId ?: return
+        val offset = _ui.value.turnsOffset ?: return // legacy full transcript — nothing older
+        if (_ui.value.loadingOlder || offset <= 0) return
+        _ui.update { it.copy(loadingOlder = true) }
+        viewModelScope.launch {
+            try {
+                val page = c.conversationTurnsPage(id, beforeIndex = offset, limit = OLDER_TURNS_PAGE_SIZE)
+                val seam = _ui.value.windowPrefixHash
+                val joins = page.turnsOffset + page.turns.size == offset &&
+                    (seam == null || page.prefixHashBeforeIndex == seam)
+                if (!joins) {
+                    reloadTailWindow()
+                    return@launch
+                }
+                _ui.update {
+                    it.copy(
+                        turns = page.turns + it.turns,
+                        turnsOffset = page.turnsOffset,
+                        turnsTotal = page.turnsTotal,
+                        windowPrefixHash = page.prefixHash,
+                        loadingOlder = false,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _ui.update { it.copy(loadingOlder = false) }
+            }
+        }
+    }
+
+    /** M1 seam-mismatch fallback: refetch the tail window whole (web parity).
+     *  Clears loadingOlder whatever the outcome, so the sentinel can retry. */
+    private fun reloadTailWindow() {
+        val c = client ?: return
+        val id = conversationId ?: return
+        viewModelScope.launch {
+            runCatching { c.conversationDetail(id, tailTurns = TAIL_TURNS_DEFAULT) }
+                .getOrNull()?.let { adoptWindowDetail(it) }
+            _ui.update { it.copy(loadingOlder = false) }
         }
     }
 
@@ -1426,9 +1517,17 @@ class SessionDetailViewModel @Inject constructor(
             repeat(5) { attempt ->
                 delay(if (attempt == 0) 300 else 600)
                 if (liveBuilder !== builder) return@launch
-                val detail = runCatching { c.conversationDetail(id) }.getOrNull() ?: return@repeat
+                // M1: a windowed session refetches its slice — the turn that just
+                // finished appends at the END of the transcript, always inside the
+                // window. turnBaseline is a GLOBAL turn count, so advance is judged
+                // in global coordinates: offset + slice size.
+                val offset = _ui.value.turnsOffset
+                val detail = runCatching {
+                    if (offset != null) c.conversationDetail(id, fromIndex = offset)
+                    else c.conversationDetail(id)
+                }.getOrNull() ?: return@repeat
                 val last = detail.turns.lastOrNull()
-                val advanced = detail.turns.size > turnBaseline &&
+                val advanced = (offset ?: 0) + detail.turns.size > turnBaseline &&
                     last?.role == TurnRole.ASSISTANT && last.blocks.isNotEmpty()
                 if (advanced) {
                     if (liveBuilder !== builder) return@launch
@@ -1441,6 +1540,9 @@ class SessionDetailViewModel @Inject constructor(
                     _ui.update {
                         it.copy(
                             turns = detail.turns,
+                            turnsOffset = detail.turnsOffset ?: it.turnsOffset,
+                            turnsTotal = detail.turnsTotal,
+                            windowPrefixHash = detail.prefixHash,
                             sessionStats = detail.sessionStats ?: it.sessionStats,
                             summary = detail.summary,
                             pendingUserTurns = emptyList(),
@@ -3427,6 +3529,15 @@ data class SessionDetailUiState(
     val availableFolders: List<FolderDetail> = emptyList(),
     val availableAgents: List<AgentType> = emptyList(),
     val turns: List<MessageTurn> = emptyList(),
+    // M1 turn windowing: the transcript holds full[turnsOffset..] of the server's
+    // turn list. All three null together = a legacy full response (old server) —
+    // windowing disabled, nothing older to load. windowPrefixHash fingerprints
+    // full[0..turnsOffset) and is the seam an older page must match to join.
+    val turnsOffset: Int? = null,
+    val turnsTotal: Int? = null,
+    val windowPrefixHash: String? = null,
+    /** An older page is in flight (the transcript's top sentinel shows it). */
+    val loadingOlder: Boolean = false,
     val pendingUserTurns: List<MessageTurn> = emptyList(),
     val live: LiveTurnState? = null,
     /** The live turn was rebuilt from a reattach snapshot (owns the in-flight reply). */
@@ -3474,7 +3585,12 @@ data class SessionDetailUiState(
     val queue: List<QueuedDraft> = emptyList(),
     /** The document preview opened from a tapped file path in the transcript (v123). */
     val docPreview: DocPreviewState? = null,
-)
+) {
+    /** M1: an older page exists and may be requested. While [loadingOlder] the
+     *  sentinel row stays mounted (its LaunchedEffect is the single-flight caller),
+     *  so this deliberately does NOT gate on it. */
+    val canLoadOlder: Boolean get() = (turnsOffset ?: 0) > 0
+}
 
 /** State of the in-app document preview opened from a tapped path (batch v123). */
 data class DocPreviewState(

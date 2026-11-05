@@ -799,6 +799,73 @@ class TaskHubViewModel @Inject constructor(
         }
     }
 
+    /** M1 全部启动: one (device, folder) sweep target derived from the visible
+     *  待办 rows. folderId null means the server-wide sweep — only offered when
+     *  the board has no search query (a searched view shows a subset of the
+     *  folder, but work_task_start_all claims the whole folder: showing a
+     *  searched subset as the confirm list would understate the blast radius). */
+    data class StartAllTarget(
+        val serverId: String,
+        val deviceName: String,
+        val folderId: Int?,
+        /** null = the device's whole board (no folder on these rows). */
+        val folderName: String?,
+        val visibleCount: Int,
+    )
+
+    fun startAllTargets(): List<StartAllTarget> {
+        val state = _ui.value
+        if (state.searchQuery.isNotBlank()) return emptyList()
+        val deviceNames = state.deviceStates.associate { it.serverId to it.name }
+        return board.value.segments[TaskSegment.TODO].orEmpty()
+            .groupBy { it.serverId to it.task.folderId }
+            .map { (group, entries) ->
+                val (serverId, folderId) = group
+                StartAllTarget(
+                    serverId = serverId,
+                    deviceName = deviceNames[serverId] ?: serverId,
+                    folderId = folderId,
+                    folderName = folderId?.let { fid -> state.folderNames[serverId]?.get(fid) },
+                    visibleCount = entries.size,
+                )
+            }
+            .sortedBy { it.deviceName to (it.folderName ?: "") }
+    }
+
+    /** M1 全部启动: one work_task_start_all per (device, folder) target, serially
+     *  — same discipline as [archiveAllDone]: a user action between iterations
+     *  stops the sweep, each round rides the global busy slot and its refresh
+     *  (the started rows leave 待办 for 进行中 as their round lands). */
+    fun startAll(targets: List<StartAllTarget>) {
+        if (_ui.value.busyKey != null) return
+        if (targets.isEmpty()) return
+        viewModelScope.launch {
+            var claimed = 0
+            val okServers = mutableSetOf<String>()
+            val failed = mutableListOf<String>()
+            for (target in targets) {
+                if (_ui.value.busyKey != null) return@launch
+                _ui.update {
+                    it.copy(busyKey = key(target.serverId, -1), actionError = null, actionNote = null)
+                }
+                var started: Int? = null
+                val (ok, _) = runPost(target.serverId, -1) { client ->
+                    started = client.workTaskStartAll(target.folderId)
+                }
+                val got = started
+                if (ok && got != null) {
+                    claimed += got
+                    okServers += target.serverId
+                } else {
+                    failed += target.deviceName + (target.folderName?.let { " · $it" } ?: "")
+                }
+            }
+            _ui.update {
+                it.copy(actionNote = startAllResultNote(claimed, okServers.size, targets.size, failed))
+            }
+        }
+    }
+
     fun start(serverId: String, taskId: Int) = post(serverId, taskId) { it.workTaskStart(taskId) }
 
     /** 批v155: 取消 takes an optional reason (web parity); the reason rides the
@@ -963,6 +1030,12 @@ class TaskHubViewModel @Inject constructor(
         configValues: Map<String, String>,
     ): app.codeg.android.core.model.AgentOptionsSnapshot? =
         agentOptionsProber.probe(serverId, agentType, workingDir, configValues)
+
+    override suspend fun modelProviderEntries(
+        serverId: String,
+        agentType: app.codeg.android.core.model.AgentType,
+    ): List<app.codeg.android.core.model.ModelProviderInfo> =
+        agentOptionsProber.modelProviderEntries(serverId, agentType)
 
     override fun dispatch(
         submit: app.codeg.android.feature.dispatch.DispatchFormSubmit,
@@ -1147,4 +1220,19 @@ internal fun boardMoveNote(old: List<TaskBoardEntry>, new: List<TaskBoardEntry>,
         }
     }
     return note
+}
+
+/** M1 全部启动 outcome line, file-level for a unit test (the sweep needs servers).
+ *  [totalTargets] is informational — failures are listed by device·folder name. */
+internal fun startAllResultNote(
+    claimed: Int,
+    okDevices: Int,
+    totalTargets: Int,
+    failed: List<String>,
+): String {
+    if (claimed == 0 && failed.isEmpty()) return "没有可启动的任务（已认领 0 个）"
+    val deviceWord = if (okDevices == 1) "1 台设备" else "$okDevices 台设备"
+    val base = "已启动 $claimed 个任务（$deviceWord）"
+    return if (failed.isEmpty()) base
+    else base + "；失败：" + failed.joinToString("、")
 }

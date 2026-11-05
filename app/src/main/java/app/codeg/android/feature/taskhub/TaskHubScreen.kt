@@ -338,6 +338,12 @@ fun TaskHubScreen(
     var newTaskResult by remember { mutableStateOf<DispatchRef?>(null) }
     // 编辑任务 opens a sheet (not an AlertDialog) — intercepted before ConfirmDialogs.
     var editEntry by remember { mutableStateOf<TaskBoardEntry?>(null) }
+    // M1 全部启动: sweep targets snapshotted when the toolbar tap opens the
+    // confirm dialog (the board keeps polling under it; the snapshot is what
+    // the dialog showed and what the user agreed to).
+    var startAllTargets by remember {
+        mutableStateOf<List<TaskHubViewModel.StartAllTarget>?>(null)
+    }
 
     // The 25s poll runs only while the board is actually on screen: entering
     // this composable arms it, leaving the Activity tab (or switching back to
@@ -354,6 +360,10 @@ fun TaskHubScreen(
         modifier = Modifier.fillMaxSize(),
     ) {
         Column(Modifier.fillMaxSize()) {
+            // M1 全部启动: only on a todo-bearing, unsearched view — a searched
+            // subset would understate what work_task_start_all claims (whole folder).
+            val startAllAvailable = board.segments[TaskSegment.TODO].orEmpty().isNotEmpty() &&
+                ui.searchQuery.isBlank()
             ToolbarRow(
                 folderFilter = ui.folderFilter,
                 searchOpen = searchOpen,
@@ -367,6 +377,9 @@ fun TaskHubScreen(
                 onShowCanceled = viewModel::setShowCanceled,
                 onShowArchived = viewModel::setShowArchived,
                 onNewTask = { showNewTask = true },
+                onStartAll = if (startAllAvailable) {
+                    { startAllTargets = viewModel.startAllTargets().ifEmpty { null } }
+                } else null,
                 onOverview = { overviewOpen = true },
             )
             if (searchOpen) {
@@ -645,6 +658,19 @@ fun TaskHubScreen(
             is ConfirmAction.EDIT -> Unit // handled by the edit sheet, never routed here
         }
     }, onDismiss = { confirm = null })
+
+    // M1 全部启动: its own dialog — the sweep has no single entry for ConfirmAction.
+    startAllTargets?.let { targets ->
+        StartAllConfirmDialog(
+            targets = targets,
+            busy = ui.busyKey != null,
+            onConfirm = {
+                viewModel.startAll(targets)
+                startAllTargets = null
+            },
+            onDismiss = { startAllTargets = null },
+        )
+    }
 }
 
 /** Toolbar: folder picker chip left, search + filter + 新建 icons right (任务书 §4.1). */
@@ -659,6 +685,8 @@ private fun ToolbarRow(
     onShowCanceled: (Boolean) -> Unit,
     onShowArchived: (Boolean) -> Unit,
     onNewTask: () -> Unit,
+    /** M1 全部启动: non-null only when the view has todo rows and no search. */
+    onStartAll: (() -> Unit)?,
     onOverview: () -> Unit,
 ) {
     val colors = CodegTheme.colors
@@ -701,6 +729,17 @@ private fun ToolbarRow(
                 tint = colors.textSecondary,
                 modifier = Modifier.size(18.dp),
             )
+        }
+        // M1 全部启动: batch-starts the view's todo tasks behind a device·folder
+        // confirm dialog. Hidden when the TODO column is empty or a search is on.
+        if (onStartAll != null) {
+            IconButton(onClick = onStartAll, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    contentDescription = stringResource(R.string.task_start_all_title),
+                    tint = colors.accent,
+                )
+            }
         }
         // 批v161 P3=B: the mini overview entry (all four statuses on one screen).
         IconButton(onClick = onOverview, modifier = Modifier.size(40.dp)) {
@@ -758,6 +797,56 @@ private fun ToolbarRow(
             }
         }
     }
+}
+
+/** M1 全部启动: the device·folder sweep targets with their visible todo counts,
+ *  listed before the batch fires. Its own dialog (not [ConfirmAction]) — the
+ *  sweep has no single [TaskBoardEntry]. */
+@Composable
+private fun StartAllConfirmDialog(
+    targets: List<TaskHubViewModel.StartAllTarget>,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.task_start_all_title)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(
+                        R.string.task_start_all_msg,
+                        targets.sumOf { it.visibleCount },
+                        targets.size,
+                    ),
+                )
+                Spacer(Modifier.height(8.dp))
+                targets.take(6).forEach { target ->
+                    Text(
+                        "· " + target.deviceName + (target.folderName?.let { " · $it" } ?: "") +
+                            "（${target.visibleCount}）",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (targets.size > 6) {
+                    Text(
+                        stringResource(R.string.task_start_all_more, targets.size - 6),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CodegTheme.colors.textSecondary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = onConfirm) {
+                Text(stringResource(R.string.task_start_all_go))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
 }
 
 @Composable

@@ -59,4 +59,24 @@ class AgentOptionsProber @Inject constructor(
             }.getOrNull()
         }.await()
     }
+
+    /**
+     * M1: the server's configured model providers for one agent type — the
+     * dispatch form's model-row server truth (`list_model_providers`). Fetched
+     * fresh per call (the settings page edits these rows; no cache), silently
+     * empty on any failure so an old server just falls back to the probe-only
+     * picker. Only providers with an explicit model are useful here: without a
+     * model id there is nothing to put in the dropdown.
+     */
+    suspend fun modelProviderEntries(
+        serverId: String,
+        agentType: AgentType,
+    ): List<app.codeg.android.core.model.ModelProviderInfo> {
+        val profile = repository.profiles.first().firstOrNull { it.id == serverId }
+            ?: return emptyList()
+        val client = repository.client(profile) ?: return emptyList()
+        return runCatching { client.listModelProviders() }.getOrNull()
+            .orEmpty()
+            .filter { it.agentType == agentType && !it.model.isNullOrBlank() }
+    }
 }

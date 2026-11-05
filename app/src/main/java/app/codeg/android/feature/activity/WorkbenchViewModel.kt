@@ -49,6 +49,12 @@ import javax.inject.Inject
  * the user, and how many in-scope devices answered this round. [attentionPreview]
  * is the same ATTENTION slice the task board would show (same [buildBoard]
  * projection, same sort), capped for the preview rows.
+ *
+ * fleet M1: [attentionTasks] prefers the SERVER's own per-device count
+ * (`work_task_attention_count`, the web sidebar badge's definition) summed
+ * across the scope; it falls back to the board-derived ATTENTION size when any
+ * in-scope device failed to report one (old server / failed round) — the badge
+ * never mixes the two sources.
  */
 data class WorkbenchStats(
     val runningTasks: Int = 0,
@@ -166,6 +172,15 @@ class WorkbenchViewModel @Inject constructor(
      *  this VM's lifetime; the projection re-scopes instantly from this cache. */
     private val tasks = MutableStateFlow<List<TaskBoardEntry>>(emptyList())
 
+    /**
+     * fleet M1: per-device server attention counts (`work_task_attention_count`).
+     * Null value = that device failed to report this round (old server / failed
+     * RPC) — ANY null in scope degrades the whole badge to the board-derived
+     * number, so the two sources never mix. Cleared for departed devices like
+     * [tasks].
+     */
+    private val attentionCounts = MutableStateFlow<Map<String, Int?>>(emptyMap())
+
     private val round = MutableStateFlow(RoundState())
 
     val stats: StateFlow<WorkbenchStats> =
@@ -183,13 +198,20 @@ class WorkbenchViewModel @Inject constructor(
             ) { round, tasks, profiles, selectedId, allMode ->
                 BoardInputs(round, tasks, profiles, selectedId, allMode)
             },
-            watcher.requests,
-        ) { inputs, interactive ->
+            combine(attentionCounts, watcher.requests) { counts, interactive -> counts to interactive },
+        ) { inputs, (counts, interactive) ->
             val scope = scopeIds(inputs.profiles, inputs.allMode, inputs.selectedId)
             val board = buildBoard(inputs.tasks.filter { it.serverId in scope })
+            val scopeCounts = counts.filterKeys { it in scope }
+            val serverAttention = scopeCounts.values.sumOf { it ?: 0 }
+            val allReported = scopeCounts.isNotEmpty() && scopeCounts.values.all { it != null }
             WorkbenchStats(
                 runningTasks = board.segments[TaskSegment.RUNNING].orEmpty().size,
-                attentionTasks = board.segments[TaskSegment.ATTENTION].orEmpty().size,
+                attentionTasks = if (allReported) {
+                    serverAttention
+                } else {
+                    board.segments[TaskSegment.ATTENTION].orEmpty().size
+                },
                 attentionPreview = board.segments[TaskSegment.ATTENTION].orEmpty().take(PREVIEW_MAX),
                 interactiveSessions = interactive
                     .filter { it.serverId in scope }
@@ -329,6 +351,7 @@ class WorkbenchViewModel @Inject constructor(
         // completions below use atomic update{} too — two devices landing in
         // the same instant must not lose a slice to a read-modify-write race.
         tasks.update { it.filter { e -> e.serverId in ids } }
+        attentionCounts.update { it.filterKeys { id -> id in ids } }
         coroutineScope {
             devices.forEach { profile ->
                 launch {
@@ -336,12 +359,19 @@ class WorkbenchViewModel @Inject constructor(
                         val client = repository.client(profile)
                             ?: throw IllegalStateException("Token 缺失，无法加载该设备")
                         withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
-                            client.workTaskList()
+                            val list = client.workTaskList()
+                            // fleet M1: separate best-effort round-trip — a missing
+                            // count never fails the round, it only degrades the
+                            // badge to the board-derived number for the scope.
+                            val count = runCatching { client.workTaskAttentionCount() }
+                                .getOrNull()
+                                .also { if (it == null) android.util.Log.w("WorkbenchViewModel", "attention_count unavailable on ${profile.id}") }
+                            list to count
                         } ?: throw java.util.concurrent.TimeoutException("device timeout")
                     }
                     if (gen != generation) return@launch
                     result.fold(
-                        onSuccess = { list ->
+                        onSuccess = { (list, count) ->
                             round.update { r ->
                                 r.copy(
                                     deviceStates = r.deviceStates.map {
@@ -353,9 +383,13 @@ class WorkbenchViewModel @Inject constructor(
                                 cur.filter { e -> e.serverId != profile.id } +
                                     (list.orEmpty().map { t -> TaskBoardEntry(profile.id, profile.name, t) })
                             }
+                            attentionCounts.update { it + (profile.id to count) }
                         },
                         onFailure = { e ->
                             if (e is CancellationException) throw e
+                            // A dead device must not keep feeding its stale count
+                            // into the server-truth sum — invalidate it.
+                            attentionCounts.update { it + (profile.id to null) }
                             round.update { r ->
                                 r.copy(
                                     deviceStates = r.deviceStates.map {

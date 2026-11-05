@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -597,6 +598,27 @@ fun SessionDetailScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
                     ) {
+                        // M1 reverse-infinite-scroll: composing this row (the user
+                        // scrolled the window's top into view) fires the next older
+                        // page; the VM single-flights and re-fires per offset, so
+                        // holding the top keeps paging. Legacy servers (no window)
+                        // never show it.
+                        if (ui.canLoadOlder) {
+                            item(key = "__timeline_older__") {
+                                LaunchedEffect(ui.turnsOffset) { viewModel.loadOlderTurns() }
+                                Box(
+                                    Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (ui.loadingOlder) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         items(nodes, key = { it.id }, contentType = { it.contentTypeKey }) { node ->
                             // TOC-jump flash: the target row's background tweens up to a
                             // soft accent wash and back (keyed by node id so recycled rows

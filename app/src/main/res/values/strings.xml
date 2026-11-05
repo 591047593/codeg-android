@@ -1343,6 +1343,10 @@
     <string name="dispatch_schedule_past">The picked time is already in the past; the task would run immediately. Pick a future time.</string>
     <string name="task_confirm_start_title">Start this task?</string>
     <string name="task_confirm_start_msg">It will start running on its device immediately. If it was created elsewhere or has its own schedule, starting it may interrupt that plan.</string>
+    <string name="task_start_all_title">Start all</string>
+    <string name="task_start_all_msg">Batch-start the todo tasks on the targets below — %1$d task(s) across %2$d target(s). Tasks that are scheduled or blocked are skipped automatically.</string>
+    <string name="task_start_all_more">…and %1$d more</string>
+    <string name="task_start_all_go">Start</string>
     <string name="task_confirm_retry_title">Retry this task?</string>
     <string name="task_confirm_retry_msg">It will run again on its device.</string>
     <string name="task_confirm_requeue_title">Requeue this task?</string>
