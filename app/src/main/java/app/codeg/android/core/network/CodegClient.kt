@@ -1632,16 +1632,20 @@ class CodegClient(
          * fleet M2: parse a bare JSON string-or-null response —
          * `automation_compute_next_run` returns an RFC3339 instant or JSON null.
          * `null`/`"null"`/empty → null; a quoted string → its content; an
-         * unquoted RFC3339 token (defensive) → as-is.
+         * unquoted RFC3339 token (lenient parsers reject digit-leading bare
+         * literals) falls back to the raw text, defensively.
          */
-        internal fun decodeBareStringOrNull(text: String): String? =
-            runCatching { CodegJson.response.parseToJsonElement(text) }.getOrNull()?.let { el ->
+        internal fun decodeBareStringOrNull(text: String): String? {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty() || trimmed == "null") return null
+            return runCatching { CodegJson.response.parseToJsonElement(trimmed) }.getOrNull()?.let { el ->
                 when (el) {
                     is JsonNull -> null
                     is JsonPrimitive -> el.content.trim().ifEmpty { null }
                     else -> null
                 }
-            }
+            } ?: trimmed
+        }
 
         /**
          * `acp_connect` returns a bare JSON string connection id. Require exactly
