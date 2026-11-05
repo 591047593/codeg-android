@@ -58,6 +58,7 @@ import app.codeg.android.feature.sessions.CollapsibleSectionHeader
 import app.codeg.android.feature.sessions.SessionDeleteDialog
 import app.codeg.android.feature.sessions.SessionRenameDialog
 import app.codeg.android.feature.sessions.SessionRow
+import app.codeg.android.feature.sessions.rememberBoardTrackMenu
 import java.time.Instant
 
 /**
@@ -116,6 +117,9 @@ fun ActivityScreen(
     var pendingDelete by remember { mutableStateOf<ActivityRow?>(null) }
     var pendingRename by remember { mutableStateOf<ActivityRow?>(null) }
     var addToTarget by remember { mutableStateOf<ActivityRow?>(null) }
+    // 批v162 P1: the shared 「加入任务板 / 移出看板」 ledger + toast. Hoisted once
+    // for the whole feed so a 200-row activity page costs one subscription.
+    val boardMenu = rememberBoardTrackMenu()
     val colors = CodegTheme.colors
     val listState = rememberLazyListState()
     // 批v152: the device bar (multi-device) owns the status-bar inset; it is not
@@ -394,6 +398,10 @@ fun ActivityScreen(
                                         onDelete = { pendingDelete = row },
                                         onAddToProject = { addToTarget = row },
                                         onRename = { pendingRename = row },
+                                        onBoard = boardMenu.isOnBoard(row.serverId, row.conversation.id),
+                                        onToggleBoard = {
+                                            boardMenu.toggle(row.serverId, row.conversation.id, row.conversation.folderId)
+                                        },
                                         unread = row.unread,
                                         // R2D#1: the feed's probe-corroborated verdict —
                                         // without it the demoted corpse rows would still

@@ -1397,6 +1397,8 @@
     <string name="dispatch_button_task_start">创建并开始</string>
     <string name="dispatch_task_autostart">创建后立即开始</string>
     <string name="dispatch_task_autostart_note">关：放进待办。开：马上开跑，直接出现在进行中。</string>
+    <string name="dispatch_add_to_board">加入任务板</string>
+    <string name="dispatch_add_to_board_note">创建后在任务板里跟踪这个会话。</string>
     <string name="recent_pick_title">选择要交接的会话</string>
     <string name="recent_pick_empty">所有设备都没有最近会话。</string>
     <string name="recent_pick_failed">会话加载失败——点击重试。</string>
@@ -1420,6 +1422,16 @@
     <string name="inbox_insert_submit">创建任务</string>
     <string name="task_new_title">新建任务</string>
     <string name="task_open_session">查看会话</string>
+    <string name="board_conv_badge">会话</string>
+    <string name="board_conv_offline">已断开</string>
+    <string name="board_conv_open">打开会话</string>
+    <string name="board_conv_add">加入任务板</string>
+    <string name="board_conv_remove">移出看板</string>
+    <string name="board_conv_tracked">已在看板中</string>
+    <string name="board_conv_added">已加入任务板</string>
+    <string name="board_conv_remove_title">移出任务板？</string>
+    <string name="board_conv_remove_body">只移出看板，不删除会话。</string>
+    <string name="board_conv_set_status">改会话状态</string>
     <string name="task_action_edit">编辑</string>
     <string name="task_action_schedule">定时</string>
     <string name="task_detail_prompt">任务描述</string>

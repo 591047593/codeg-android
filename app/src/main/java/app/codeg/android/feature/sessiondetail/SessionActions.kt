@@ -39,6 +39,7 @@ import app.codeg.android.core.designsystem.component.statusColor
 import app.codeg.android.core.designsystem.component.statusLabel
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.feature.sessions.rememberBoardTrackMenu
 
 /**
  * The session detail toolbar's overflow menu: Rename / Pin / Session Details /
@@ -60,6 +61,10 @@ fun SessionActionsMenu(
     var showStatus by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    // 批v162 P1: the detail toolbar gets the same 「加入/移出任务板」 as the list
+    // long-press (the two menus are independent implementations, see the plan §2.5).
+    val boardMenu = rememberBoardTrackMenu()
+    val onBoard = ui.serverId?.let { boardMenu.isOnBoard(it, summary.id) } == true
 
     Box {
         IconButton(onClick = { menu = true }) {
@@ -68,6 +73,13 @@ fun SessionActionsMenu(
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_rename)) }, onClick = { menu = false; showRename = true })
             DropdownMenuItem(text = { Text(if (summary.isPinned) stringResource(R.string.sessionactions_unpin) else stringResource(R.string.sessionactions_pin)) }, onClick = { menu = false; viewModel.togglePin() })
+            DropdownMenuItem(
+                text = { Text(stringResource(if (onBoard) R.string.board_conv_remove else R.string.board_conv_add)) },
+                onClick = {
+                    menu = false
+                    ui.serverId?.let { boardMenu.toggle(it, summary.id, summary.folderId) }
+                },
+            )
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_session_details)) }, onClick = { menu = false; showDetails = true })
             DropdownMenuItem(text = { Text(stringResource(R.string.handoff_menu)) }, onClick = { menu = false; onHandoff() })
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_change_status)) }, onClick = { menu = false; showStatus = true })

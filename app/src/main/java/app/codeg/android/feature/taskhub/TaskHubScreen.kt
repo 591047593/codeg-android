@@ -118,15 +118,20 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
+import app.codeg.android.core.data.BoardConversationEntry
+import app.codeg.android.core.data.BoardRow
+import app.codeg.android.core.data.ConversationBoardRow
 import app.codeg.android.core.data.DEFERRABLE_STATUSES
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.SEGMENT_ORDER
 import app.codeg.android.core.data.TaskAccentTone
 import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
+import app.codeg.android.core.data.TaskBoardRow
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.archiveAllCandidates
 import app.codeg.android.core.data.initialKanbanPage
+import app.codeg.android.core.data.mergeBoardRows
 import app.codeg.android.core.data.isEffectivelyDeferred
 import app.codeg.android.core.data.pageSegments
 import app.codeg.android.core.data.pageStepIndex
@@ -151,6 +156,7 @@ import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.CodegColors
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.WorkTaskChangedFile
 import app.codeg.android.core.model.WorkTaskEvent
 import app.codeg.android.core.model.WorkTaskInfo
@@ -186,7 +192,10 @@ fun TaskHubScreen(
     // and the per-column hint, so the two never speak at the same time.
     val boardLoaded = ui.hasLoaded
     val boardIsEmpty = boardLoaded &&
-        board.segments.values.all { it.isEmpty() } && board.unknown.isEmpty()
+        board.segments.values.all { it.isEmpty() } && board.unknown.isEmpty() &&
+        // 批v162: a board holding only tracked conversations is NOT empty —
+        // without this the global empty state would cover their cards.
+        board.conversations.values.all { it.isEmpty() }
     val showEmptyHint = boardLoaded && !boardIsEmpty
 
     // 批v161: the board has two shapes. Kanban pages through the four columns
@@ -291,6 +300,7 @@ fun TaskHubScreen(
         val visible = pageSegments(pagerState.currentPage, kanbanColumns)
         val visibleEmpty = visible.all { segment ->
             board.segments[segment].isNullOrEmpty() &&
+                board.conversations[segment].isNullOrEmpty() &&
                 !(segment == TaskSegment.ATTENTION && board.unknown.isNotEmpty())
         }
         if (visibleEmpty) {
@@ -431,6 +441,7 @@ fun TaskHubScreen(
                 TaskBoardList(
                     segment = segment,
                     entries = board.segments[segment].orEmpty(),
+                    conversations = board.conversations[segment].orEmpty(),
                     unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
                     columns = listColumns,
                     folderNames = ui.folderNames,
@@ -442,6 +453,8 @@ fun TaskHubScreen(
                     onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
                     onOpenSession = onOpenSession,
                     onAction = onCardAction,
+                    onArchiveConversation = viewModel::setConversationArchived,
+                    onUntrackConversation = viewModel::untrackConversation,
                     modifier = Modifier.weight(1f),
                     showEmptyHint = showEmptyHint,
                 )
@@ -460,6 +473,8 @@ fun TaskHubScreen(
                     onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
                     onOpenSession = onOpenSession,
                     onAction = onCardAction,
+                    onArchiveConversation = viewModel::setConversationArchived,
+                    onUntrackConversation = viewModel::untrackConversation,
                     modifier = Modifier.weight(1f),
                     showEmptyHint = showEmptyHint,
                 )
@@ -477,6 +492,10 @@ fun TaskHubScreen(
             onOpenDetail = { entry ->
                 overviewOpen = false
                 detailKey = entry.serverId to entry.task.id
+            },
+            onOpenConversation = { serverId, conversationId ->
+                overviewOpen = false
+                onOpenSession(serverId, conversationId)
             },
         )
     }
@@ -835,6 +854,8 @@ private fun KanbanPager(
     onOpenDetail: (TaskBoardEntry) -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onAction: (ConfirmAction) -> Unit,
+    onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
+    onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
     modifier: Modifier = Modifier,
     showEmptyHint: Boolean = true,
 ) {
@@ -854,6 +875,7 @@ private fun KanbanPager(
                 KanbanColumn(
                     segment = segment,
                     entries = board.segments[segment].orEmpty(),
+                    conversations = board.conversations[segment].orEmpty(),
                     unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
                     modifier = Modifier
                         .weight(1f)
@@ -868,6 +890,8 @@ private fun KanbanPager(
                     onOpenDetail = onOpenDetail,
                     onOpenSession = onOpenSession,
                     onAction = onAction,
+                    onArchiveConversation = onArchiveConversation,
+                    onUntrackConversation = onUntrackConversation,
                     showEmptyHint = showEmptyHint,
                 )
             }
@@ -885,6 +909,7 @@ private fun KanbanPager(
 private fun KanbanColumn(
     segment: TaskSegment,
     entries: List<TaskBoardEntry>,
+    conversations: List<BoardConversationEntry>,
     unknown: List<TaskBoardEntry>,
     modifier: Modifier,
     compact: Boolean,
@@ -896,20 +921,25 @@ private fun KanbanColumn(
     onOpenDetail: (TaskBoardEntry) -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onAction: (ConfirmAction) -> Unit,
+    onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
+    onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
     showEmptyHint: Boolean,
 ) {
     val colors = CodegTheme.colors
+    // 批v162: tasks and tracked conversations share the column, ordered by one
+    // clock (scheduled tasks still float first — their key is in the future).
+    val rows = remember(entries, conversations) { mergeBoardRows(entries, conversations) }
     Column(modifier) {
         KanbanColumnHeader(
             segment = segment,
-            count = entries.size,
+            count = rows.size,
             compact = compact,
             showArchiveAll = segment == TaskSegment.DONE,
             canArchiveAll = canArchiveAll,
             busy = busy,
             onArchiveAll = onArchiveAll,
         )
-        if (showEmptyHint && entries.isEmpty() && unknown.isEmpty()) {
+        if (showEmptyHint && rows.isEmpty() && unknown.isEmpty()) {
             // An empty page column must say so: the old board simply showed a
             // blank strip, which reads like a load failure on a narrow screen.
             Box(
@@ -937,20 +967,37 @@ private fun KanbanColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(
-                entries,
-                key = { "${it.serverId}-${it.task.id}" },
-                contentType = { "task" },
-            ) { entry ->
-                TaskCardWeb(
-                    entry = entry,
-                    folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
-                    busy = busy,
-                    spinning = spinningKey == "${entry.serverId}:${entry.task.id}",
-                    compact = compact,
-                    onOpenDetail = { onOpenDetail(entry) },
-                    onOpenSession = onOpenSession,
-                    onAction = onAction,
-                )
+                rows,
+                key = { it.key },
+                contentType = { row -> if (row is TaskBoardRow) "task" else "conversation" },
+            ) { row ->
+                when (row) {
+                    is TaskBoardRow -> {
+                        val entry = row.entry
+                        TaskCardWeb(
+                            entry = entry,
+                            folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
+                            busy = busy,
+                            spinning = spinningKey == "${entry.serverId}:${entry.task.id}",
+                            compact = compact,
+                            onOpenDetail = { onOpenDetail(entry) },
+                            onOpenSession = onOpenSession,
+                            onAction = onAction,
+                        )
+                    }
+
+                    is ConversationBoardRow -> {
+                        val entry = row.entry
+                        ConversationCardWeb(
+                            entry = entry,
+                            folderName = folderNames[entry.serverId]?.get(entry.conversation.folderId),
+                            compact = compact,
+                            onOpen = { onOpenSession(entry.serverId, entry.conversation.id) },
+                            onArchive = { onArchiveConversation(entry.serverId, entry.conversation.id, it) },
+                            onRemove = { onUntrackConversation(entry.serverId, entry.conversation.id) },
+                        )
+                    }
+                }
             }
             if (unknown.isNotEmpty()) {
                 item(key = "unknown-header") { UnknownSectionHeader(unknown.size) }
@@ -1008,6 +1055,7 @@ private fun UnknownSectionHeader(count: Int) {
 private fun TaskBoardList(
     segment: TaskSegment,
     entries: List<TaskBoardEntry>,
+    conversations: List<BoardConversationEntry>,
     unknown: List<TaskBoardEntry>,
     columns: Int,
     folderNames: Map<String, Map<Int, String>>,
@@ -1018,11 +1066,14 @@ private fun TaskBoardList(
     onOpenDetail: (TaskBoardEntry) -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onAction: (ConfirmAction) -> Unit,
+    onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
+    onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
     modifier: Modifier = Modifier,
     showEmptyHint: Boolean = true,
 ) {
     val colors = CodegTheme.colors
     val twoColumns = columns >= 2
+    val rows = remember(entries, conversations) { mergeBoardRows(entries, conversations) }
     Column(modifier.fillMaxWidth()) {
         if (segment == TaskSegment.DONE && entries.isNotEmpty()) {
             Row(
@@ -1040,7 +1091,7 @@ private fun TaskBoardList(
                 }
             }
         }
-        if (showEmptyHint && entries.isEmpty() && unknown.isEmpty()) {
+        if (showEmptyHint && rows.isEmpty() && unknown.isEmpty()) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -1074,6 +1125,23 @@ private fun TaskBoardList(
                 onAction = onAction,
             )
         }
+        // 批v162: one renderer for a merged row — the task card or the session card.
+        val rowCard: @Composable (BoardRow) -> Unit = { row ->
+            when (row) {
+                is TaskBoardRow -> card(row.entry)
+                is ConversationBoardRow -> {
+                    val entry = row.entry
+                    ConversationCardWeb(
+                        entry = entry,
+                        folderName = folderNames[entry.serverId]?.get(entry.conversation.folderId),
+                        compact = twoColumns,
+                        onOpen = { onOpenSession(entry.serverId, entry.conversation.id) },
+                        onArchive = { onArchiveConversation(entry.serverId, entry.conversation.id, it) },
+                        onRemove = { onUntrackConversation(entry.serverId, entry.conversation.id) },
+                    )
+                }
+            }
+        }
         if (twoColumns) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -1085,10 +1153,10 @@ private fun TaskBoardList(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 gridItems(
-                    entries,
-                    key = { "${it.serverId}-${it.task.id}" },
-                    contentType = { "task" },
-                ) { entry -> card(entry) }
+                    rows,
+                    key = { it.key },
+                    contentType = { row -> if (row is TaskBoardRow) "task" else "conversation" },
+                ) { row -> rowCard(row) }
                 if (unknown.isNotEmpty()) {
                     // The header spans both columns; the unknown rows then flow
                     // through the grid like any other card.
@@ -1111,10 +1179,10 @@ private fun TaskBoardList(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(
-                    entries,
-                    key = { "${it.serverId}-${it.task.id}" },
-                    contentType = { "task" },
-                ) { entry -> card(entry) }
+                    rows,
+                    key = { it.key },
+                    contentType = { row -> if (row is TaskBoardRow) "task" else "conversation" },
+                ) { row -> rowCard(row) }
                 if (unknown.isNotEmpty()) {
                     item(key = "unknown-header") { UnknownSectionHeader(unknown.size) }
                     items(
@@ -1140,6 +1208,7 @@ private fun TaskBoardOverviewDialog(
     board: TaskBoardData,
     onDismiss: () -> Unit,
     onOpenDetail: (TaskBoardEntry) -> Unit,
+    onOpenConversation: (serverId: String, conversationId: Int) -> Unit,
 ) {
     val colors = CodegTheme.colors
     Dialog(
@@ -1187,11 +1256,13 @@ private fun TaskBoardOverviewDialog(
                         MiniColumn(
                             segment = segment,
                             entries = board.segments[segment].orEmpty(),
+                            conversations = board.conversations[segment].orEmpty(),
                             unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(),
                             onOpen = onOpenDetail,
+                            onOpenConversation = onOpenConversation,
                         )
                     }
                 }
@@ -1205,12 +1276,14 @@ private fun TaskBoardOverviewDialog(
 private fun MiniColumn(
     segment: TaskSegment,
     entries: List<TaskBoardEntry>,
+    conversations: List<BoardConversationEntry>,
     unknown: List<TaskBoardEntry>,
     modifier: Modifier,
     onOpen: (TaskBoardEntry) -> Unit,
+    onOpenConversation: (serverId: String, conversationId: Int) -> Unit,
 ) {
     val colors = CodegTheme.colors
-    val total = entries.size + unknown.size
+    val total = entries.size + unknown.size + conversations.size
     Column(modifier) {
         Row(
             Modifier
@@ -1266,6 +1339,16 @@ private fun MiniColumn(
                 key = { "u-${it.serverId}-${it.task.id}" },
                 contentType = { "mini" },
             ) { entry -> MiniCard(entry = entry, onClick = { onOpen(entry) }) }
+            items(
+                conversations,
+                key = { "c-${it.serverId}-${it.conversation.id}" },
+                contentType = { "mini-conv" },
+            ) { entry ->
+                MiniConversationCard(
+                    entry = entry,
+                    onClick = { onOpenConversation(entry.serverId, entry.conversation.id) },
+                )
+            }
         }
     }
 }
@@ -1305,6 +1388,52 @@ private fun MiniCard(entry: TaskBoardEntry, onClick: () -> Unit) {
             )
         }
         relativeLabel(task.finishedAt ?: task.settledAt ?: task.startedAt ?: task.createdAt)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = colors.textTertiary,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 2.dp, start = 9.dp),
+            )
+        }
+    }
+}
+
+/** 批v162: the smallest session cell of the overview — accent dot + two title lines. */
+@Composable
+private fun MiniConversationCard(entry: BoardConversationEntry, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    val conv = entry.conversation
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (entry.archived) Modifier.alpha(0.6f) else Modifier)
+            .clip(shape)
+            .background(colors.bgElevated)
+            .border(1.dp, colors.accent.copy(alpha = 0.30f), shape)
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+    ) {
+        Row {
+            Box(
+                Modifier
+                    .padding(top = 3.dp)
+                    .size(5.dp)
+                    .background(colors.accent, CircleShape),
+            )
+            Text(
+                conv.trimmedTitle ?: stringResource(R.string.session_untitled),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                color = colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            )
+        }
+        relativeLabel(conv.updatedAt.toString())?.let {
             Text(
                 it,
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
@@ -1655,6 +1784,229 @@ private fun dispatchCardAction(
         entry.task.conversationId?.let { onOpenSession(entry.serverId, it) }
     } else {
         onAction(action.toConfirm(entry))
+    }
+}
+
+/**
+ * 批v162 P1: the 「会话」 tag — the one visual that says "this card is a
+ * conversation, not a work task". Same capsule language as the task status
+ * chip so a column reads uniformly, tinted with the app accent instead of a
+ * status colour (the column already carries the status).
+ */
+@Composable
+private fun ConversationTag() {
+    val colors = CodegTheme.colors
+    Text(
+        stringResource(R.string.board_conv_badge),
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Medium),
+        color = colors.accent,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(colors.accent.copy(alpha = 0.14f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/** A neutral grey flag the conversation's column cannot express (已断开 / 已归档). */
+@Composable
+private fun ConversationFlag(label: String) {
+    val colors = CodegTheme.colors
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+        color = colors.textTertiary,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(colors.textPrimary.copy(alpha = 0.06f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/**
+ * 批v162 P1: one tracked conversation on the board (§2.7). It borrows the task
+ * card's shape — same corner radius, same meta line, same footer grammar — but
+ * never its actions: a conversation has no worktree, no branch and no merge, so
+ * the primary action is 打开会话 and the menu is 归档 / 移出看板. The column is
+ * its status (derived from `conversation.status`), the card only flags what the
+ * column cannot say: 「已断开」 (the row says running, nothing is attached) and
+ * 「已归档」.
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ConversationCardWeb(
+    entry: BoardConversationEntry,
+    folderName: String?,
+    compact: Boolean = false,
+    onOpen: () -> Unit,
+    onArchive: (Boolean) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val conv = entry.conversation
+    val colors = CodegTheme.colors
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(false) }
+    val metaStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+    val cardShape = RoundedCornerShape(if (compact) 14.dp else 16.dp)
+    // "Running" is the server's persisted flag; live is the connection table.
+    // Only the pair (flag running, nothing attached) is worth a warning — a
+    // completed row is simply not live and must not be called disconnected.
+    val disconnected = conv.status == ConversationStatus.IN_PROGRESS && !entry.live
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (entry.archived) Modifier.alpha(0.6f) else Modifier)
+            .clip(cardShape)
+            .background(colors.bgElevated)
+            // A softer, accent-tinted border instead of the task card's neutral
+            // one: colour + the 会话 tag are what separate the two card kinds at
+            // a glance, before the text is read.
+            .border(1.dp, colors.accent.copy(alpha = 0.26f), cardShape)
+            .combinedClickable(onClick = onOpen, onLongClick = { menuOpen = true })
+            .padding(if (compact) 10.dp else 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                Icons.Rounded.Chat,
+                contentDescription = null,
+                tint = colors.accent.copy(alpha = 0.85f),
+                modifier = Modifier
+                    .padding(top = 1.dp)
+                    .size(14.dp),
+            )
+            Text(
+                conv.trimmedTitle ?: stringResource(R.string.session_untitled),
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 17.sp,
+                ),
+                color = if (conv.trimmedTitle == null) colors.textSecondary else colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp),
+            )
+            if (!compact) ConversationTag()
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 6.dp),
+        ) {
+            if (compact) ConversationTag()
+            if (entry.archived) ConversationFlag(stringResource(R.string.task_status_archived))
+            if (disconnected) ConversationFlag(stringResource(R.string.board_conv_offline))
+            Text(
+                entry.serverName,
+                style = metaStyle, color = colors.textSecondary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = if (compact) 72.dp else 96.dp),
+            )
+            folderName?.let {
+                Text(
+                    it,
+                    style = metaStyle, color = colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = if (compact) 96.dp else 160.dp),
+                )
+            }
+            relativeLabel(conv.updatedAt.toString())?.let {
+                Text(it, style = metaStyle, color = colors.textTertiary, maxLines = 1)
+            }
+        }
+        // Footer: one text action on the left, the ⋯ menu on the right. Lighter
+        // than the task card's filled pill — the two kinds must not read as the
+        // same thing at a glance.
+        Column(Modifier.padding(top = if (compact) 8.dp else 10.dp)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(colors.textPrimary.copy(alpha = 0.08f)),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = if (compact) 6.dp else 8.dp),
+            ) {
+                TextButton(
+                    onClick = onOpen,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Icon(Icons.Rounded.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Text(
+                        stringResource(R.string.board_conv_open),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, colors.textPrimary.copy(alpha = 0.18f), CircleShape)
+                            .clickable { menuOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.MoreHoriz,
+                            contentDescription = stringResource(R.string.task_more_actions),
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.board_conv_open)) },
+                            leadingIcon = { Icon(Icons.Rounded.Chat, contentDescription = null) },
+                            onClick = { menuOpen = false; onOpen() },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (entry.archived) R.string.task_action_unarchive else R.string.task_action_archive,
+                                    ),
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (entry.archived) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = { menuOpen = false; onArchive(!entry.archived) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.board_conv_remove)) },
+                            leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
+                            onClick = { menuOpen = false; confirmRemove = true },
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text(stringResource(R.string.board_conv_remove_title)) },
+            text = { Text(stringResource(R.string.board_conv_remove_body)) },
+            confirmButton = {
+                TextButton(onClick = { confirmRemove = false; onRemove() }) {
+                    Text(stringResource(R.string.board_conv_remove))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 

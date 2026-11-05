@@ -235,6 +235,7 @@ class QuickActionViewModel @Inject constructor(
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,
+                        addToBoard = submit.addToBoard,
                         attachments = submit.attachments,
                     ),
                 )

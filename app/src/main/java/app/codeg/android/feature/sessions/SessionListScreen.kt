@@ -149,6 +149,9 @@ fun SessionListScreen(
         displayStore.display(selectedId ?: "")
     }.collectAsState(initial = ChatListDisplayDefaults)
     val scope = rememberCoroutineScope()
+    // 批v162 P1: one subscription for the whole list; conversation ids are
+    // server-local so the owning `selectedId` is part of every toggle.
+    val boardMenu = rememberBoardTrackMenu()
 
     var collapsed by remember(selectedId, display) { mutableStateOf(display.collapsedSections) }
     var hiddenTarget by remember { mutableStateOf<SessionSection?>(null) }
@@ -324,6 +327,8 @@ fun SessionListScreen(
                                 { conv -> addToTarget = sid to conv }
                             },
                             onRename = { conv -> pendingRename = conv },
+                            boardMenu = boardMenu,
+                            serverId = selectedId,
                             onLongPressSection = { section -> hiddenTarget = section },
                             onOpenHiddenManager = { showHiddenManager = true },
                             // A refresh that failed over a still-populated list: surface
@@ -418,6 +423,10 @@ private fun SessionList(
     onDelete: (ConversationSummary) -> Unit,
     onAddToProject: ((ConversationSummary) -> Unit)?,
     onRename: (ConversationSummary) -> Unit,
+    /** 批v162 P1: task-board membership + toggle, shared with every other list. */
+    boardMenu: BoardTrackMenu,
+    /** Owning device of these rows; null disables the board action (no target). */
+    serverId: String?,
     onLongPressSection: (SessionSection) -> Unit,
     onOpenHiddenManager: () -> Unit,
     refreshError: String?,
@@ -476,6 +485,12 @@ private fun SessionList(
                         onDelete = { onDelete(row.conversation) },
                         onAddToProject = onAddToProject?.let { cb -> { cb(row.conversation) } },
                         onRename = { onRename(row.conversation) },
+                        onBoard = boardMenu.isOnBoard(serverId.orEmpty(), row.conversation.id),
+                        onToggleBoard = serverId?.let { sid ->
+                            {
+                                boardMenu.toggle(sid, row.conversation.id, row.conversation.folderId)
+                            }
+                        },
                     )
                 }
             }
@@ -755,6 +770,9 @@ private fun AggregateChatsList(
     val highlight by viewModel.focusHub.highlight.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     val listState = rememberLazyListState()
+    // 批v162 P1: same ledger as the single-device list; each row carries its own
+    // owning serverId, so this one needs no extra parameter.
+    val boardMenu = rememberBoardTrackMenu()
 
     var showDeviceFilter by rememberSaveable { mutableStateOf(false) }
 
@@ -1032,6 +1050,14 @@ private fun AggregateChatsList(
                                         onDelete = { pendingDelete = item.row },
                                         onAddToProject = { addToTarget = item.row },
                                         onRename = { pendingRename = item.row },
+                                        onBoard = boardMenu.isOnBoard(item.row.serverId, item.row.conversation.id),
+                                        onToggleBoard = {
+                                            boardMenu.toggle(
+                                                item.row.serverId,
+                                                item.row.conversation.id,
+                                                item.row.conversation.folderId,
+                                            )
+                                        },
                                     )
                                 }
                             }

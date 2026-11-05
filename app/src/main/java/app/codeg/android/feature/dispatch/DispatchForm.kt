@@ -164,6 +164,10 @@ data class DispatchFormSubmit(
     val scheduleLocalMillis: Long?,
     val sessionMode: Boolean,
     val autoStart: Boolean = true,
+    /** 批v162 P1: session mode only — track the created conversation on the
+     *  task board. Ignored (and forced off) in task mode: a task is already a
+     *  board row. */
+    val addToBoard: Boolean = false,
     /** 批v154 — files to upload to the target device before the create. */
     val attachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
 )
@@ -235,6 +239,10 @@ fun DispatchForm(
     // P0-5 创建后立即开始: seeded from the remembered choice; the switch writes it
     // back on change, so the next open starts where the user left it.
     var taskAutoStart by rememberSaveable { mutableStateOf(settings.taskAutoStartDefault) }
+    // 批v162 P1: session mode's 「加入任务板」. Deliberately NOT persisted: it is
+    // a per-dispatch intent ("watch this one"), not a standing preference — a
+    // remembered ON would silently clutter the board with every later session.
+    var addToBoard by rememberSaveable { mutableStateOf(false) }
     var autoStartTouched by rememberSaveable { mutableStateOf(false) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var scheduleMillis by rememberSaveable { mutableStateOf(0L) }
@@ -793,6 +801,21 @@ fun DispatchForm(
             )
         }
 
+        // ⑥a 加入任务板（仅会话模式）: a session is not a board row by default —
+        // the form is the one place the user can say "track this one".
+        if (sessionMode) {
+            FormSectionLabel(stringResource(R.string.dispatch_add_to_board))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = addToBoard, onCheckedChange = { addToBoard = it })
+                Text(
+                    stringResource(R.string.dispatch_add_to_board_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+
         // ⑥b 创建后立即开始（仅任务模式）: off → 待办, on → 立刻入队并显示在进行中。
         if (!sessionMode) {
             FormSectionLabel(stringResource(R.string.dispatch_task_autostart))
@@ -925,6 +948,7 @@ fun DispatchForm(
                         scheduleLocalMillis = if (!sessionMode && !newTaskMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
                         sessionMode = sessionMode,
                         autoStart = taskAutoStart,
+                        addToBoard = addToBoard && sessionMode,
                         attachments = attachments.toList(),
                     ),
                 ) { ref ->

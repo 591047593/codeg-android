@@ -58,6 +58,7 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.feature.sessions.SessionDeleteDialog
 import app.codeg.android.feature.sessions.SessionRenameDialog
 import app.codeg.android.feature.sessions.SessionRow
+import app.codeg.android.feature.sessions.rememberBoardTrackMenu
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +79,9 @@ fun SearchScreen(
     // open must discard it — the held id is server-local and would hit the wrong device.
     var pendingDelete by remember(ui.serverId) { mutableStateOf<ConversationSummary?>(null) }
     var pendingRename by remember(ui.serverId) { mutableStateOf<ConversationSummary?>(null) }
+    // 批v162 P1: 「加入任务板」 from a search hit — the fastest path for an old
+    // session the user just found by name.
+    val boardMenu = rememberBoardTrackMenu()
     val colors = CodegTheme.colors
 
     Scaffold(
@@ -224,6 +228,10 @@ fun SearchScreen(
                                         onDelete = null,
                                         onRename = null,
                                         serverName = hit.serverName,
+                                        onBoard = boardMenu.isOnBoard(hit.serverId, hit.conversation.id),
+                                        onToggleBoard = {
+                                            boardMenu.toggle(hit.serverId, hit.conversation.id, hit.conversation.folderId)
+                                        },
                                     )
                                 }
                             }
@@ -238,6 +246,10 @@ fun SearchScreen(
                                 onTogglePin = { viewModel.setPinned(c, !c.isPinned) },
                                 onDelete = { pendingDelete = c },
                                 onRename = { pendingRename = c },
+                                onBoard = boardMenu.isOnBoard(ui.serverId.orEmpty(), c.id),
+                                onToggleBoard = ui.serverId?.let { sid ->
+                                    { boardMenu.toggle(sid, c.id, c.folderId) }
+                                },
                             )
                         }
                     }

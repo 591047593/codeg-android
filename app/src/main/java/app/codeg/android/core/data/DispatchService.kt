@@ -48,6 +48,10 @@ class DispatchService @Inject constructor(
     // P0: a session created by the form pins the picked model to THAT
     // conversation, so its first connect starts on the chosen model.
     private val conversationSelector: app.codeg.android.core.datastore.ConversationSelectorStore,
+    // 批v162 P1: a session created with 「加入任务板」 on becomes a board member.
+    // Written here, at CONFIRMED, so every host (and the UNKNOWN probe that
+    // resolves later through confirm()) gets the same behaviour for free.
+    private val boardTrackStore: app.codeg.android.core.datastore.BoardTrackStore,
 ) {
     data class SendRequest(
         val ideaId: String? = null,
@@ -69,6 +73,9 @@ class DispatchService @Inject constructor(
         /** P0: picked config options (model / reasoning effort) — task mode sends
          *  them as `config_values`; session mode pins them on the conversation. */
         val configValues: Map<String, String> = emptyMap(),
+        /** 批v162 P1: session mode only — put the created conversation on the
+         *  task board (app-local membership). Ignored for task mode. */
+        val addToBoard: Boolean = false,
         val scheduleLocalMillis: Long? = null,
         /** Immediate (non-scheduled) dispatches start the task right after
          * create — the server parks new tasks in todo forever, so without this
@@ -194,6 +201,7 @@ class DispatchService @Inject constructor(
             autoStart = req.autoStart,
             sessionMode = req.sessionMode,
             attachments = req.attachments,
+            addToBoard = req.addToBoard && req.sessionMode,
         )
         if (client == null) {
             restoreOnHardFail(req.restoreOnHardFail)
@@ -466,6 +474,11 @@ class DispatchService @Inject constructor(
     ): DispatchOutcome {
         val ref = request.copy(remoteTodoId = todoId, state = DispatchState.CONFIRMED)
         putIfPresent(ref)
+        // 批v162 P1: membership is app-local and idempotent; a DataStore hiccup
+        // must never turn a successful create into a failed dispatch.
+        if (ref.sessionMode && ref.addToBoard) {
+            runCatching { boardTrackStore.track(ref.serverId, todoId, ref.folderId) }
+        }
         // 批v154: CONFIRMED means the create landed, and every attachment was
         // uploaded BEFORE it — the private copies are now disposable. Unresolved
         // refs (PENDING/UNKNOWN) keep theirs so a redispatch can re-upload.

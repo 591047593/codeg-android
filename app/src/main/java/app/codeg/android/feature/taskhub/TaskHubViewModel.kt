@@ -8,6 +8,7 @@ import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
+import app.codeg.android.core.data.BoardConversationEntry
 import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
@@ -74,6 +75,8 @@ class TaskHubViewModel @Inject constructor(
     override val drafts: app.codeg.android.core.datastore.DraftStore,
     override val attachmentStager: app.codeg.android.core.data.AttachmentStager,
     private val appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
+    /** P1: tracked-conversation ledger — the board's only local membership source. */
+    private val boardTrack: app.codeg.android.core.datastore.BoardTrackStore,
     /** 批v160 W5: the shell's 「切任务状态」 swipe steps — the screen collects
      *  them to step the kanban's columns (same singleton the shell emits into). */
     val segmentBus: app.codeg.android.core.data.TaskSegmentBus,
@@ -104,6 +107,8 @@ class TaskHubViewModel @Inject constructor(
         val searchQuery: String = "",
         /** serverId -> (taskId -> detail); fetched lazily when a task expands. */
         val details: Map<String, Map<Int, TaskDetail>> = emptyMap(),
+        /** P1: tracked conversations of the scoped devices, straight from the wire. */
+        val conversations: List<BoardConversationEntry> = emptyList(),
         /** serverId:taskId of an in-flight action, for row spinners. */
         val busyKey: String? = null,
         val actionError: String? = null,
@@ -176,9 +181,26 @@ class TaskHubViewModel @Inject constructor(
                     entry.task.resultSummary?.contains(q, ignoreCase = true) == true
             }
             val base = inScope.filter { folderMatch(it) && boardFilter(it, state) }
-            val counts = buildBoard(base, state.showCanceled, state.showArchived).counts
+            // P1: conversations follow the SAME scope, folder filter and search —
+            // a board that mixes "all devices" tasks with "one device" sessions
+            // would lie about what the user is looking at.
+            val convInScope = state.conversations
+                .filter { it.serverId in scopeIds }
+                .map { it.copy(serverName = names[it.serverId] ?: it.serverName) }
+            val convBase = convInScope.filter { entry ->
+                (state.folderFilter == null ||
+                    state.folderNames[entry.serverId]?.get(entry.conversation.folderId) == state.folderFilter)
+            }
+            val convSearch = convBase.filter { entry ->
+                val q = state.searchQuery.trim()
+                q.isEmpty() || entry.conversation.trimmedTitle?.contains(q, ignoreCase = true) == true
+            }
+            val counts = buildBoard(
+                base, state.showCanceled, state.showArchived, convBase,
+            ).counts
             val searchable = if (state.searchQuery.isBlank()) base else base.filter(searchMatch)
-            buildBoard(searchable, state.showCanceled, state.showArchived).copy(counts = counts)
+            buildBoard(searchable, state.showCanceled, state.showArchived, convSearch)
+                .copy(counts = counts)
         }
             // Upstream (profiles) is a DataStore flow: a read failure must keep
             // the board ALIVE, not silently dead. `.catch` would terminate the
@@ -383,6 +405,7 @@ class TaskHubViewModel @Inject constructor(
         }
         loadFolderNames(devices)
         fetchDevices(devices.map { it.id }.toSet(), devices, gen)
+        fetchTrackedConversations(devices, gen)
         if (gen == generation) _ui.update { it.copy(lastRefreshed = Instant.now(), hasLoaded = true) }
     }
 
@@ -474,6 +497,122 @@ class TaskHubViewModel @Inject constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * P1: refresh the board's conversation slice. One folder-scoped list call per
+     * device that actually has tracked members, plus the live-connection table so
+     * a card can tell "running" from "row exists, nothing attached".
+     *
+     * Pruning is deliberately timid: `list_all_conversations` hides loop-kind
+     * rows, delegation child sessions and conversations under soft-deleted
+     * projects, so a single miss proves nothing. A member is dropped only after
+     * TWO consecutive COMPLETE rounds (no timeout, no error) failed to list it.
+     */
+    private val conversationMissRounds = mutableMapOf<String, Int>()
+
+    private suspend fun fetchTrackedConversations(devices: List<ServerProfile>, gen: Int) {
+        val tracked = runCatching { boardTrack.trackedNow() }.getOrDefault(emptyList())
+        if (tracked.isEmpty()) {
+            _ui.update { it.copy(conversations = emptyList()) }
+            return
+        }
+        val byServer = tracked.groupBy { it.serverId }
+        coroutineScope {
+            devices.forEach { profile ->
+                val mine = byServer[profile.id] ?: return@forEach
+                launch {
+                    val client = repository.client(profile) ?: return@launch
+                    val result = runCatching {
+                        withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
+                            client.listConversations(folderIds = mine.map { it.folderId }.distinct())
+                        } ?: throw java.util.concurrent.TimeoutException("device timeout")
+                    }
+                    if (gen != generation) return@launch
+                    val liveIds = runCatching { client.liveConversationIds() }.getOrNull()
+                    result.onSuccess { convs ->
+                        val byId = convs.associateBy { it.id }
+                        val present = mutableSetOf<String>()
+                        val rows = mine.mapNotNull { member ->
+                            val conversation = byId[member.conversationId] ?: return@mapNotNull null
+                            present += member.key
+                            BoardConversationEntry(
+                                serverId = profile.id,
+                                serverName = profile.name,
+                                conversation = conversation,
+                                // Probe failed (old server) → fall back to the status
+                                // flag, never to "not running" (which would dim a
+                                // genuinely live session).
+                                live = liveIds?.contains(conversation.id) ?: conversation.status.isLive,
+                                archived = member.archivedAt != null,
+                            )
+                        }
+                        _ui.update { state ->
+                            state.copy(
+                                conversations = state.conversations
+                                    .filterNot { it.serverId == profile.id } + rows,
+                            )
+                        }
+                        val stale = mutableSetOf<String>()
+                        mine.forEach { member ->
+                            if (member.key in present) {
+                                conversationMissRounds.remove(member.key)
+                            } else {
+                                val rounds = (conversationMissRounds[member.key] ?: 0) + 1
+                                if (rounds >= 2) {
+                                    stale += member.key
+                                    conversationMissRounds.remove(member.key)
+                                } else {
+                                    conversationMissRounds[member.key] = rounds
+                                }
+                            }
+                        }
+                        if (stale.isNotEmpty()) runCatching { boardTrack.prune(stale) }
+                    }.onFailure { e ->
+                        if (e is CancellationException) throw e
+                        // Keep the last slice on screen (same rule as tasks).
+                    }
+                }
+            }
+        }
+    }
+
+    /** P1: add / remove a conversation from the board (long-press entry points). */
+    fun trackConversation(serverId: String, conversationId: Int, folderId: Int) {
+        viewModelScope.launch {
+            runCatching { boardTrack.track(serverId, conversationId, folderId) }
+            _refreshTick.value += 1
+        }
+    }
+
+    fun untrackConversation(serverId: String, conversationId: Int) {
+        // Drop it locally first: the card must disappear on tap, not on the next
+        // poll (which can be 25s away).
+        _ui.update { state ->
+            state.copy(
+                conversations = state.conversations.filterNot {
+                    it.serverId == serverId && it.conversation.id == conversationId
+                },
+            )
+        }
+        viewModelScope.launch {
+            runCatching { boardTrack.untrack(serverId, conversationId) }
+        }
+    }
+
+    fun setConversationArchived(serverId: String, conversationId: Int, archived: Boolean) {
+        _ui.update { state ->
+            state.copy(
+                conversations = state.conversations.map {
+                    if (it.serverId == serverId && it.conversation.id == conversationId) {
+                        it.copy(archived = archived)
+                    } else it
+                },
+            )
+        }
+        viewModelScope.launch {
+            runCatching { boardTrack.setArchived(serverId, conversationId, archived) }
         }
     }
 
@@ -767,6 +906,7 @@ class TaskHubViewModel @Inject constructor(
                         scheduleLocalMillis = submit.scheduleLocalMillis,
                         autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,
+                        addToBoard = submit.addToBoard,
                         attachments = submit.attachments,
                     ),
                 )

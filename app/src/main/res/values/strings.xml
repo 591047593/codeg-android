@@ -1411,6 +1411,8 @@
     <string name="dispatch_button_task_start">Create &amp; start</string>
     <string name="dispatch_task_autostart">Start right after creating</string>
     <string name="dispatch_task_autostart_note">Off: lands in To-do. On: starts immediately and shows in In progress.</string>
+    <string name="dispatch_add_to_board">Add to the task board</string>
+    <string name="dispatch_add_to_board_note">Track this session on the board after it is created.</string>
     <string name="recent_pick_title">Hand off a session</string>
     <string name="recent_pick_empty">No recent sessions on any device.</string>
     <string name="recent_pick_failed">Couldn\'t load sessions — tap to retry.</string>
@@ -1434,6 +1436,16 @@
     <string name="inbox_insert_submit">Create task</string>
     <string name="task_new_title">New task</string>
     <string name="task_open_session">View session</string>
+    <string name="board_conv_badge">Session</string>
+    <string name="board_conv_offline">Disconnected</string>
+    <string name="board_conv_open">Open session</string>
+    <string name="board_conv_add">Add to board</string>
+    <string name="board_conv_remove">Remove from board</string>
+    <string name="board_conv_tracked">On the board</string>
+    <string name="board_conv_added">Added to the board</string>
+    <string name="board_conv_remove_title">Remove from the board?</string>
+    <string name="board_conv_remove_body">Only the board entry goes away — the session itself is untouched.</string>
+    <string name="board_conv_set_status">Change session status</string>
     <string name="task_action_edit">Edit</string>
     <string name="task_action_schedule">Schedule</string>
     <string name="task_detail_prompt">Task description</string>

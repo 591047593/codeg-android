@@ -75,6 +75,10 @@ fun SessionRow(
     onHandoff: ((reference: String) -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onAddToProject: (() -> Unit)? = null,
+    /** 批v162 P1: add this session to / remove it from the task board. */
+    onToggleBoard: (() -> Unit)? = null,
+    /** True when the ledger already holds this session (menu says 移出看板). */
+    onBoard: Boolean = false,
     onRename: (() -> Unit)? = null,
     serverName: String? = null,
     unread: Boolean = false,
@@ -93,7 +97,7 @@ fun SessionRow(
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
     val hasMenu = onTogglePin != null || onHandoff != null || onDelete != null || onAddToProject != null ||
-        onRename != null
+        onRename != null || onToggleBoard != null
     val clipboard = LocalClipboardManager.current
     val highlightBg by animateColorAsState(
         targetValue = if (highlighted) colors.accent.copy(alpha = 0.16f) else Color.Transparent,
@@ -262,6 +266,17 @@ fun SessionRow(
                                 icon = Icons.Rounded.BookmarkAdd,
                                 label = stringResource(R.string.session_add_project),
                                 onClick = onAddToProject,
+                            ),
+                        )
+                    }
+                    if (onToggleBoard != null) {
+                        add(
+                            CenteredAction(
+                                icon = Icons.Rounded.BookmarkAdd,
+                                label = stringResource(
+                                    if (onBoard) R.string.board_conv_remove else R.string.board_conv_add,
+                                ),
+                                onClick = onToggleBoard,
                             ),
                         )
                     }

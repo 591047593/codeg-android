@@ -132,6 +132,10 @@ data class DispatchRef(
      *  路径——没有这个快照，探针只能 arm 出一条不带附件的首条指令（文件明明已
      *  在设备上，prompt 却不提），随后本地副本被清，远端成了无引用孤儿。 */
     val uploadedPaths: List<String> = emptyList(),
+    /** 批v162 P1: the user asked for a session that lands on the task board.
+     *  Persisted on the ledger (not just the request) so a create resolved by
+     *  the UNKNOWN probe lands on the board exactly like a direct success. */
+    val addToBoard: Boolean = false,
 )
 
 @Singleton

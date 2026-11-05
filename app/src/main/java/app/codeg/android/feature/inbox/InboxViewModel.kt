@@ -462,6 +462,8 @@ class InboxViewModel @Inject constructor(
         attachments: List<LocalAttachment> = emptyList(),
         /** P0-2: model / reasoning-effort selections from the shared form. */
         configValues: Map<String, String> = emptyMap(),
+        /** 批v162 P1: session mode — put the created conversation on the board. */
+        addToBoard: Boolean = false,
     ) {
         if (_ui.value.dispatching) {
             // A redispatch whose old ref was ALREADY removed must not lose it on
@@ -518,6 +520,7 @@ class InboxViewModel @Inject constructor(
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = autoStart,
                         sessionMode = sessionMode,
+                        addToBoard = addToBoard,
                         restoreOnHardFail = restoreOnHardFail,
                         attachments = attachments,
                         configValues = configValues,
@@ -608,6 +611,7 @@ class InboxViewModel @Inject constructor(
             // them to the target device before creating anything.
             attachments = submit.attachments,
             configValues = submit.configValues,
+            addToBoard = submit.addToBoard,
         )
     }
 

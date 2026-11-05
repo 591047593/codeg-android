@@ -1,5 +1,7 @@
 package app.codeg.android.core.data
 
+import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.WorkTaskInfo
 
 /**
@@ -65,12 +67,85 @@ data class TaskBoardEntry(
     val task: WorkTaskInfo,
 )
 
+/**
+ * P1: one TRACKED conversation on the board. Conversations are not tasks on the
+ * server — membership is app-local ([app.codeg.android.core.datastore.BoardTrackStore])
+ * — but once a conversation is a member it must flow through the same four
+ * columns, so it gets its own entry type instead of being faked into a
+ * [WorkTaskInfo] (fabricated ids/statuses would leak into every task action).
+ */
+data class BoardConversationEntry(
+    val serverId: String,
+    val serverName: String,
+    val conversation: ConversationSummary,
+    /** True when the device reports a live ACP connection for this session. */
+    val live: Boolean,
+    /** App-local archive flag — hides the row unless the archived filter is on. */
+    val archived: Boolean,
+)
+
+/**
+ * Conversation status → the same four columns the tasks use. `in_progress` is
+ * where a freshly created session lives (the server creates every row that way),
+ * which is why the card also carries [BoardConversationEntry.live]: the badge,
+ * not the column, tells "actually running" from "row exists, nothing attached".
+ */
+fun conversationSegmentOf(conversation: ConversationSummary): TaskSegment = when {
+    // A member that never sent a prompt has not started anything, even though
+    // the server row is BORN `in_progress` (create_inner) — §3.1's first row.
+    conversation.status == ConversationStatus.IN_PROGRESS && conversation.messageCount == 0 ->
+        TaskSegment.TODO
+    conversation.status == ConversationStatus.IN_PROGRESS -> TaskSegment.RUNNING
+    conversation.status == ConversationStatus.PENDING_REVIEW -> TaskSegment.ATTENTION
+    conversation.status == ConversationStatus.COMPLETED -> TaskSegment.DONE
+    conversation.status == ConversationStatus.CANCELLED -> TaskSegment.DONE
+    else -> TaskSegment.RUNNING
+}
+
+/**
+ * 批v162 P1: one row of a column. Tasks and tracked conversations share a
+ * column but are NOT the same entity — a sealed row keeps the card renderer's
+ * `when` exhaustive, so a conversation can never fall through into a task
+ * action (合并/开始/重试) that makes no sense for it.
+ */
+sealed interface BoardRow {
+    /** Stable LazyColumn key; the kind is part of it so task 7 and conversation 7 never collide. */
+    val key: String
+
+    /** Epoch millis, the single clock both entities are ordered by. */
+    val sortMs: Long
+}
+
+data class TaskBoardRow(val entry: TaskBoardEntry) : BoardRow {
+    override val key: String get() = "${entry.serverId}:t${entry.task.id}"
+    override val sortMs: Long get() = taskSortMs(entry.task)
+}
+
+data class ConversationBoardRow(val entry: BoardConversationEntry) : BoardRow {
+    override val key: String get() = "${entry.serverId}:c${entry.conversation.id}"
+    override val sortMs: Long get() = entry.conversation.updatedAt.toEpochMilli()
+}
+
+/**
+ * 批v162 P1: merge a column's tasks and conversations under ONE clock (§3.3).
+ * A scheduled task still floats to the top for free — its `scheduled_at` is in
+ * the future, so its sort key is the largest. The sort is stable, so equal keys
+ * keep tasks before conversations, the order the board has always shown.
+ */
+fun mergeBoardRows(
+    tasks: List<TaskBoardEntry>,
+    conversations: List<BoardConversationEntry>,
+): List<BoardRow> = (tasks.map(::TaskBoardRow) + conversations.map(::ConversationBoardRow))
+    .sortedByDescending { it.sortMs }
+
 /** Board projection result: per-segment lists plus the neutral unknown section. */
 data class TaskBoardData(
     val segments: Map<TaskSegment, List<TaskBoardEntry>> = emptyMap(),
     val unknown: List<TaskBoardEntry> = emptyList(),
     /** Segment sizes BEFORE the search query is applied, for the segment bar. */
     val counts: Map<TaskSegment, Int> = emptyMap(),
+    /** P1: tracked conversations, projected into the same segments. */
+    val conversations: Map<TaskSegment, List<BoardConversationEntry>> = emptyMap(),
 )
 
 /**
@@ -82,6 +157,7 @@ fun buildBoard(
     entries: List<TaskBoardEntry>,
     showCanceled: Boolean = true,
     showArchived: Boolean = false,
+    conversations: List<BoardConversationEntry> = emptyList(),
 ): TaskBoardData {
     val visible = entries.filter { entry ->
         val task = entry.task
@@ -100,10 +176,22 @@ fun buildBoard(
     val segments = SEGMENT_ORDER.associateWith { column ->
         grouped[column].orEmpty().sortedWith(compareByDescending { entry: TaskBoardEntry -> taskSortKey(entry) })
     }
+    // A locally archived conversation sits in DONE and only shows with the
+    // archived filter on — the same rule tasks follow ([isArchivedLike]).
+    val convVisible = conversations.filter { showArchived || !it.archived }
+    val convGrouped = convVisible.groupBy {
+        if (it.archived) TaskSegment.DONE else conversationSegmentOf(it.conversation)
+    }
+    val conversationsBySegment = SEGMENT_ORDER.associateWith { column ->
+        convGrouped[column].orEmpty().sortedByDescending { it.conversation.updatedAt }
+    }
     return TaskBoardData(
         segments = segments,
         unknown = unknown.sortedWith(compareByDescending { entry: TaskBoardEntry -> taskSortKey(entry) }),
-        counts = SEGMENT_ORDER.associateWith { segments[it]?.size ?: 0 },
+        counts = SEGMENT_ORDER.associateWith {
+            (segments[it]?.size ?: 0) + (conversationsBySegment[it]?.size ?: 0)
+        },
+        conversations = conversationsBySegment,
     )
 }
 
@@ -111,22 +199,30 @@ fun buildBoard(
  * Sort key inside a segment: scheduled first (soonest wins), then most recently
  * updated. Wire timestamps are RFC3339 UTC strings, which sort lexicographically.
  */
-private fun taskSortKey(entry: TaskBoardEntry): String =
-    timestampKey(entry.task.scheduledAt)
-        ?: timestampKey(entry.task.updatedAt)
-        ?: timestampKey(entry.task.createdAt)
-        ?: ""
+private fun taskSortKey(entry: TaskBoardEntry): String = taskSortMs(entry.task).toString()
+
+/**
+ * The same ordering rule as a number, for the cross-entity merge: scheduled
+ * first, then most recently updated, then created.
+ */
+fun taskSortMs(task: WorkTaskInfo): Long =
+    timestampMs(task.scheduledAt)
+        ?: timestampMs(task.updatedAt)
+        ?: timestampMs(task.createdAt)
+        ?: 0L
 
 /**
  * Normalize an RFC3339 timestamp to an epoch-millis string so sorting is order-
  * safe regardless of the wire offset (`+08:00` vs `Z`); unparsable → null.
  */
-private fun timestampKey(iso: String?): String? = iso?.let { raw ->
+private fun timestampKey(iso: String?): String? = timestampMs(iso)?.toString()
+
+private fun timestampMs(iso: String?): Long? = iso?.let { raw ->
     runCatching { java.time.Instant.parse(raw).toEpochMilli() }
         // Offset form (…+08:00) throws in Instant.parse below API 34 — without
         // this fallback those rows sort as "no time" (bottom of every column).
         .recoverCatching { java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli() }
-        .getOrNull()?.toString()
+        .getOrNull()
 }
 
 // region 批v160 W5: web-parity `statusAccent` — the row/column colour language.
