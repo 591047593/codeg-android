@@ -829,7 +829,7 @@ class TaskHubViewModel @Inject constructor(
                     visibleCount = entries.size,
                 )
             }
-            .sortedBy { it.deviceName to (it.folderName ?: "") }
+            .sortedWith(compareBy({ it.deviceName }, { it.folderName ?: "" }))
     }
 
     /** M1 全部启动: one work_task_start_all per (device, folder) target, serially

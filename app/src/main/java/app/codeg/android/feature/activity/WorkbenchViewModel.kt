@@ -363,9 +363,15 @@ class WorkbenchViewModel @Inject constructor(
                             // fleet M1: separate best-effort round-trip — a missing
                             // count never fails the round, it only degrades the
                             // badge to the board-derived number for the scope.
-                            val count = runCatching { client.workTaskAttentionCount() }
-                                .getOrNull()
-                                .also { if (it == null) android.util.Log.w("WorkbenchViewModel", "attention_count unavailable on ${profile.id}") }
+                            // Cancellation rethrown so device timeouts still cancel.
+                            val count = try {
+                                client.workTaskAttentionCount()
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                android.util.Log.w("WorkbenchViewModel", "attention_count unavailable on ${profile.id}")
+                                null
+                            }
                             list to count
                         } ?: throw java.util.concurrent.TimeoutException("device timeout")
                     }

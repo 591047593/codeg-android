@@ -218,6 +218,11 @@ class SessionDetailViewModel @Inject constructor(
     private var liveBuilder: LiveTurnBuilder? = null
     private var liveFlushScheduled = false
     private var turnBaseline = 0
+    /** Monotonic transcript-window op counter (fleet M1 review, web fetch-generation
+     *  parity): every splice / wholesale adopt bumps it. Async detail/page fetches
+     *  capture it at issue time and discard (or re-derive) when it moved — a fetch
+     *  issued before a splice must not clobber the just-spliced window. */
+    private var windowOpSeq = 0L
     /** The queued-draft auto-flush. Single-flight: one flush at a time, restarted by
      *  the NEXT turn's end (a flush that fires a send starts a new turn). */
     private var flushJob: Job? = null
@@ -399,6 +404,8 @@ class SessionDetailViewModel @Inject constructor(
                             turnsOffset = detail.turnsOffset,
                             turnsTotal = detail.turnsTotal,
                             windowPrefixHash = detail.prefixHash,
+                            assistantTurnsBeforeOffset = detail.assistantTurnsBeforeOffset,
+                            userTurnsBeforeOffset = detail.userTurnsBeforeOffset,
                             sessionStats = detail.sessionStats,
                             externalId = detail.summary.externalId,
                             agent = detail.summary.agentType,
@@ -1305,14 +1312,28 @@ class SessionDetailViewModel @Inject constructor(
     private fun reconcileAfterMissedLive() {
         val c = client ?: return
         val id = conversationId ?: return
+        val seqAtFetch = windowOpSeq
         viewModelScope.launch {
             val offset = _ui.value.turnsOffset
             val d = runCatching {
                 if (offset != null) c.conversationDetail(id, fromIndex = offset)
                 else c.conversationDetail(id)
             }.getOrNull() ?: return@launch
+            // A splice/tail reload landed while this fetch was out — its coordinates
+            // are stale; drop rather than clobber the newer window state.
+            if (windowOpSeq != seqAtFetch) return@launch
             val state = _ui.value
-            if (state.windowPrefixHash != null && d.prefixHash != null && d.prefixHash != state.windowPrefixHash) {
+            // Windowed-response consistency (web fetchDetailWindowed parity): the
+            // parse must still be ours — prefix fingerprint unchanged — and the
+            // total must cover the requested offset. A mid-run compaction rewrites
+            // the prefix; mixing its window under old-parse paged pages is worse
+            // than one whole tail reload, so mismatch falls back to that.
+            val parseMatches = offset == null || d.turnsOffset == null ||
+                (d.prefixHash != null && d.prefixHash == state.windowPrefixHash &&
+                    (d.turnsTotal ?: 0) >= offset)
+            if (state.windowPrefixHash != null && d.prefixHash != null && d.prefixHash != state.windowPrefixHash ||
+                !parseMatches
+            ) {
                 reloadTailWindow()
             } else {
                 adoptWindowDetail(d)
@@ -1321,14 +1342,18 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     /** M1: fold a fetched detail (windowed or legacy) into the transcript state —
-     *  the single place that owns the window fields on a wholesale replace. */
+     *  the single place that owns the window fields on a wholesale replace. Bumps
+     *  [windowOpSeq]: any detail/page fetch still in flight predates this state. */
     private fun adoptWindowDetail(d: ConversationDetail) {
+        windowOpSeq++
         _ui.update {
             it.copy(
                 turns = d.turns,
                 turnsOffset = d.turnsOffset,
                 turnsTotal = d.turnsTotal,
                 windowPrefixHash = d.prefixHash,
+                assistantTurnsBeforeOffset = d.assistantTurnsBeforeOffset,
+                userTurnsBeforeOffset = d.userTurnsBeforeOffset,
                 sessionStats = d.sessionStats ?: it.sessionStats,
                 summary = d.summary,
             )
@@ -1349,22 +1374,35 @@ class SessionDetailViewModel @Inject constructor(
         val offset = _ui.value.turnsOffset ?: return // legacy full transcript — nothing older
         if (_ui.value.loadingOlder || offset <= 0) return
         _ui.update { it.copy(loadingOlder = true) }
+        val seqAtFetch = windowOpSeq
         viewModelScope.launch {
             try {
                 val page = c.conversationTurnsPage(id, beforeIndex = offset, limit = OLDER_TURNS_PAGE_SIZE)
+                // A reconcile/adopt landed while the page was out — its join check
+                // would run against coordinates we no longer hold; drop the page.
+                if (windowOpSeq != seqAtFetch) {
+                    _ui.update { it.copy(loadingOlder = false) }
+                    return@launch
+                }
                 val seam = _ui.value.windowPrefixHash
+                // Strict seam proof (web parity): no hash, no join — a window at
+                // offset > 0 always carries a prefix fingerprint on a compliant
+                // server; a missing one must not splice unchecked.
                 val joins = page.turnsOffset + page.turns.size == offset &&
-                    (seam == null || page.prefixHashBeforeIndex == seam)
+                    seam != null && page.prefixHashBeforeIndex == seam
                 if (!joins) {
                     reloadTailWindow()
                     return@launch
                 }
+                windowOpSeq++
                 _ui.update {
                     it.copy(
                         turns = page.turns + it.turns,
                         turnsOffset = page.turnsOffset,
                         turnsTotal = page.turnsTotal,
                         windowPrefixHash = page.prefixHash,
+                        assistantTurnsBeforeOffset = page.assistantTurnsBeforeOffset,
+                        userTurnsBeforeOffset = page.userTurnsBeforeOffset,
                         loadingOlder = false,
                     )
                 }
@@ -1522,27 +1560,69 @@ class SessionDetailViewModel @Inject constructor(
                 // window. turnBaseline is a GLOBAL turn count, so advance is judged
                 // in global coordinates: offset + slice size.
                 val offset = _ui.value.turnsOffset
+                val seqAtFetch = windowOpSeq
                 val detail = runCatching {
                     if (offset != null) c.conversationDetail(id, fromIndex = offset)
                     else c.conversationDetail(id)
                 }.getOrNull() ?: return@repeat
+                // A page splice / tail reload landed while this fetch was out: our
+                // coordinates are stale, and adopting would clobber the spliced
+                // window (drop paged turns). Re-derive from the current state on
+                // the next attempt instead.
+                if (windowOpSeq != seqAtFetch) return@repeat
                 val last = detail.turns.lastOrNull()
                 val advanced = (offset ?: 0) + detail.turns.size > turnBaseline &&
                     last?.role == TurnRole.ASSISTANT && last.blocks.isNotEmpty()
                 if (advanced) {
                     if (liveBuilder !== builder) return@launch
+                    // Windowed-response consistency (web fetchDetailWindowed parity):
+                    // the response's parse must still match ours — prefix fingerprint
+                    // unchanged, total covering the requested offset — or the new-parse
+                    // window would sit under old-parse paged pages. Fall back to one
+                    // whole tail reload (drops paged history) instead of adopting.
+                    val parseMatches = offset == null || detail.turnsOffset == null ||
+                        (detail.prefixHash != null && detail.prefixHash == _ui.value.windowPrefixHash &&
+                            (detail.turnsTotal ?: 0) >= offset)
                     // This turn ended without a `turn_complete` of its own (a dead
                     // connection, an exhausted reconnect), so `finalizeTurn` never ran:
                     // resolve its parked plan-revision notes here instead of leaving them
                     // for whatever turn finalizes next.
                     val orphanedNotes = builder?.let { pendingPlanFollowUp?.notesFor(it.id) }
                     if (orphanedNotes != null) pendingPlanFollowUp = null
+                    if (!parseMatches) {
+                        _ui.update {
+                            it.copy(
+                                pendingUserTurns = emptyList(),
+                                live = null,
+                                liveFromReattach = false,
+                                isInFlight = false,
+                                runStartedAt = null,
+                                sendStatus = null,
+                                pendingPermission = null,
+                                pendingQuestion = null,
+                                pendingPlanApproval = null,
+                                notice = if (orphanedNotes != null) {
+                                    appContext.getString(R.string.plan_approval_notes_dropped)
+                                } else {
+                                    it.notice
+                                },
+                            )
+                        }
+                        liveBuilder = null
+                        maybeFlushQueue()
+                        reloadTailWindow()
+                        return@launch
+                    }
                     _ui.update {
                         it.copy(
                             turns = detail.turns,
                             turnsOffset = detail.turnsOffset ?: it.turnsOffset,
                             turnsTotal = detail.turnsTotal,
                             windowPrefixHash = detail.prefixHash,
+                            assistantTurnsBeforeOffset = detail.assistantTurnsBeforeOffset
+                                ?: it.assistantTurnsBeforeOffset,
+                            userTurnsBeforeOffset = detail.userTurnsBeforeOffset
+                                ?: it.userTurnsBeforeOffset,
                             sessionStats = detail.sessionStats ?: it.sessionStats,
                             summary = detail.summary,
                             pendingUserTurns = emptyList(),
@@ -3536,6 +3616,11 @@ data class SessionDetailUiState(
     val turnsOffset: Int? = null,
     val turnsTotal: Int? = null,
     val windowPrefixHash: String? = null,
+    // M1 review (web prepend-reducer parity): assistant/user turn counts ABOVE the
+    // window start — updated on every adopt and splice so a future send-time
+    // baseline consumer never reads stale values.
+    val assistantTurnsBeforeOffset: Int? = null,
+    val userTurnsBeforeOffset: Int? = null,
     /** An older page is in flight (the transcript's top sentinel shows it). */
     val loadingOlder: Boolean = false,
     val pendingUserTurns: List<MessageTurn> = emptyList(),

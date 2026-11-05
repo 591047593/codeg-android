@@ -46,9 +46,14 @@ class RouteParityTest {
         error("_server_routes_snapshot.txt not found from user.dir=${System.getProperty("user.dir")}")
     }
 
-    /** Same extraction the shell script does: every `send("<name>")` literal. */
+    /**
+     * Every `send("<name>")` literal, including multiline call sites
+     * (`send(\n  "name", …)`) — `\s` crosses the newline, so a route literal
+     * reformatted onto its own line can't silently drop out of coverage
+     * (fleet M1 review: the single-line form missed 3 of 4 new routes).
+     */
     private fun extractClientRoutes(source: String): Set<String> =
-        Regex("""send\("([a-z0-9_]+)"""").findAll(source).map { it.groupValues[1] }.toSet()
+        Regex("""send\s*\(\s*"([a-z0-9_]+)"""").findAll(source).map { it.groupValues[1] }.toSet()
 
     private fun loadServerSnapshot(): Set<String> =
         locateSnapshot().readLines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
