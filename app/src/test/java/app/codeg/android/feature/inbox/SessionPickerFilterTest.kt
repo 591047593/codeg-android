@@ -124,18 +124,18 @@ class SessionPickerFilterTest {
     @Test
     fun oneMinuteStartsMinutesBucket() {
         assertEquals(RelativeStamp.Minutes(1), relativeStamp(now.minusSeconds(60), now))
-        assertEquals(RelativeStamp.Minutes(59), relativeStamp(now.minusMinutes(59), now))
+        assertEquals(RelativeStamp.Minutes(59), relativeStamp(now.minusSeconds(59 * 60), now))
     }
 
     @Test
     fun oneHourStartsHoursBucket() {
-        assertEquals(RelativeStamp.Hours(1), relativeStamp(now.minusMinutes(60), now))
-        assertEquals(RelativeStamp.Hours(23), relativeStamp(now.minusMinutes(23 * 60 + 59), now))
+        assertEquals(RelativeStamp.Hours(1), relativeStamp(now.minusSeconds(60 * 60), now))
+        assertEquals(RelativeStamp.Hours(23), relativeStamp(now.minusSeconds((23 * 60 + 59) * 60), now))
     }
 
     @Test
     fun oneDayStartsDatedBucket() {
-        val stamp = relativeStamp(now.minusHours(24), now, ZoneId.of("UTC"))
+        val stamp = relativeStamp(now.minusSeconds(24 * 60 * 60), now, ZoneId.of("UTC"))
         assertEquals(RelativeStamp.Dated("11-05"), stamp)
     }
 
