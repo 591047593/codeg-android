@@ -1632,7 +1632,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
         // chip taps route through onSelectAll into this one instance.
         if (showProjectSheet) {
             ProjectFilterSheet(
-                projects = sessionProjects,
+                // R4-B A2: hidden projects must not be activatable from the
+                // sheet — same invariant as cycleProject (a scope whose chip no
+                // longer renders). Unhide lives in the W2 filter sheet.
+                projects = sessionProjects.filter { it.id !in hiddenProjectIds },
                 counts = sessionProjectMembers.mapValues { it.value.size },
                 activeId = activeProjectId,
                 onSelect = { pid ->

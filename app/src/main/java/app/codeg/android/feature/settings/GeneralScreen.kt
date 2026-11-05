@@ -236,7 +236,7 @@ fun GeneralContent(
                                             contentColor = colors.textPrimary,
                                         ),
                                     ) {
-                                        Icon(Icons.Rounded.ArrowDropUp, contentDescription = null)
+                                        Icon(Icons.Rounded.ArrowDropUp, contentDescription = stringResource(R.string.common_move_up))
                                     }
                                     FilledTonalIconButton(
                                         onClick = { viewModel.moveProjectChip(project.id, 1) },
@@ -247,7 +247,7 @@ fun GeneralContent(
                                             contentColor = colors.textPrimary,
                                         ),
                                     ) {
-                                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = null)
+                                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = stringResource(R.string.common_move_down))
                                     }
                                 }
                             },
@@ -726,7 +726,13 @@ private fun TabOrderEditor(
     onStartTab: (String) -> Unit,
 ) {
     val colors = CodegTheme.colors
-    val tabs = remember(savedOrder) { HomeTab.orderedBy(savedOrder) }
+    // R4-B A3: mirror of GeneralViewModel.chipOrderOverride — rapid ▲▼ taps
+    // must chain off the last SWAP, not the last persisted snapshot whose
+    // DataStore echo lags (a quick shuffle of two rows would lose a move).
+    // Scoped to this editor, the tab order's only writer.
+    var orderOverride by remember { mutableStateOf<List<String>?>(null) }
+    val effectiveOrder = orderOverride ?: savedOrder
+    val tabs = remember(effectiveOrder) { HomeTab.orderedBy(effectiveOrder) }
     val hiddenSet = hidden.toSet()
     Column {
         Text(stringResource(R.string.general_tab_order_subtitle), fontSize = 12.sp, color = colors.textTertiary, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp))
@@ -763,6 +769,7 @@ private fun TabOrderEditor(
                             onClick = {
                                 val next = tabs.toMutableList()
                                 next[index - 1] = tabs[index].also { next[index] = next[index - 1] }
+                                orderOverride = next.map { it.route }
                                 onReorder(next.map { it.route })
                             },
                         )
@@ -774,6 +781,7 @@ private fun TabOrderEditor(
                             onClick = {
                                 val next = tabs.toMutableList()
                                 next[index + 1] = tabs[index].also { next[index] = next[index + 1] }
+                                orderOverride = next.map { it.route }
                                 onReorder(next.map { it.route })
                             },
                         )

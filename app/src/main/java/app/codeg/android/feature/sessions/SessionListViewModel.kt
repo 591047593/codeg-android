@@ -405,6 +405,11 @@ class SessionListViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 aggregateProjectFilter.hideAll(projectIds)
+                // R4-B A1: same R1-B P2-2 mirror as setProjectVisible — a column
+                // header / global hide that swallows the ACTIVE project must drop
+                // the scope, or the list keeps filtering by an invisible chip.
+                val active = projectRepo.activeProjectId.value
+                if (active != null && active in projectIds) projectRepo.setActive(null)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {

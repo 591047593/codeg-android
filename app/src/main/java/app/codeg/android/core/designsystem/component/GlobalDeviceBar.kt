@@ -254,7 +254,6 @@ fun GlobalDeviceBar(
                     val selected = !allSelected && server.id == selectedId
                     DeviceChip(
                         isSelected = selected,
-                        dimmed = !server.includeInAll,
                         leading = { iconTint ->
                             Box(
                                 Modifier
@@ -372,7 +371,6 @@ private fun DeviceChip(
     onLongClick: (() -> Unit)? = null,
     /** TalkBack label for the long-press action; defaults to the device skip. */
     longClickLabel: String? = null,
-    dimmed: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = CodegTheme.colors
@@ -383,9 +381,9 @@ private fun DeviceChip(
     // accent container + trailing check (filter-chip convention) instead of a tint.
     Box(
         modifier = Modifier
-            // R3-A P2: no extra alpha on dimmed chips — textTertiary alone already
-            // reads dimmer (4.62:1 light / 5.7:1 dark); stacking alpha on top of
-            // the tertiary switch sank the label to 2.47:1, under WCAG AA.
+            // R3-A P2: no extra alpha on the skipped state — textTertiary alone
+            // already reads dimmer (4.62:1 light / 5.7:1 dark); stacking alpha on
+            // top of the tertiary switch sank the label to 2.47:1, under WCAG AA.
             .clip(shape)
             .combinedClickable(
                 onLongClickLabel = if (onLongClick != null) resolvedLongClickLabel else null,

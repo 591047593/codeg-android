@@ -255,11 +255,21 @@ class GeneralViewModel @Inject constructor(
      *  the previous tap (a double-tap would move one slot instead of two). */
     private var chipOrderOverride: List<String>? = null
 
+    /** The project-id set [chipOrderOverride] was derived from — a project
+     *  created/removed while this page is open invalidates it (R4-A P3-2). */
+    private var chipOrderOverrideIds: Set<String> = emptySet()
+
     /** Move one project [step] slots (+1 right / -1 left) in the manual order.
      *  Operates on the row's EFFECTIVE display order (saved ids first, then the
      *  never-moved rest) — a move on a partial saved list must still move the
      *  row the user sees. Persists the materialized order. */
     fun moveProjectChip(id: String, step: Int) {
+        val projectIds = sessionProjectRepo.projects.value.mapTo(mutableSetOf()) { it.id }
+        if (chipOrderOverride != null && chipOrderOverrideIds != projectIds) {
+            // The override predates the current project set — it can't name the
+            // new id, so every move on it would silently no-op. Re-derive.
+            chipOrderOverride = null
+        }
         val moved = chipOrderOverride
             ?.let { moveProjectInOrder(it, id, step) }
             ?: materializeChipMove(
@@ -269,6 +279,7 @@ class GeneralViewModel @Inject constructor(
                 step,
             )
         chipOrderOverride = moved
+        chipOrderOverrideIds = projectIds
         setProjectChipOrder(moved)
     }
 
