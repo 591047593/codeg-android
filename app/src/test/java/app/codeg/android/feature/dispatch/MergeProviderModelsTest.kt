@@ -77,8 +77,16 @@ class MergeProviderModelsTest {
 
     @Test
     fun `providers with a blank model are dropped`() {
-        val merged = mergeProviderModels(null, listOf(provider("gw", "  "), provider("gw2", null)))!!
-        assertTrue("blank-model providers must not synthesize a row", merged.configOptions.isEmpty())
+        // Every provider model blank → no choices at all → a null probe stays
+        // null (the form then renders its no-model placeholder row).
+        assertNull(mergeProviderModels(null, listOf(provider("gw", "  "), provider("gw2", null))))
+    }
+
+    @Test
+    fun `duplicate model values across providers keep the first`() {
+        val merged = mergeProviderModels(null, listOf(provider("gw", "glm-4.7"), provider("gw2", "glm-4.7")))!!
+        val options = merged.configOptions.single { it.id == "model" }.kind.options
+        assertEquals(listOf("glm-4.7"), options.map { it.value })
     }
 
     @Test

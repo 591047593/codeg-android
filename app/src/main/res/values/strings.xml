@@ -1459,6 +1459,7 @@
     <string name="dispatch_model_failed">Detect failed</string>
     <string name="dispatch_model_failed_note">Could not read this agent’s model list; the task will run with its default model.</string>
     <string name="dispatch_model_none">No models</string>
+    <string name="dispatch_model_pick_hint">Tap to pick from the model list</string>
     <string name="dispatch_mode_permission">Permission mode</string>
     <string name="dispatch_reasoning">Reasoning effort</string>
     <string name="dispatch_model_needs_agent">Pick an agent to change the model</string>

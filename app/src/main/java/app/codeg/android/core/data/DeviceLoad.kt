@@ -31,6 +31,14 @@ const val AGG_DEVICE_TIMEOUT_MS: Long = 10_000L
 const val SINGLE_DEVICE_TIMEOUT_MS: Long = 12_000L
 
 /**
+ * Fleet M1: the optional attention-count round-trip gets its own, tighter
+ * budget inside the device round — it rides the same envelope as the task list
+ * but a missing count only degrades the badge, so a slow count must never eat
+ * the list's deadline and fail the whole device slice.
+ */
+const val ATTENTION_COUNT_TIMEOUT_MS: Long = 3_000L
+
+/**
  * How long an aggregate may stay completely empty before it stops showing the
  * full-screen spinner and paints the list frame with per-device "connecting"
  * placeholders instead.

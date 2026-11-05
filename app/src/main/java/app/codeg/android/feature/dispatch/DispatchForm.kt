@@ -653,7 +653,9 @@ fun DispatchForm(
                 icon = Icons.Rounded.Tune,
                 label = stringResource(R.string.dispatch_model),
                 value = modelOption.displayValue(configPicks),
-                placeholder = "",
+                // A provider-carried row has no agent-reported current value —
+                // a blank placeholder reads as a dead row; hint that it taps.
+                placeholder = stringResource(R.string.dispatch_model_pick_hint),
                 onClick = { configSheetId = modelOption.id },
             )
         } else {
@@ -1301,6 +1303,10 @@ internal fun mergeProviderModels(
             description = p.name,
         )
     }
+        // The picker keys rows by value — two providers exporting the same model
+        // string must collapse to one row or the sheet's LazyColumn crashes on a
+        // duplicate key (fleet M1 review blocker).
+        .distinctBy { it.value }
     if (choices.isEmpty()) return probe
     fun carried() = app.codeg.android.core.model.SessionConfigOption(
         id = "model",

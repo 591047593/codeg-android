@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.CodegApplication
 import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
+import app.codeg.android.core.data.ATTENTION_COUNT_TIMEOUT_MS
 import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.InteractiveRequestWatcher
@@ -360,12 +361,14 @@ class WorkbenchViewModel @Inject constructor(
                             ?: throw IllegalStateException("Token 缺失，无法加载该设备")
                         withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
                             val list = client.workTaskList()
-                            // fleet M1: separate best-effort round-trip — a missing
-                            // count never fails the round, it only degrades the
-                            // badge to the board-derived number for the scope.
+                            // fleet M1: separate best-effort round-trip with its own
+                            // tighter budget — a slow count degrades the badge, it
+                            // must not consume the task list's device deadline.
                             // Cancellation rethrown so device timeouts still cancel.
                             val count = try {
-                                client.workTaskAttentionCount()
+                                withTimeoutOrNull(ATTENTION_COUNT_TIMEOUT_MS) {
+                                    client.workTaskAttentionCount()
+                                }
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (_: Exception) {

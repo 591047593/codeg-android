@@ -1445,6 +1445,7 @@
     <string name="dispatch_model_failed">探测失败</string>
     <string name="dispatch_model_failed_note">读不到该 Agent 的模型列表，任务将以默认模型运行。</string>
     <string name="dispatch_model_none">无模型</string>
+    <string name="dispatch_model_pick_hint">点按从模型列表选择</string>
     <string name="dispatch_mode_permission">权限模式</string>
     <string name="dispatch_reasoning">推理强度</string>
     <string name="dispatch_model_needs_agent">选定 Agent 后可改模型</string>

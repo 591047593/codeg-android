@@ -343,6 +343,11 @@ fun SessionDetailScreen(
         }
     }
     var stick by remember { mutableStateOf(true) }
+    // M1 review: the older-pages sentinel must not compose on frame 1 — it sits
+    // at index 0, so it would fire one unrequested 120-turn page fetch before
+    // the initial pin-to-bottom ever ran. Armed once the first stick scroll has
+    // actually landed.
+    var bottomPinnedOnce by remember { mutableStateOf(false) }
     // Re-evaluate "follow" only when a *user* scroll settles — programmatic scrolls
     // and streamed growth must not flip it (that would race the auto-follow off).
     LaunchedEffect(listState) {
@@ -354,9 +359,16 @@ fun SessionDetailScreen(
     LaunchedEffect(ui.pendingUserTurns.lastOrNull()?.id) {
         if (ui.pendingUserTurns.isNotEmpty()) stick = true
     }
-    // Follow new / streamed content while pinned.
-    LaunchedEffect(nodes.size, ui.live, stick) {
-        if (stick && nodes.isNotEmpty()) listState.scrollToItem(nodes.size)
+    // Follow new / streamed content while pinned. The window's older-pages
+    // sentinel occupies one slot before the nodes, so the bottom anchor lives at
+    // nodes.size + (sentinel ? 1 : 0) — targeting nodes.size parks the viewport
+    // at the top of the last node when it is taller than the screen (fleet M1
+    // review blocker: streaming follow died mid-reply on 120+ turn sessions).
+    LaunchedEffect(nodes.size, ui.live, stick, ui.canLoadOlder) {
+        if (stick && nodes.isNotEmpty()) {
+            listState.scrollToItem(nodes.size + if (ui.canLoadOlder) 1 else 0)
+            bottomPinnedOnce = true
+        }
     }
     val scrollToId: (String) -> Unit = remember(nodes) {
         { id ->
@@ -602,10 +614,15 @@ fun SessionDetailScreen(
                         // scrolled the window's top into view) fires the next older
                         // page; the VM single-flights and re-fires per offset, so
                         // holding the top keeps paging. Legacy servers (no window)
-                        // never show it.
+                        // never show it. The trigger stays unarmed until the initial
+                        // pin-to-bottom has landed — on frame 1 this row composes at
+                        // index 0, and firing then would fetch one unrequested page
+                        // on every open (fleet M1 review).
                         if (ui.canLoadOlder) {
                             item(key = "__timeline_older__") {
-                                LaunchedEffect(ui.turnsOffset) { viewModel.loadOlderTurns() }
+                                LaunchedEffect(ui.turnsOffset, bottomPinnedOnce) {
+                                    if (bottomPinnedOnce) viewModel.loadOlderTurns()
+                                }
                                 Box(
                                     Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center,
@@ -671,7 +688,7 @@ fun SessionDetailScreen(
             ) {
                 JumpToLatestButton {
                     stick = true
-                    scope.launch { listState.animateScrollToItem(nodes.size) }
+                    scope.launch { listState.animateScrollToItem(nodes.size + if (ui.canLoadOlder) 1 else 0) }
                 }
             }
         }

@@ -1417,8 +1417,12 @@ class SessionDetailViewModel @Inject constructor(
     /** M1 seam-mismatch fallback: refetch the tail window whole (web parity).
      *  Clears loadingOlder whatever the outcome, so the sentinel can retry. */
     private fun reloadTailWindow() {
-        val c = client ?: return
-        val id = conversationId ?: return
+        val c = client
+        val id = conversationId
+        if (c == null || id == null) {
+            _ui.update { it.copy(loadingOlder = false) }
+            return
+        }
         viewModelScope.launch {
             runCatching { c.conversationDetail(id, tailTurns = TAIL_TURNS_DEFAULT) }
                 .getOrNull()?.let { adoptWindowDetail(it) }
