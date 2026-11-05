@@ -234,7 +234,7 @@ class CodegClient(
 
     /**
      * Session detail incl. message history. [tailTurns] (last N turns,
-     * user-round-aligned) / [fromIndex] (exact slice `full[fromIndex..]`) ask
+     * user-round-aligned) / [fromIndex] (exact slice starting at fromIndex) ask
      * the server for a TURN WINDOW (fleet M1, server 0.41.3+ web parity):
      * `turns` then holds only the window and the response's window metadata
      * carries the splice coordinates — a null [ConversationDetail.turnsOffset]

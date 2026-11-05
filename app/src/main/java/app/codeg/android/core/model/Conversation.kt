@@ -55,7 +55,7 @@ data class SessionStats(
  * polymorphic blocks.
  *
  * fleet M1 turn window: when the request carried `tailTurns`/`fromIndex` (and
- * the server is 0.41.3+), [turns] holds only `full[turnsOffset..]` while
+ * the server is 0.41.3+), [turns] holds only the tail slice from turnsOffset on, while
  * summary/stats still describe the FULL transcript, and the four window fields
  * are set together. All null (or any one missing) = a legacy full response —
  * `turns` is the whole transcript and windowed merging must stay disabled.
