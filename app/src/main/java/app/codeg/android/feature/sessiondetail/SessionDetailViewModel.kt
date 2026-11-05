@@ -9,11 +9,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.codeg.android.R
 import app.codeg.android.core.data.HandoffSource
+import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.datastore.ConversationSelectorStore
 import app.codeg.android.core.datastore.DeviceAgentPrefsStore
 import app.codeg.android.core.datastore.DraftFolderPrefsStore
 import app.codeg.android.core.datastore.DraftStore
+import app.codeg.android.core.datastore.IdeaEntry
+import app.codeg.android.core.datastore.IdeaStore
 import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.datastore.SessionRef
 import app.codeg.android.core.datastore.SelectorPrefs
@@ -156,6 +159,8 @@ class SessionDetailViewModel @Inject constructor(
     private val draftFolderPrefs: DraftFolderPrefsStore,
     private val projectRepo: app.codeg.android.core.data.SessionProjectRepository,
     private val sessionAutoStart: app.codeg.android.core.data.SessionAutoStart,
+    // 批v162 正向快链：插入表单的「想法」来源与收件箱同一条 IdeaStore 流。
+    private val ideaStore: IdeaStore,
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
     @ApplicationScope private val appScope: CoroutineScope,
@@ -1999,6 +2004,92 @@ class SessionDetailViewModel @Inject constructor(
     fun removeAttachment(id: String) {
         _ui.update { it.copy(attachments = it.attachments.filterNot { a -> a.id == id }) }
     }
+
+    // region 批v162 想法快链（正向：想法 → 当前会话 composer）
+
+    /** 想法卡列表（插入表单的「想法」来源）——与收件箱同一条 IdeaStore 流，读失败退化为空表。 */
+    suspend fun loadIdeas(): List<IdeaEntry> =
+        runCatching { ideaStore.ideas.first() }.getOrDefault(emptyList())
+
+    /**
+     * 正向①：想法文字追加进当前草稿（不覆盖）。草稿真身在 screen 的本地状态
+     * （VM 不持有它），所以这里只提供与「快捷消息」同一条 append 语义；screen
+     * 拿返回值经插入表单的 onInsert 通道落回草稿并走既有 [saveDraft]——绝不
+     * 另开直写 DataStore 的旁路（那会跟屏幕内存态打架）。
+     */
+    fun importIdeaText(text: String, into: String): String =
+        ComposeInsert.appendMessage(text, into)
+
+    /**
+     * 正向②：想法附件进 composer。图片走与相册图完全相同的降采样 base64 管线
+     * （含 2MiB 聚合预算的自适应目标），只是源从相册 Uri 换成私有目录文件；
+     * 非图片直接复用 [stageWorkspaceFile] 的工作区上传（409 自动改名同款）——
+     * file:// Uri 本进程内 ContentResolver 打得开，所以一行上传逻辑都不复制。
+     * 逐个失败计入跳过数，不中断整批。
+     */
+    fun importIdeaAttachments(attachments: List<LocalAttachment>) {
+        if (attachments.isEmpty()) return
+        val images = attachments.filter { it.isImage }
+        val files = attachments.filterNot { it.isImage }
+        if (images.isEmpty() && files.isEmpty()) return
+        viewModelScope.launch {
+            var added = 0
+            var skipped = 0
+            val failures = mutableListOf<String>()
+            images.forEachIndexed { index, att ->
+                if (_ui.value.attachments.size >= AttachmentPrep.MAX_COUNT) { skipped++; return@forEachIndexed }
+                // 与 addAttachments 同一条自适应预算公式：批越大，单张目标越小。
+                val currentRawBytes = _ui.value.attachments.sumOf { it.base64.length } * 3 / 4
+                val remainingInBatch = images.size - index
+                val adaptiveTarget = (((AttachmentPrep.MAX_TOTAL_BYTES - currentRawBytes) * 19 / 20) / remainingInBatch)
+                    .coerceIn(64_000, AttachmentPrep.TARGET_BYTES)
+                val prepared = AttachmentPrep.fromLocalFile(att.localPath, adaptiveTarget)
+                if (prepared == null) { skipped++; return@forEachIndexed }
+                val currentBytes = _ui.value.attachments.sumOf { it.base64.length }
+                if (currentBytes + prepared.base64.length > AttachmentPrep.MAX_TOTAL_BYTES * 4 / 3) { skipped++; return@forEachIndexed }
+                _ui.update { it.copy(attachments = it.attachments + prepared) }
+                added++
+            }
+            if (files.isNotEmpty()) {
+                val root = folder?.path ?: _ui.value.folderPath
+                val c = client
+                val resolver = appContext.contentResolver
+                for (att in files) {
+                    if (_ui.value.fileAttachments.size >= FILE_MAX_COUNT) { skipped++; continue }
+                    if (att.size > FILE_MAX_BYTES) {
+                        skipped++
+                        failures += appContext.getString(R.string.file_attach_reason_too_large, att.name)
+                        continue
+                    }
+                    val uri = Uri.fromFile(File(att.localPath))
+                    val prepared: FileAttachment? = if (c != null && !root.isNullOrBlank()) {
+                        when (val staged = stageWorkspaceFile(c, root, uri, att.name, att.size, resolver)) {
+                            is StageResult.Ok -> staged.att
+                            is StageResult.Failed -> { failures += staged.reason; null }
+                        }
+                    } else {
+                        inlineTextAttachment(resolver, uri, att.name, att.size)
+                    }
+                    if (prepared == null) { skipped++; continue }
+                    _ui.update { it.copy(fileAttachments = it.fileAttachments + prepared) }
+                    added++
+                }
+            }
+            if (added > 0 || skipped > 0 || failures.isNotEmpty()) {
+                _ui.update {
+                    it.copy(
+                        notice = if (failures.isEmpty()) {
+                            appContext.getString(R.string.idea_import_done, added, skipped)
+                        } else {
+                            appContext.getString(R.string.file_attach_failed_list, added, skipped, failures.joinToString("；"))
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    // endregion
 
     // endregion
 

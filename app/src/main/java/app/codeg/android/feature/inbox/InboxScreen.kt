@@ -203,6 +203,17 @@ fun InboxScreen(
     var selected by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
     var pendingBatchDelete by remember { mutableStateOf<List<String>?>(null) }
 
+    // 批v162 反向快链：追加到已有会话。appendingId（saveable）只认想法，
+    // appendTarget（对象）落在选择器选中之后——旋转丢 target 退回选择器，
+    // 不丢"正在追加哪个想法"。
+    var appendingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var appendTarget by remember { mutableStateOf<SessionPickerRow?>(null) }
+    val appending = appendingId?.let { id -> ui.ideas.firstOrNull { it.id == id } }
+    // 「已派进会话」小标的来源：已确认的会话型 DispatchRef（ideaId → 最近一笔）。
+    val appendedSessionByIdeaId = remember(ui.confirmedRefs) {
+        ui.confirmedRefs.filter { it.sessionMode && it.ideaId != null }.associateBy { it.ideaId!! }
+    }
+
     Scaffold(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         floatingActionButton = {
@@ -271,6 +282,9 @@ fun InboxScreen(
                             cm.setPrimaryClip(ClipData.newPlainText("idea", "${idea.title}\n${idea.description}"))
                         },
                         onDelete = { pendingDelete = idea },
+                        // 批v162 反向快链入口（⋯菜单与长按菜单同一条 DropdownMenu）。
+                        onAppendToSession = { appendingId = idea.id },
+                        appendedToSession = idea.id in appendedSessionByIdeaId,
                         onProbe = { ref?.let { viewModel.probe(it.requestId) } },
                         onDiscard = { ref?.let { confirmRef = it; confirmRedispatch = false } },
                         onRedispatch = { ref?.let { confirmRef = it; confirmRedispatch = true } },
@@ -513,6 +527,33 @@ fun InboxScreen(
             },
         )
     }
+
+    // 批v162 反向快链状态机：选择器（挑目标会话）→ 预览确认（追加发送）→
+    // 成功关双单并跳转目标会话；确认单的返回是回选择器，不是关整个流程。
+    appending?.let { idea ->
+        val target = appendTarget
+        if (target == null) {
+            SessionPickerSheet(
+                viewModel = viewModel,
+                onPick = { appendTarget = it },
+                onDismiss = { appendingId = null },
+            )
+        } else {
+            AppendToSessionSheet(
+                idea = idea,
+                target = target,
+                viewModel = viewModel,
+                onSent = { picked ->
+                    appendTarget = null
+                    appendingId = null
+                    // 批v149 同款跳转：先落设备再推详情（MainShell 的 onOpenSession
+                    // 接线里做 handoffTo 舞步），会话页 load 完自动发送追加的指令。
+                    onOpenSession(picked.serverId, picked.conversationId)
+                },
+                onDismiss = { appendTarget = null },
+            )
+        }
+    }
 }
 
 /**
@@ -542,6 +583,10 @@ private fun IdeaCard(
     onEdit: () -> Unit,
     onCopy: (Context) -> Unit,
     onDelete: () -> Unit,
+    /** 批v162 反向快链：⋯菜单 / 长按菜单的「追加到已有会话」——打开目标选择器。 */
+    onAppendToSession: () -> Unit,
+    /** 批v162: 这条想法已有确认入账的会话追加（读 DispatchRef）——出小标。 */
+    appendedToSession: Boolean,
     onProbe: () -> Unit,
     onDiscard: () -> Unit,
     onRedispatch: () -> Unit,
@@ -591,6 +636,10 @@ private fun IdeaCard(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.inbox_copy)) },
                                 onClick = { menuOpen = false; onCopy(context) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.inbox_append_to_session)) },
+                                onClick = { menuOpen = false; onAppendToSession() },
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.inbox_menu_select)) },
@@ -656,6 +705,16 @@ private fun IdeaCard(
                     images = idea.attachments.filter { it.isImage }
                         .map { ImageViewerSource.File(it.localPath) },
                     onDismiss = { cardViewerIndex = null },
+                )
+            }
+            // 批v162：已派进会话小标——这条想法的文字/附件确认追加进过某个会话
+            //（DispatchRef CONFIRMED + sessionMode）。想法留在收件箱，标不挡派发。
+            if (appendedToSession) {
+                Text(
+                    stringResource(R.string.inbox_appended_to_session),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.accent,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
             if (unresolved != null) {

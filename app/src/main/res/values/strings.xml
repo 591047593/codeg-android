@@ -1017,6 +1017,31 @@
     <string name="insert_empty_experts">No experts linked to this agent.</string>
     <string name="insert_empty_commands">No slash commands available.</string>
 
+    <!-- ===== 批v162 · Idea ⇄ session quick-link (forward: insert sheet source) ===== -->
+    <string name="insert_ideas">Ideas</string>
+    <string name="insert_empty_ideas">No ideas in the inbox.</string>
+    <string name="insert_idea_preview_title">Idea preview</string>
+    <string name="insert_idea_preview_back">Back to the idea list</string>
+    <string name="insert_idea_import_text">Text only</string>
+    <string name="insert_idea_import_all">Text + attachments</string>
+    <string name="idea_import_done">Added %1$d attachment(s); %2$d skipped</string>
+
+    <!-- ===== 批v162 · Idea ⇄ session quick-link (reverse: append into an existing session) ===== -->
+    <string name="inbox_append_to_session">Append to a session</string>
+    <string name="inbox_appended_to_session">Sent to a session</string>
+    <string name="picker_title">Append to which session?</string>
+    <string name="picker_search_hint">Search sessions</string>
+    <string name="picker_filter_all_devices">All devices</string>
+    <string name="picker_filter_all_projects">All projects</string>
+    <string name="picker_filter_board_only">Board only</string>
+    <string name="picker_empty">No sessions match the current filters.</string>
+    <string name="picker_failed">Couldn\'t load sessions — tap to retry.</string>
+    <string name="picker_time_just_now">just now</string>
+    <string name="picker_time_minutes_ago">%1$d min ago</string>
+    <string name="picker_time_hours_ago">%1$d h ago</string>
+    <string name="append_target_label">Sending to</string>
+    <string name="append_send">Append &amp; send</string>
+
     <!-- ===== Session Detail · Permission fallback ===== -->
     <string name="perm_request_title">Permission Request</string>
     <string name="perm_details_expand">Show full payload</string>

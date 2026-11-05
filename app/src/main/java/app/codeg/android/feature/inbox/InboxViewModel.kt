@@ -2,6 +2,7 @@ package app.codeg.android.feature.inbox
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.AttachmentStager
 import app.codeg.android.core.data.DispatchOutcome
 import app.codeg.android.core.data.DispatchPipeline
@@ -11,6 +12,7 @@ import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.LocalAttachment
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.data.SessionAutoStart
+import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.DispatchStore
@@ -21,6 +23,9 @@ import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
 import app.codeg.android.core.network.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +38,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
@@ -53,6 +59,8 @@ class InboxViewModel @Inject constructor(
     /** 批v155: the dispatch form's 模型 row probes agent modes through this. */
     private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
     private val sessionAutoStart: SessionAutoStart,
+    // 批v162 反向快链：「仅看板」筛选读看板成员账本。
+    private val boardTrackStore: app.codeg.android.core.datastore.BoardTrackStore,
     /** 批v154 附件：SAF 选择 → 应用私有目录落盘（想法要跨重启/跨设备存活）。
      *  派发表单也通过这个接口自己收附件（同一套存储布局）。 */
     override val drafts: app.codeg.android.core.datastore.DraftStore,
@@ -844,6 +852,210 @@ class InboxViewModel @Inject constructor(
 
     private fun fail(message: String) {
         _ui.value = _ui.value.copy(dispatching = false, dispatchError = message)
+    }
+
+    // endregion
+
+    // region 批v162 反向快链：想法 → 追加到已有会话
+
+    /**
+     * 选择器的状态（与派发账本的 dispatching 互不干扰——追加不是创建，
+     * 不走 hasUnresolvedDuplicate 闸门）。error 只属于追加执行，加载失败走 failed。
+     */
+    data class PickerUi(
+        val loading: Boolean = false,
+        /** 每台设备都失败且零行——给一次点击重试。 */
+        val failed: Boolean = false,
+        val rows: List<SessionPickerRow> = emptyList(),
+        /** 看板成员 key（serverId:conversationId，未归档）——「仅看板」筛选用。 */
+        val trackedKeys: Set<String> = emptySet(),
+        /** 追加发送在途（上传附件/武装指令）。 */
+        val sending: Boolean = false,
+        /** 上一次追加执行的失败原因（成功后清空）。 */
+        val error: String? = null,
+    )
+
+    private val _picker = MutableStateFlow(PickerUi())
+    val picker: StateFlow<PickerUi> = _picker.asStateFlow()
+
+    /** 追加批次代号：一个迟到的设备切片不许覆盖新一轮。 */
+    private var pickerSeq = 0
+
+    /**
+     * 选择器数据：每台可见设备一轮 listConversations(sortBy="updated")（聚合
+     * 超时族、单设备失败隔离），合并按 updatedAt 倒序取前 [PICKER_LIMIT]。
+     * 一次性拉取——选择器是挑目标，不是浏览器，不做轮询；每次打开重拉一轮。
+     */
+    fun loadPickerSessions() {
+        val seq = ++pickerSeq
+        _picker.value = _picker.value.copy(loading = true, failed = false)
+        viewModelScope.launch {
+            val profiles = runCatching { repository.visibleProfiles.first() }.getOrDefault(emptyList())
+            // 看板成员账本一次读：读坏了「仅看板」退化为空集（筛不出东西），不拖死选择器。
+            val trackedKeys = runCatching {
+                boardTrackStore.trackedNow().filter { it.archivedAt == null }.map { it.key }.toSet()
+            }.getOrDefault(emptySet())
+            if (seq != pickerSeq) return@launch
+            val merged = mutableListOf<SessionPickerRow>()
+            var anySuccess = false
+            try {
+                coroutineScope {
+                    val slices = profiles.map { profile -> async { fetchPickerSlice(profile) } }
+                    slices.forEach { slice ->
+                        slice.await()?.let { rows -> anySuccess = true; merged += rows }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Scope 级失败：本轮按无数据处理（failed 已由结果兜底）。
+            }
+            if (seq != pickerSeq) return@launch
+            _picker.value = PickerUi(
+                loading = false,
+                failed = !anySuccess && merged.isEmpty(),
+                rows = merged.sortedByDescending { it.updatedAt }.take(PICKER_LIMIT),
+                trackedKeys = trackedKeys,
+            )
+        }
+    }
+
+    /** 一台设备的会话切片；null = 拉取失败/超时（区别于"成功但零行"）。 */
+    private suspend fun fetchPickerSlice(profile: ServerProfile): List<SessionPickerRow>? = runCatching {
+        val client = repository.client(profile) ?: error("token missing")
+        withTimeoutOrNull(AGG_DEVICE_TIMEOUT_MS) {
+            val convs = client.listConversations(sortBy = "updated").take(PICKER_PER_DEVICE)
+            // 项目名尽力而为：listFolders 挂了只掉项目标签，不掉整台设备的行。
+            val folders = runCatching { client.listFolders() }.getOrDefault(emptyList())
+                .associate { it.id to it.name }
+            convs.map { c ->
+                SessionPickerRow(
+                    serverId = profile.id,
+                    serverName = profile.name,
+                    conversationId = c.id,
+                    title = c.trimmedTitle ?: "#${c.id}",
+                    agent = c.agentType,
+                    folderId = c.folderId,
+                    folderName = folders[c.folderId],
+                    updatedAt = c.updatedAt,
+                    // 选择器的圆点用会话状态旗标即可：不做活跃连接探针（那是
+                    // Activity 轮询的事，一次拉取多打一轮 RPC 不值）。
+                    live = c.status.isLive,
+                )
+            }
+        } ?: error("device timeout")
+    }.getOrNull()
+
+    /**
+     * 反向执行链（选中目标会话后）：上传非图片附件 → 图片降采样内联 →
+     * 构建首条指令 → SessionAutoStart.arm → 记 DispatchRef。调用方在
+     * onSent 里关单并跳转目标会话（跳转后 SessionDetailViewModel 消费
+     * armed 指令自动发送）。
+     *
+     * 不变量与派发同款：先附件后发送，任何附件失败=干净失败（没 arm、
+     * 没账本、没跳转）；账本写失败不回滚发送（指令已武装，留痕是尽力而为）。
+     * 思想法保留在收件箱（拷贝+留痕，不是搬走），卡片出「已派进会话」小标。
+     */
+    fun sendIntoSession(idea: IdeaEntry, target: SessionPickerRow, onSent: () -> Unit) {
+        if (_picker.value.sending) return
+        val prompt = IdeaPromptBuilder.compose(idea.title, idea.description)
+        if (prompt.isBlank() && idea.attachments.isEmpty()) {
+            _picker.value = _picker.value.copy(error = "这条想法没有可追加的内容")
+            return
+        }
+        _picker.value = _picker.value.copy(sending = true, error = null)
+        viewModelScope.launch {
+            val ok = try {
+                val profile = repository.profiles.first().firstOrNull { it.id == target.serverId }
+                    ?: error("目标设备不存在")
+                val client = repository.client(profile) ?: error("设备不可用或 Token 缺失")
+                // 目标会话的项目路径（附件上传落点）：会话 id 反查 folder，
+                // 再取 path——与派发服务 resolve 根目录同一件事，只是入口是会话。
+                val detail = client.conversationDetail(target.conversationId)
+                val folders = runCatching { client.listFolders() }.getOrDefault(emptyList())
+                val folder = folders.firstOrNull { it.id == detail.summary.folderId }
+                // 图片：内联（降采样，聚合 ≤ 2MiB prompt 上限的 1.3MB 预算）——
+                // 与派发会话模式同款语义，绝不往用户仓库里塞图片副本。
+                val images = idea.attachments.filter { it.isImage }
+                val inlineImages = prepareInlineImages(images)
+                // 非图片：工作区上传（DispatchService 同一条管线，409 语义同款）。
+                val files = idea.attachments.filterNot { it.isImage }
+                val uploaded = if (files.isEmpty()) {
+                    emptyList()
+                } else {
+                    val root = folder?.path ?: error("目标会话的项目路径未找到，附件未上传")
+                    dispatchService.uploadToWorkspace(client, root, dispatchService.newStageDir(), files)
+                }
+                // 空 prompt + 只有文件：arm 自带空 payload 防线（文件也算有效载荷）。
+                sessionAutoStart.arm(target.serverId, target.conversationId, prompt, uploaded, inlineImages)
+                // 留痕：会话已存在，无创建歧义，直接 CONFIRMED（remoteTodoId=会话 id，
+                // sessionMode 让这笔账永远按会话解读）。账本写失败不拦发送。
+                runCatching {
+                    dispatchStore.put(
+                        DispatchRef(
+                            requestId = java.util.UUID.randomUUID().toString(),
+                            ideaId = idea.id,
+                            serverId = target.serverId,
+                            serverName = target.serverName,
+                            folderId = folder?.id ?: 0,
+                            folderName = folder?.name.orEmpty(),
+                            title = DispatchService.cap(ledgerTitle(idea), 120),
+                            remoteTodoId = target.conversationId,
+                            state = DispatchState.CONFIRMED,
+                            createdAt = System.currentTimeMillis(),
+                            description = idea.description,
+                            sessionMode = true,
+                            attachments = idea.attachments,
+                            uploadedPaths = uploaded.map { it.absolutePath },
+                        ),
+                    )
+                }
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _picker.value = _picker.value.copy(sending = false, error = "追加失败：" + (e.message ?: "未知错误"))
+                false
+            }
+            if (!ok) return@launch
+            _picker.value = _picker.value.copy(sending = false, error = null)
+            onSent()
+        }
+    }
+
+    /**
+     * 想法图片 → 内联块。聚合预算与 composer 同一条公式（批越大单张目标越小）；
+     * 任一张读不出/压不进预算即抛——半套附件的"追加"是谎言（干净失败）。
+     */
+    private suspend fun prepareInlineImages(
+        images: List<LocalAttachment>,
+    ): List<SessionAutoStart.InlineImage> {
+        if (images.isEmpty()) return emptyList()
+        val out = mutableListOf<SessionAutoStart.InlineImage>()
+        images.forEachIndexed { index, att ->
+            val remaining = images.size - index
+            val currentRawBytes = out.sumOf { it.base64.length } * 3 / 4
+            val adaptiveTarget = (((app.codeg.android.feature.sessiondetail.AttachmentPrep.MAX_TOTAL_BYTES - currentRawBytes) * 19 / 20) / remaining)
+                .coerceIn(64_000, app.codeg.android.feature.sessiondetail.AttachmentPrep.TARGET_BYTES)
+            val prepared = app.codeg.android.feature.sessiondetail.AttachmentPrep.fromLocalFile(att.localPath, adaptiveTarget)
+                ?: error("${att.name}：图片读取或压缩失败")
+            out += SessionAutoStart.InlineImage(prepared.base64, prepared.mimeType)
+        }
+        return out
+    }
+
+    /** 账本标题：标题空则从描述第一行派生（与 quickInsertTodo 同一条规则）。 */
+    private fun ledgerTitle(idea: IdeaEntry): String =
+        idea.title.trim().ifBlank {
+            idea.description.trim().lineSequence().firstOrNull { it.isNotBlank() }
+                ?.let { DispatchService.cap(it, 40).trim() }
+                .orEmpty()
+        }
+
+    /** 选择器/追加的行数上限与单设备切片上限。 */
+    private companion object {
+        const val PICKER_LIMIT = 60
+        const val PICKER_PER_DEVICE = 50
     }
 
     // endregion

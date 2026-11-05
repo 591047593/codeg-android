@@ -359,12 +359,8 @@ class DispatchService @Inject constructor(
      * Upload every attachment into `<folder>/.codeg/uploads/<requestId>/` and
      * return the absolute paths the prompt will point at. Throws on the first
      * real failure — a partial attachment set must never be dispatched silently.
-     *
-     * A 409 is NOT retried under a renamed file: the directory is unique per
-     * request, so a collision can only be our own earlier attempt whose bytes
-     * already landed — the same path is the honest answer. Renaming would also
-     * turn the `.gitignore` seed into `.gitignore-2` and silently un-ignore the
-     * whole staging directory (P0-3 坑二).
+     * (批v162: the per-file mechanics moved to [uploadToWorkspace]; this wrapper
+     * only resolves the dispatch target's folder path.)
      */
     private suspend fun uploadAttachments(
         client: app.codeg.android.core.network.CodegClient,
@@ -375,7 +371,27 @@ class DispatchService @Inject constructor(
         val folders = client.listFolders()
         val root = folders.firstOrNull { it.id == req.folderId }?.path
             ?: throw IllegalStateException("目标项目路径未找到，附件未上传")
-        val targetDir = "$STAGE_ROOT/$requestId"
+        return uploadToWorkspace(client, root, "$STAGE_ROOT/$requestId", attachments)
+    }
+
+    /**
+     * 批v162（想法⇄会话快链）：公开的上传入口——把一批本地附件传进目标设备的
+     * 工作区 [root] 下的 [targetDir]，返回 prompt 可引用的绝对路径。追加到已有
+     * 会话的非图片附件走与派发完全同一条管线（同样的落点约定、同样的 409 语义、
+     * 同样的"首败即抛"），不让第二份实现漂移。
+     *
+     * A 409 is NOT retried under a renamed file: the directory is unique per
+     * request, so a collision can only be our own earlier attempt whose bytes
+     * already landed — the same path is the honest answer. Renaming would also
+     * turn the `.gitignore` seed into `.gitignore-2` and silently un-ignore the
+     * whole staging directory (P0-3 坑二).
+     */
+    suspend fun uploadToWorkspace(
+        client: app.codeg.android.core.network.CodegClient,
+        root: String,
+        targetDir: String,
+        attachments: List<LocalAttachment>,
+    ): List<UploadedAttachment> {
         // Best-effort: an existing seed (409) is exactly what we want. Without
         // it every dispatch would leave an untracked directory in the repo.
         runCatching {
@@ -411,6 +427,13 @@ class DispatchService @Inject constructor(
             }
         }
     }
+
+    /**
+     * 批v162: a fresh per-append staging directory under [STAGE_ROOT] — the same
+     * layout a dispatch uses, so two appends (or an append and a dispatch) never
+     * share a directory and the gitignore seed above keeps all of them invisible.
+     */
+    fun newStageDir(): String = "$STAGE_ROOT/${UUID.randomUUID()}"
 
     /**
      * Encode one local image for INLINE delivery (a conversation's first prompt

@@ -91,9 +91,29 @@ object AttachmentPrep {
     ): Attachment? = withContext(Dispatchers.Default) {
         val bytes = runCatching { resolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull() ?: return@withContext null
         if (bytes.isEmpty()) return@withContext null
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+        decodeAndEncode(bytes, targetBytes)
+    }
+
+    /**
+     * 批v162（想法⇄会话快链）：同一条降采样/编码管线，源换成已落在应用私有
+     * 目录的本地文件（想法附件）——不走 ContentResolver，不造 file:// 假 Uri，
+     * 纯文件流读字节。null = 文件读不出或怎么压都进不了预算。
+     */
+    suspend fun fromLocalFile(
+        path: String,
+        targetBytes: Int = TARGET_BYTES,
+    ): Attachment? = withContext(Dispatchers.Default) {
+        val bytes = runCatching { java.io.File(path).inputStream().use { it.readBytes() } }.getOrNull()
+            ?: return@withContext null
+        if (bytes.isEmpty()) return@withContext null
+        decodeAndEncode(bytes, targetBytes)
+    }
+
+    /** [fromUri]/[fromLocalFile] 共用的解码+降采样+编码核心（CPU 密集，调用方已在 Default 上）。 */
+    private fun decodeAndEncode(bytes: ByteArray, targetBytes: Int): Attachment? {
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
         val longest = max(bitmap.width, bitmap.height)
-        when (val start = prepRoute(bytes.size, longest, targetBytes)) {
+        return when (val start = prepRoute(bytes.size, longest, targetBytes)) {
             -1 -> Attachment(
                 id = UUID.randomUUID().toString(),
                 base64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
@@ -116,13 +136,14 @@ object AttachmentPrep {
                 }
                 val best = out
                 if (best == null || best.isEmpty() || best.size > MAX_BYTES) {
-                    return@withContext null
+                    null
+                } else {
+                    Attachment(
+                        id = UUID.randomUUID().toString(),
+                        base64 = Base64.encodeToString(best, Base64.NO_WRAP),
+                        mimeType = "image/jpeg",
+                    )
                 }
-                Attachment(
-                    id = UUID.randomUUID().toString(),
-                    base64 = Base64.encodeToString(best, Base64.NO_WRAP),
-                    mimeType = "image/jpeg",
-                )
             }
         }
     }

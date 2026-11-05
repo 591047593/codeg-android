@@ -996,6 +996,31 @@
     <string name="insert_empty_experts">没有与该智能体关联的专家。</string>
     <string name="insert_empty_commands">暂无可用的斜杠命令。</string>
 
+    <!-- ===== 批v162 · 想法⇄会话快链（正向：插入表单的「想法」来源） ===== -->
+    <string name="insert_ideas">想法</string>
+    <string name="insert_empty_ideas">收件箱还没有想法。</string>
+    <string name="insert_idea_preview_title">想法预览</string>
+    <string name="insert_idea_preview_back">返回想法列表</string>
+    <string name="insert_idea_import_text">只导文字</string>
+    <string name="insert_idea_import_all">文字+附件</string>
+    <string name="idea_import_done">已导入 %1$d 个附件，跳过 %2$d 个</string>
+
+    <!-- ===== 批v162 · 想法⇄会话快链（反向：追加到已有会话） ===== -->
+    <string name="inbox_append_to_session">追加到已有会话</string>
+    <string name="inbox_appended_to_session">已派进会话</string>
+    <string name="picker_title">追加到哪个会话？</string>
+    <string name="picker_search_hint">搜索会话</string>
+    <string name="picker_filter_all_devices">全部设备</string>
+    <string name="picker_filter_all_projects">全部项目</string>
+    <string name="picker_filter_board_only">仅看板</string>
+    <string name="picker_empty">当前筛选下没有会话。</string>
+    <string name="picker_failed">会话加载失败——点击重试。</string>
+    <string name="picker_time_just_now">刚刚</string>
+    <string name="picker_time_minutes_ago">%1$d 分钟前</string>
+    <string name="picker_time_hours_ago">%1$d 小时前</string>
+    <string name="append_target_label">发送到</string>
+    <string name="append_send">追加发送</string>
+
     <!-- ===== Session Detail · Permission fallback ===== -->
     <string name="perm_request_title">权限请求</string>
     <string name="perm_details_expand">展开完整调用参数</string>
