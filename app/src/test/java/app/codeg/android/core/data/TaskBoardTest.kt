@@ -146,9 +146,9 @@ class TaskBoardTest {
     /** Shelved/archived outrank the underlying status (muted wins). */
     @Test
     fun `archived and deferred rows project their own accent`() {
-        assertEquals(TaskAccentTone.ARCHIVED, taskAccentTone(task(1, "done", deferred = false).copyTask(archivedAt = "2026-11-01T00:00:00Z")))
-        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(2, "review", deferred = true)))
-        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(3, "failed", deferred = true)))
+        assertEquals(TaskAccentTone.ARCHIVED, taskAccentTone(task(1, "done", deferred = false).copyTask(archivedAt = "2026-11-01T00:00:00Z").task))
+        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(2, "review", deferred = true).task))
+        assertEquals(TaskAccentTone.SHELVED, taskAccentTone(task(3, "failed", deferred = true).task))
     }
 
     /** Column stepping clamps at both ends — never wraps around (W5 拍板). */
