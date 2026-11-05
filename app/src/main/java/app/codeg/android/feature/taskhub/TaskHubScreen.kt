@@ -45,7 +45,7 @@ import androidx.compose.material.icons.rounded.CallMerge
 import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Clock
+import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -825,7 +825,7 @@ private fun WebStatusChip(task: WorkTaskInfo) {
     when {
         deferred -> ChipPill(
             bg = colors.textSecondary.copy(alpha = 0.14f), fg = colors.textSecondary,
-            label = label, base = base, icon = Icons.Rounded.Clock,
+            label = label, base = base, icon = Icons.Rounded.AccessTime,
         )
         task.status in LIVE_CHIP_STATUSES -> Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -944,7 +944,7 @@ private fun cardDeferToggle(task: WorkTaskInfo): CardAction? = when {
     isEffectivelyDeferred(task) ->
         CardAction(R.string.task_action_undefer, Icons.Rounded.Inbox, CardAction.Kind.UNDEFER)
     task.status in DEFERRABLE_STATUSES && !task.isArchivedLike ->
-        CardAction(R.string.task_action_defer, Icons.Rounded.Clock, CardAction.Kind.DEFER)
+        CardAction(R.string.task_action_defer, Icons.Rounded.AccessTime, CardAction.Kind.DEFER)
     else -> null
 }
 
@@ -1636,7 +1636,7 @@ private fun DetailZonePanel(
                     ZoneGhost(R.string.task_action_follow_up, Icons.AutoMirrored.Rounded.Undo, busy) {
                         onAction(ConfirmAction.RETURN(entry))
                     }
-                    ZoneGhost(R.string.task_action_defer, Icons.Rounded.Clock, busy) {
+                    ZoneGhost(R.string.task_action_defer, Icons.Rounded.AccessTime, busy) {
                         onAction(ConfirmAction.DEFER(entry))
                     }
                 }
@@ -1672,7 +1672,7 @@ private fun DetailZonePanel(
                             onAction(ConfirmAction.UNDEFER(entry))
                         }
                     } else {
-                        ZoneGhost(R.string.task_action_defer, Icons.Rounded.Clock, busy) {
+                        ZoneGhost(R.string.task_action_defer, Icons.Rounded.AccessTime, busy) {
                             onAction(ConfirmAction.DEFER(entry))
                         }
                     }

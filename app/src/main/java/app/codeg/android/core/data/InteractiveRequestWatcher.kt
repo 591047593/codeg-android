@@ -5,7 +5,6 @@ import app.codeg.android.core.model.AcpEvent
 import app.codeg.android.core.model.EventEnvelope
 import app.codeg.android.core.network.EventStream
 import app.codeg.android.core.network.PetSessionRow
-import app.codeg.android.core.network.ServerRepository
 import app.codeg.android.core.network.StreamFrame
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

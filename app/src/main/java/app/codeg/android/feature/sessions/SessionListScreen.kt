@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -75,6 +76,7 @@ import app.codeg.android.core.data.DeviceLoad
 import app.codeg.android.core.data.FocusItem
 import app.codeg.android.core.datastore.ChatListDisplayStore
 import app.codeg.android.core.datastore.ServerProfile
+import app.codeg.android.core.datastore.SessionProject
 import app.codeg.android.core.datastore.SessionRef
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError

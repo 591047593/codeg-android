@@ -77,12 +77,12 @@ import kotlin.math.roundToInt
 import app.codeg.android.R
 import app.codeg.android.app.AppViewModel
 import app.codeg.android.core.data.FocusPreview
+import app.codeg.android.core.data.UNASSIGNED_PROJECT_ID
 import app.codeg.android.core.data.orderedProjectChips
 import app.codeg.android.core.data.resolveCycleTarget
 import app.codeg.android.core.datastore.DispatchState
 import app.codeg.android.core.datastore.SESSION_CHIP_PROJECTS
 import app.codeg.android.core.datastore.ServerProfile
-import app.codeg.android.core.datastore.UNASSIGNED_PROJECT_ID
 import app.codeg.android.core.designsystem.component.GlobalDeviceBar
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.feature.activity.ActivityScreen
@@ -100,6 +100,7 @@ import app.codeg.android.feature.quick.RecentSessionPickerSheet
 import app.codeg.android.feature.search.SearchScreen
 import app.codeg.android.feature.projects.ProjectListScreen
 import app.codeg.android.feature.server.ServerEditorScreen
+import app.codeg.android.feature.settings.SessionProjectsRoute
 import app.codeg.android.feature.settings.SettingsScreen
 import app.codeg.android.feature.server.ServerListScreen
 import app.codeg.android.feature.sessiondetail.SessionDetailScreen

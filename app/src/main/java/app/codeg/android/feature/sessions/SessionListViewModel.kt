@@ -298,7 +298,7 @@ class SessionListViewModel @Inject constructor(
                 appSettingsStore.sessionReadMarks,
                 aggregateDeviceFilter.hiddenDevices,
             ) { agg, all, memberKeys, marks, hiddenDevices ->
-                AggregateSectionsInput(agg, all, memberKeys, marks, hiddenDevices)
+                AggregateSectionsInput(agg.servers, all, memberKeys, marks, hiddenDevices)
             },
             aggregateProjectFilter.hiddenProjects,
             projectRepo.memberProjects,

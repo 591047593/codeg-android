@@ -86,6 +86,14 @@ private data class RoundSignal(
     val allMode: Boolean,
 )
 
+/** Per-device round states + hasLoaded (deviceStates re-scoped in the
+ *  projection). Top-level so [BoardInputs] — which also lives at file scope —
+ *  can name it (a class-private nested type isn't visible up here). */
+private data class RoundState(
+    val deviceStates: List<DeviceLoad> = emptyList(),
+    val hasLoaded: Boolean = false,
+)
+
 /**
  * The 动态 workbench's task-side counterweight to [ActivityViewModel] (批v150):
  * a LIGHT, read-only poll of every in-scope device's task list, projected through
@@ -157,12 +165,6 @@ class WorkbenchViewModel @Inject constructor(
     /** Raw per-device slices (ids are per-server) — every device ever fetched in
      *  this VM's lifetime; the projection re-scopes instantly from this cache. */
     private val tasks = MutableStateFlow<List<TaskBoardEntry>>(emptyList())
-
-    /** Per-device round states + hasLoaded (deviceStates re-scoped in the projection). */
-    private data class RoundState(
-        val deviceStates: List<DeviceLoad> = emptyList(),
-        val hasLoaded: Boolean = false,
-    )
 
     private val round = MutableStateFlow(RoundState())
 
