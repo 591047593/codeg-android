@@ -55,11 +55,23 @@ class BoardTrackStore @Inject constructor(
     /** 一次性读取（VM 拉取时用）——不订阅上游，DataStore 抖动不卡协程。 */
     suspend fun trackedNow(): List<TrackedConversation> = tracked.first()
 
-    /** 加入看板；已存在则保留原 addedAt（幂等，重复点不重置时间）。 */
+    /** 加入看板；已存在则保留原 addedAt（幂等，重复点不重置时间），但**清掉归档
+     *  标记**——重新加入一条归档过的会话，卡片必须回到列里；否则点了没反应，
+     *  看起来像按钮坏了。 */
     suspend fun track(serverId: String, conversationId: Int, folderId: Int) {
         dataStore.edit { prefs ->
             val list = decode(prefs[TRACKED])
-            if (list.any { it.serverId == serverId && it.conversationId == conversationId }) return@edit
+            val index = list.indexOfFirst {
+                it.serverId == serverId && it.conversationId == conversationId
+            }
+            if (index >= 0) {
+                if (list[index].archivedAt != null) {
+                    prefs[TRACKED] = encode(
+                        list.toMutableList().also { it[index] = it[index].copy(archivedAt = null) },
+                    )
+                }
+                return@edit
+            }
             prefs[TRACKED] = encode(
                 list + TrackedConversation(
                     serverId = serverId,

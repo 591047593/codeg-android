@@ -156,6 +156,13 @@ import app.codeg.android.core.designsystem.component.sheetContentScrollLock
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.theme.CodegColors
 import app.codeg.android.core.model.AgentType
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.ui.semantics.Role
+import app.codeg.android.core.designsystem.component.statusColor
+import app.codeg.android.core.designsystem.component.statusLabel
 import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.WorkTaskChangedFile
 import app.codeg.android.core.model.WorkTaskEvent
@@ -455,6 +462,7 @@ fun TaskHubScreen(
                     onAction = onCardAction,
                     onArchiveConversation = viewModel::setConversationArchived,
                     onUntrackConversation = viewModel::untrackConversation,
+                    onSetStatusConversation = viewModel::setConversationStatus,
                     modifier = Modifier.weight(1f),
                     showEmptyHint = showEmptyHint,
                 )
@@ -475,6 +483,7 @@ fun TaskHubScreen(
                     onAction = onCardAction,
                     onArchiveConversation = viewModel::setConversationArchived,
                     onUntrackConversation = viewModel::untrackConversation,
+                    onSetStatusConversation = viewModel::setConversationStatus,
                     modifier = Modifier.weight(1f),
                     showEmptyHint = showEmptyHint,
                 )
@@ -856,6 +865,7 @@ private fun KanbanPager(
     onAction: (ConfirmAction) -> Unit,
     onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
     onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
+    onSetStatusConversation: (serverId: String, conversationId: Int, status: ConversationStatus) -> Unit,
     modifier: Modifier = Modifier,
     showEmptyHint: Boolean = true,
 ) {
@@ -892,6 +902,7 @@ private fun KanbanPager(
                     onAction = onAction,
                     onArchiveConversation = onArchiveConversation,
                     onUntrackConversation = onUntrackConversation,
+                    onSetStatusConversation = onSetStatusConversation,
                     showEmptyHint = showEmptyHint,
                 )
             }
@@ -923,6 +934,7 @@ private fun KanbanColumn(
     onAction: (ConfirmAction) -> Unit,
     onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
     onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
+    onSetStatusConversation: (serverId: String, conversationId: Int, status: ConversationStatus) -> Unit,
     showEmptyHint: Boolean,
 ) {
     val colors = CodegTheme.colors
@@ -995,6 +1007,7 @@ private fun KanbanColumn(
                             onOpen = { onOpenSession(entry.serverId, entry.conversation.id) },
                             onArchive = { onArchiveConversation(entry.serverId, entry.conversation.id, it) },
                             onRemove = { onUntrackConversation(entry.serverId, entry.conversation.id) },
+                            onSetStatus = { onSetStatusConversation(entry.serverId, entry.conversation.id, it) },
                         )
                     }
                 }
@@ -1068,6 +1081,7 @@ private fun TaskBoardList(
     onAction: (ConfirmAction) -> Unit,
     onArchiveConversation: (serverId: String, conversationId: Int, archived: Boolean) -> Unit,
     onUntrackConversation: (serverId: String, conversationId: Int) -> Unit,
+    onSetStatusConversation: (serverId: String, conversationId: Int, status: ConversationStatus) -> Unit,
     modifier: Modifier = Modifier,
     showEmptyHint: Boolean = true,
 ) {
@@ -1138,6 +1152,7 @@ private fun TaskBoardList(
                         onOpen = { onOpenSession(entry.serverId, entry.conversation.id) },
                         onArchive = { onArchiveConversation(entry.serverId, entry.conversation.id, it) },
                         onRemove = { onUntrackConversation(entry.serverId, entry.conversation.id) },
+                        onSetStatus = { onSetStatusConversation(entry.serverId, entry.conversation.id, it) },
                     )
                 }
             }
@@ -1842,11 +1857,13 @@ private fun ConversationCardWeb(
     onOpen: () -> Unit,
     onArchive: (Boolean) -> Unit,
     onRemove: () -> Unit,
+    onSetStatus: (ConversationStatus) -> Unit,
 ) {
     val conv = entry.conversation
     val colors = CodegTheme.colors
     var menuOpen by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var showStatus by remember { mutableStateOf(false) }
     val metaStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
     val cardShape = RoundedCornerShape(if (compact) 14.dp else 16.dp)
     // "Running" is the server's persisted flag; live is the connection table.
@@ -1982,6 +1999,11 @@ private fun ConversationCardWeb(
                             onClick = { menuOpen = false; onArchive(!entry.archived) },
                         )
                         DropdownMenuItem(
+                            text = { Text(stringResource(R.string.board_conv_set_status)) },
+                            leadingIcon = { Icon(Icons.Rounded.SwapVert, contentDescription = null) },
+                            onClick = { menuOpen = false; showStatus = true },
+                        )
+                        DropdownMenuItem(
                             text = { Text(stringResource(R.string.board_conv_remove)) },
                             leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
                             onClick = { menuOpen = false; confirmRemove = true },
@@ -2003,6 +2025,58 @@ private fun ConversationCardWeb(
             },
             dismissButton = {
                 TextButton(onClick = { confirmRemove = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+    // P2: the card owns this instead of sending the user into the session just
+    // to move it between columns — the status IS the column, so the picker and
+    // the board must not be two screens apart.
+    if (showStatus) {
+        AlertDialog(
+            onDismissRequest = { showStatus = false },
+            title = { Text(stringResource(R.string.board_conv_set_status)) },
+            text = {
+                Column {
+                    ConversationStatus.selectable.forEach { status ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .selectable(
+                                    selected = status == conv.status,
+                                    role = Role.RadioButton,
+                                ) {
+                                    showStatus = false
+                                    onSetStatus(status)
+                                }
+                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            RadioButton(
+                                selected = status == conv.status,
+                                onClick = null,
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = colors.accent,
+                                    unselectedColor = colors.textTertiary,
+                                ),
+                            )
+                            Box(
+                                Modifier
+                                    .size(9.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(statusColor(status)),
+                            )
+                            Text(statusLabel(status))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showStatus = false }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },

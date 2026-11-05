@@ -88,8 +88,8 @@
     <string name="session_new_task">新建会话</string>
     <string name="session_pin">置顶</string>
     <string name="session_unpin">取消置顶</string>
-    <string name="session_handoff">接手到新会话继续</string>
     <string name="session_copy_reference">复制会话引用</string>
+    <string name="session_add_to_session">@ 添加到会话</string>
     <string name="queue_add">加入队列</string>
     <string name="queue_insert_now">快速插入</string>
     <string name="queue_edit">撤回编辑</string>
@@ -1371,7 +1371,7 @@
     <string name="configsync_clipboard_note">安全提示：加密文本不含明文 Token；剪贴板可能被系统或第三方键盘保留，可事后手动清空。</string>
     <string name="configsync_export_skipped">%1$d 台服务器因缺少 Token 未导出，本次密文不含其配置。</string>
     <string name="task_empty_no_devices">还没有可用设备，请先到「设置」中添加。</string>
-    <string name="task_empty_hint">创建的任务（或从想法派发的任务）会出现在这里。</string>
+    <string name="task_empty_hint">创建的任务（或从想法派发的任务）会出现在这里；加入看板的会话也会。</string>
     <string name="dispatch_pending_note">已提交，等待服务端回执…</string>
     <string name="ball_action_quick_idea">记录想法</string>
     <string name="ball_action_quick_task">快速创建</string>

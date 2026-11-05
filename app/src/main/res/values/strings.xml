@@ -88,8 +88,8 @@
     <string name="session_new_task">New session</string>
     <string name="session_pin">Pin</string>
     <string name="session_unpin">Unpin</string>
-    <string name="session_handoff">Handoff to new session</string>
     <string name="session_copy_reference">Copy session reference</string>
+    <string name="session_add_to_session">@ New session with reference</string>
     <string name="queue_add">Queue</string>
     <string name="queue_insert_now">Insert now</string>
     <string name="queue_edit">Edit</string>
@@ -1385,7 +1385,7 @@
     <string name="configsync_clipboard_note">Security note: the encrypted text contains no plaintext tokens; the clipboard may be retained by the system or keyboards — clear it manually afterwards.</string>
     <string name="configsync_export_skipped">%1$d server(s) skipped at export for missing tokens; their configs are NOT in this ciphertext.</string>
     <string name="task_empty_no_devices">No devices yet — add one in Settings first.</string>
-    <string name="task_empty_hint">Tasks you create (or dispatch from Ideas) will appear here.</string>
+    <string name="task_empty_hint">Tasks you create (or dispatch from Ideas) show up here — plus any session you add to the board.</string>
     <string name="dispatch_pending_note">Submitting — waiting for the server receipt.</string>
     <string name="ball_action_quick_idea">Quick idea</string>
     <string name="ball_action_quick_task">Quick create</string>

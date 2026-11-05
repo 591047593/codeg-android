@@ -21,6 +21,7 @@ import app.codeg.android.core.data.retrying
 import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.WorkTaskChangedFile
 import app.codeg.android.core.model.WorkTaskEvent
+import app.codeg.android.core.model.ConversationStatus
 import app.codeg.android.core.model.WorkTaskInfo
 import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.network.CodegClient
@@ -598,6 +599,57 @@ class TaskHubViewModel @Inject constructor(
         }
         viewModelScope.launch {
             runCatching { boardTrack.untrack(serverId, conversationId) }
+        }
+    }
+
+    /**
+     * P2: change a tracked session's status straight from its board card. The
+     * column is DERIVED from `status`, so this is optimistic — a card must move
+     * on tap, not on the next 25s poll. A rejection rolls the old status back:
+     * a card parked in the wrong column is worse than a failed tap.
+     */
+    fun setConversationStatus(serverId: String, conversationId: Int, status: ConversationStatus) {
+        val before = _ui.value.conversations
+            .firstOrNull { it.serverId == serverId && it.conversation.id == conversationId }
+            ?.conversation?.status ?: return
+        if (before == status) return
+        _ui.update { state ->
+            state.copy(
+                conversations = state.conversations.map {
+                    if (it.serverId == serverId && it.conversation.id == conversationId) {
+                        it.copy(conversation = it.conversation.copy(status = status))
+                    } else {
+                        it
+                    }
+                },
+            )
+        }
+        viewModelScope.launch {
+            val result = runCatching {
+                val profile = deviceById(serverId) ?: error("设备不存在")
+                val client = repository.client(profile) ?: error("Token 缺失")
+                client.setStatus(conversationId, status.wire)
+            }
+            result.onFailure { e ->
+                if (e is CancellationException) throw e
+                _ui.update { state ->
+                    state.copy(
+                        conversations = state.conversations.map {
+                            if (it.serverId == serverId && it.conversation.id == conversationId) {
+                                it.copy(conversation = it.conversation.copy(status = before))
+                            } else {
+                                it
+                            }
+                        },
+                        actionError = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败",
+                    )
+                }
+            }
+            result.onSuccess {
+                repository.notifyConversationsChanged()
+                generation += 1
+                fetchDevices(setOf(serverId))
+            }
         }
     }
 

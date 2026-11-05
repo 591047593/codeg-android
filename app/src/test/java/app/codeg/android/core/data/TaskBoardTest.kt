@@ -1,6 +1,9 @@
 package app.codeg.android.core.data
 
+import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.core.model.ConversationSummary
 import app.codeg.android.core.model.WorkTaskInfo
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -188,6 +191,86 @@ class TaskBoardTest {
         assertEquals(app.codeg.android.R.string.task_status_canceled, taskStatusLabelRes("cancelled"))
         assertNull(taskStatusLabelRes("mystery"))
         assertNull(taskStatusLabelRes(null))
+    }
+
+    // ---- 批v162 P1: the board holds tasks AND tracked conversations ----
+
+    private fun conv(
+        id: Int,
+        status: String,
+        messageCount: Int = 4,
+        updatedAt: String = "2026-11-06T10:00:00Z",
+    ) = ConversationSummary(
+        id = id,
+        folderId = 7,
+        title = "C$id",
+        agentType = app.codeg.android.core.model.AgentType.CLAUDE_CODE,
+        status = ConversationStatus.fromWire(status),
+        messageCount = messageCount,
+        createdAt = Instant.parse("2026-11-06T09:00:00Z"),
+        updatedAt = Instant.parse(updatedAt),
+    )
+
+    private fun boardConv(id: Int, status: String, messageCount: Int = 4, updatedAt: String = "2026-11-06T10:00:00Z") =
+        BoardConversationEntry(
+            serverId = "s1",
+            serverName = "srv-s1",
+            conversation = conv(id, status, messageCount, updatedAt),
+            live = true,
+            archived = false,
+        )
+
+    /** §3.1: a session that exists but has said nothing yet is 待办, not 进行中. */
+    @Test
+    fun `conversation segment maps status and the empty-session rule`() {
+        assertEquals(TaskSegment.TODO, conversationSegmentOf(conv(1, "in_progress", messageCount = 0)))
+        assertEquals(TaskSegment.RUNNING, conversationSegmentOf(conv(1, "in_progress", messageCount = 1)))
+        assertEquals(TaskSegment.ATTENTION, conversationSegmentOf(conv(1, "pending_review")))
+        assertEquals(TaskSegment.DONE, conversationSegmentOf(conv(1, "completed")))
+        assertEquals(TaskSegment.DONE, conversationSegmentOf(conv(1, "cancelled")))
+        // Unknown wire values must never vanish: they stay in the running column.
+        assertEquals(TaskSegment.RUNNING, conversationSegmentOf(conv(1, "mystery")))
+    }
+
+    /** One clock: tasks (scheduled first) and sessions interleave by epoch millis. */
+    @Test
+    fun `merge orders tasks and conversations by one clock`() {
+        val rows = mergeBoardRows(
+            tasks = listOf(
+                task(1, "running", updatedAt = "2026-11-06T09:00:00Z"),
+                task(2, "todo", scheduledAt = "2026-11-06T12:00:00Z"),
+            ),
+            conversations = listOf(
+                boardConv(9, "in_progress", updatedAt = "2026-11-06T11:00:00Z"),
+            ),
+        )
+        // A future scheduled task floats above everything, then the session, then the task.
+        assertEquals(listOf("s1:t2", "s1:c9", "s1:t1"), rows.map { it.key })
+    }
+
+    /** Kind is part of the LazyColumn key: task 7 and conversation 7 never collide. */
+    @Test
+    fun `board row keys are kind scoped`() {
+        val rows = mergeBoardRows(
+            tasks = listOf(task(7, "running", updatedAt = "2026-11-06T09:00:00Z")),
+            conversations = listOf(boardConv(7, "in_progress", updatedAt = "2026-11-06T10:00:00Z")),
+        )
+        assertEquals(2, rows.map { it.key }.distinct().size)
+    }
+
+    /** No timestamps at all: 0 keeps the row visible at the bottom instead of crashing. */
+    @Test
+    fun `task sort falls back and tolerates missing timestamps`() {
+        assertEquals(0L, taskSortMs(task(1, "todo").task))
+        assertEquals(
+            Instant.parse("2026-11-06T10:00:00Z").toEpochMilli(),
+            taskSortMs(task(1, "todo", updatedAt = "2026-11-06T10:00:00Z").task),
+        )
+        // Offset form (server sometimes emits it) parses too.
+        assertEquals(
+            Instant.parse("2026-11-06T10:00:00Z").toEpochMilli(),
+            taskSortMs(task(1, "todo", updatedAt = "2026-11-06T10:00:00+00:00").task),
+        )
     }
 
     /** WorkTaskInfo has no copy for entries — tiny local helper for the two tests above. */

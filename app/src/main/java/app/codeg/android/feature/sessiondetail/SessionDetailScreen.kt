@@ -218,17 +218,20 @@ fun SessionDetailScreen(
             if (draft.isEmpty() && persisted.isNotEmpty()) draft = persisted
         }
     }
-    // Handoff seed (「接手到新会话继续」): the serialized `codeg://session/<id>`
-    // reference lands in the composer verbatim, like the web's add-to-session. A
-    // fresh navigation gets a new composition, so `remember { seedText }` is
-    // enough — no saveable (re-entering this route must re-seed, not restore).
-    // After process death the persisted draft (edits made before the crash) wins
-    // over the raw seed, so an entry that was already saved-as-draft isn't reset.
+    // Add-to-session seed («@ 添加到会话»): the serialized
+    // `codeg://session/<id>` reference lands in the composer verbatim.
+    // Appending, not replacing: whatever the composer already holds (typed this
+    // session, or restored from DataStore) is the user's work, and the old
+    // "only fill an empty composer" rule silently ATE the reference whenever a
+    // draft happened to exist — the one outcome the gesture must never produce.
     LaunchedEffect(seedText) {
-        if (!seedText.isNullOrEmpty() && draft.isEmpty() &&
-            runCatching { viewModel.loadPersistedDraft() }.getOrDefault("").isEmpty()
-        ) {
-            draft = seedText
+        if (seedText.isNullOrEmpty()) return@LaunchedEffect
+        val persisted = runCatching { viewModel.loadPersistedDraft() }.getOrDefault("")
+        val existing = draft.ifBlank { persisted }
+        draft = when {
+            existing.isBlank() -> seedText
+            existing.trimEnd().endsWith(seedText) -> existing
+            else -> existing.trimEnd() + "\n\n" + seedText
         }
     }
     var showInsert by remember { mutableStateOf(false) }

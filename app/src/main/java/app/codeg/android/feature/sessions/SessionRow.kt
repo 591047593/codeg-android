@@ -57,9 +57,9 @@ import androidx.compose.ui.res.stringResource
  * borderless line. The agent's brand avatar (with a status-tinted dot) anchors
  * the left, the title fills the middle, and the trailing edge shows a live pulse
  * while running or a compact relative time otherwise. Long-press opens a Pin/
- * Unpin menu plus — when [onHandoff] is wired — a handoff item that opens a new
- * task seeded with a `[title](codeg://session/<id>)` reference, and a copy-
- * reference fallback. The Compose analogue of the iOS row context menu.
+ * Unpin menu plus — when [onHandoff] is wired — a「@ 添加到会话」item that opens a
+ * new session composer seeded with a `[title](codeg://session/<id>)` reference,
+ * and a copy-reference fallback. The Compose analogue of the iOS row menu.
  *
  * Faithful port of the iOS `SessionRow`.
  */
@@ -284,7 +284,12 @@ fun SessionRow(
                         add(
                             CenteredAction(
                                 icon = Icons.AutoMirrored.Rounded.CallMade,
-                                label = stringResource(R.string.session_handoff),
+                                // Same behaviour the web calls "@ 添加到会话": seed a
+                                // NEW composer with `[title](codeg://session/<id>)`.
+                                // It used to be labelled 接手, which promised a
+                                // cross-device relay it never performed — that one
+                                // lives in the session's ⋮ (handoff package).
+                                label = stringResource(R.string.session_add_to_session),
                                 onClick = { onHandoff(referenceBadge()) },
                             ),
                         )
