@@ -1638,13 +1638,15 @@ class CodegClient(
         internal fun decodeBareStringOrNull(text: String): String? {
             val trimmed = text.trim()
             if (trimmed.isEmpty() || trimmed == "null") return null
-            return runCatching { CodegJson.response.parseToJsonElement(trimmed) }.getOrNull()?.let { el ->
-                when (el) {
-                    is JsonNull -> null
-                    is JsonPrimitive -> el.content.trim().ifEmpty { null }
-                    else -> null
-                }
-            } ?: trimmed
+            // Parse failure = a bare unquoted token (lenient parsers reject
+            // digit-leading bare literals) — surface the raw text, defensively.
+            val parsed = runCatching { CodegJson.response.parseToJsonElement(trimmed) }
+                .getOrNull() ?: return trimmed
+            return when (parsed) {
+                is JsonNull -> null
+                is JsonPrimitive -> parsed.content.trim().ifEmpty { null }
+                else -> null
+            }
         }
 
         /**
