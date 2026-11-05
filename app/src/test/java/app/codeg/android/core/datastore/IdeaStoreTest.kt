@@ -33,7 +33,7 @@ class IdeaStoreTest {
 
     private fun store(): IdeaStore {
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob()).also { scopes += it }
-        return IdeaStore(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("idea-${scopes.size}.pb") })
+        return IdeaStore(PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("idea-${scopes.size}.preferences_pb") })
     }
 
     private fun idea(id: String, updated: Long) = IdeaEntry(id = id, title = id, updatedAt = updated)
