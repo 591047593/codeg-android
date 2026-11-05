@@ -1468,6 +1468,22 @@
     <string name="general_task_swipe_subtitle">任务板顶部横滑手势的行为：默认在四个任务状态列之间步进，也可切成与动态页相同的设备切换。</string>
     <string name="general_task_swipe_segments">切任务状态</string>
     <string name="general_task_swipe_devices">切换设备</string>
+    <!-- 批v161：任务板布局 + 各布局列数 -->
+    <string name="general_task_layout_title">任务板布局</string>
+    <string name="general_task_layout_subtitle">看板与网页端一致；列表一次只排一个状态，更适合长标题。</string>
+    <string name="general_task_layout_kanban">看板</string>
+    <string name="general_task_layout_list">列表</string>
+    <string name="general_task_kanban_columns_title">看板列数</string>
+    <string name="general_task_kanban_columns_subtitle">手机上每屏显示的列数。双列两页翻完整块板；平板固定四列。</string>
+    <string name="general_task_list_columns_title">列表列数</string>
+    <string name="general_task_list_columns_subtitle">单列是经典列表；双列一屏装下更多任务。</string>
+    <string name="general_columns_one">单列</string>
+    <string name="general_columns_two">双列</string>
+    <string name="task_overview_entry">总览</string>
+    <string name="task_overview_title">任务板总览</string>
+    <string name="task_overview_hint">四列一屏看全。只读——点卡片看详情。</string>
+    <string name="task_more_actions">更多操作</string>
+    <string name="task_segment_empty">这一列暂时没有任务</string>
     <!-- 批v160 W9：顶栏项目维度——手动排序 + 按会话数排序 -->
     <string name="general_project_section">会话项目</string>
     <string name="general_project_sort_title">按会话数排序</string>

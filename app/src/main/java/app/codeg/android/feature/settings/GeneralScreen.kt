@@ -102,6 +102,36 @@ fun GeneralContent(
                 appSettings.activityDeviceSwipe,
                 viewModel::setActivityDeviceSwipe,
             )
+            // 批v161: task-board shape (kanban vs list) and its per-layout column
+            // count. Only the count belonging to the active layout is offered —
+            // two count rows would let the user tune a setting that does nothing.
+            ChipRow(
+                title = stringResource(R.string.general_task_layout_title),
+                subtitle = stringResource(R.string.general_task_layout_subtitle),
+                options = listOf(
+                    app.codeg.android.core.datastore.TASK_BOARD_KANBAN to R.string.general_task_layout_kanban,
+                    app.codeg.android.core.datastore.TASK_BOARD_LIST to R.string.general_task_layout_list,
+                ),
+                selectedId = appSettings.taskBoardLayout,
+                onSelect = viewModel::setTaskBoardLayout,
+            )
+            if (appSettings.taskBoardLayout == app.codeg.android.core.datastore.TASK_BOARD_LIST) {
+                ChipRow(
+                    title = stringResource(R.string.general_task_list_columns_title),
+                    subtitle = stringResource(R.string.general_task_list_columns_subtitle),
+                    options = listOf(1 to R.string.general_columns_one, 2 to R.string.general_columns_two),
+                    selectedId = appSettings.taskBoardListColumns,
+                    onSelect = viewModel::setTaskBoardListColumns,
+                )
+            } else {
+                ChipRow(
+                    title = stringResource(R.string.general_task_kanban_columns_title),
+                    subtitle = stringResource(R.string.general_task_kanban_columns_subtitle),
+                    options = listOf(1 to R.string.general_columns_one, 2 to R.string.general_columns_two),
+                    selectedId = appSettings.taskBoardKanbanColumns,
+                    onSelect = viewModel::setTaskBoardKanbanColumns,
+                )
+            }
             // 批v160 W5: task-board horizontal swipe semantics — step the four
             // status columns (default) or switch devices like on Activity. Same
             // chip idiom as the inbox-idea-style row below.
@@ -612,6 +642,50 @@ private fun Section(title: String, content: @Composable () -> Unit) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = colors.textTertiary, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.bgElevated.copy(alpha = 0.5f))) { content() }
     }
+}
+
+@Composable
+private fun <T> ChipRow(
+    title: String,
+    subtitle: String,
+    options: List<Pair<T, Int>>,
+    selectedId: T,
+    onSelect: (T) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        trailingContent = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                options.forEach { (id, labelRes) ->
+                    // 局部变量刻意叫 isSelected：若叫 selected，下方 semantics
+                    // lambda 的左值会解析到局部变量报编译错（v151 教训）。
+                    val isSelected = selectedId == id
+                    Text(
+                        stringResource(labelRes),
+                        fontSize = 13.sp,
+                        color = if (isSelected) colors.onAccent else colors.textSecondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isSelected) colors.accent else colors.textPrimary.copy(alpha = 0.08f),
+                            )
+                            .clickable { onSelect(id) }
+                            .semantics { selected = isSelected }
+                            .heightIn(min = 48.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
+                }
+            }
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent,
+            headlineColor = colors.textPrimary,
+            supportingColor = colors.textTertiary,
+        ),
+    )
 }
 
 @Composable

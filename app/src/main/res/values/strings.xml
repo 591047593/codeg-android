@@ -1482,6 +1482,22 @@
     <string name="general_task_swipe_subtitle">What a horizontal swipe does on the Task board: step through the four status columns (default) or switch devices like on Activity.</string>
     <string name="general_task_swipe_segments">Switch columns</string>
     <string name="general_task_swipe_devices">Switch devices</string>
+    <!-- 批v161: task board layout + per-layout column count -->
+    <string name="general_task_layout_title">Task board layout</string>
+    <string name="general_task_layout_subtitle">Kanban keeps the web board look; list stacks one status at a time and suits long task names.</string>
+    <string name="general_task_layout_kanban">Kanban</string>
+    <string name="general_task_layout_list">List</string>
+    <string name="general_task_kanban_columns_title">Kanban columns</string>
+    <string name="general_task_kanban_columns_subtitle">Columns per screen on a phone. Two shows the whole board in two pages; tablets always show four.</string>
+    <string name="general_task_list_columns_title">List columns</string>
+    <string name="general_task_list_columns_subtitle">One column is the classic list; two packs more tasks on screen.</string>
+    <string name="general_columns_one">1 column</string>
+    <string name="general_columns_two">2 columns</string>
+    <string name="task_overview_entry">Overview</string>
+    <string name="task_overview_title">Board overview</string>
+    <string name="task_overview_hint">All four statuses at a glance. Read-only — tap a card to open it.</string>
+    <string name="task_more_actions">More actions</string>
+    <string name="task_segment_empty">Nothing here right now</string>
     <!-- 批v160 W9: session chip row — project order + count sort. -->
     <string name="general_project_section">Session projects</string>
     <string name="general_project_sort_title">Sort by session count</string>

@@ -89,6 +89,10 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "session_chip_mode" })
         assertEquals(1, keys.count { it == "project_chip_order" })
         assertEquals(1, keys.count { it == "project_chip_sort_by_count" })
+        // 批v161: task-board shape + the two per-layout column counts.
+        assertEquals(1, keys.count { it == "task_board_layout" })
+        assertEquals(1, keys.count { it == "task_board_kanban_columns" })
+        assertEquals(1, keys.count { it == "task_board_list_columns" })
         // And no key collides with another at all.
         assertEquals(keys.size, keys.toSet().size)
     }
@@ -104,6 +108,51 @@ class AppSettingsStoreTest {
         assertEquals(setOf("segments", "devices"), TASK_SWIPE_MODES)
         assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_SEGMENTS))
         assertTrue(TASK_SWIPE_MODES.contains(TASK_SWIPE_DEVICES))
+    }
+
+    @Test
+    fun `task board layout defaults to a two-column kanban and a single list`() {
+        // 批v161: phones open on the double-column kanban (the whole board in two
+        // pages); list mode keeps the classic single column. Both counts are legal
+        // only in 1..2 — the store coerces corrupt prefs into that band.
+        val s = AppSettings()
+        assertEquals(TASK_BOARD_KANBAN, s.taskBoardLayout)
+        assertEquals(setOf("kanban", "list"), TASK_BOARD_LAYOUTS)
+        assertEquals(2, s.taskBoardKanbanColumns)
+        assertEquals(1, s.taskBoardListColumns)
+    }
+
+    @Test
+    fun `v161 board layout and column counts survive a real datastore roundtrip`() = runBlocking {
+        // Read-side guard for the three v161 keys: a wrong Key, a missing map
+        // branch or an unclamped int would silently show the defaults forever.
+        val tmp = TemporaryFolder()
+        tmp.create()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "settings.preferences_pb")
+            }
+            val store = AppSettingsStore(dataStore)
+            store.setTaskBoardLayout(TASK_BOARD_LIST)
+            store.setTaskBoardKanbanColumns(1)
+            store.setTaskBoardListColumns(2)
+            val s = store.settings.first()
+            assertEquals(TASK_BOARD_LIST, s.taskBoardLayout)
+            assertEquals(1, s.taskBoardKanbanColumns)
+            assertEquals(2, s.taskBoardListColumns)
+            // Corrupt layout + out-of-band counts coerce instead of poisoning the board.
+            store.setTaskBoardLayout("nonsense")
+            store.setTaskBoardKanbanColumns(9)
+            store.setTaskBoardListColumns(-3)
+            val coerced = store.settings.first()
+            assertEquals(TASK_BOARD_KANBAN, coerced.taskBoardLayout)
+            assertEquals(2, coerced.taskBoardKanbanColumns)
+            assertEquals(1, coerced.taskBoardListColumns)
+        } finally {
+            scope.cancel()
+            tmp.delete()
+        }
     }
 
     @Test

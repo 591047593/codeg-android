@@ -237,6 +237,23 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setTaskSwipeMode(mode)
     }
 
+    // ---- 批v161: task-board shape + per-layout column count ----
+
+    /** "kanban" (web-parity board) or "list" (four status tabs + one list). */
+    fun setTaskBoardLayout(layout: String) = launchPersist {
+        appSettingsStore.setTaskBoardLayout(layout)
+    }
+
+    /** Columns per kanban page on a phone (1 or 2; tablets stay at four). */
+    fun setTaskBoardKanbanColumns(columns: Int) = launchPersist {
+        appSettingsStore.setTaskBoardKanbanColumns(columns)
+    }
+
+    /** List mode's column count (1 or 2). */
+    fun setTaskBoardListColumns(columns: Int) = launchPersist {
+        appSettingsStore.setTaskBoardListColumns(columns)
+    }
+
     // ---- 批v160 W9: session chip row — project order + count sort ----
 
     /** Sort the chip row by per-project session count (descending). When on, the

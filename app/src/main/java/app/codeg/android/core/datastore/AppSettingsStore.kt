@@ -71,6 +71,15 @@ data class AppSettings(
      *  step between the board's four kanban columns (default), "devices" =
      *  the cross-device sequence (the pre-v160 behavior). */
     val taskSwipeMode: String = DEFAULT_TASK_SWIPE_MODE,
+    /** 批v161: the task board's shape — "kanban" (default, the web-parity
+     *  board) or "list" (the pre-v160 four-status tabs + one list). */
+    val taskBoardLayout: String = DEFAULT_TASK_BOARD_LAYOUT,
+    /** 批v161: columns shown per kanban page — 1 or 2 (default 2 on phones so a
+     *  narrow screen sees two complete columns; tablets keep all four). */
+    val taskBoardKanbanColumns: Int = DEFAULT_TASK_BOARD_KANBAN_COLUMNS,
+    /** 批v161: list mode's column count — 1 (default, the classic single list)
+     *  or 2 (a denser two-column grid). */
+    val taskBoardListColumns: Int = DEFAULT_TASK_BOARD_LIST_COLUMNS,
     /** 批v160 W9: the top chip row's dimension on 动态/会话 — "devices" (default,
      *  the pre-v160 row) or "projects" (全部 + project chips + 未添加). */
     val sessionChipMode: String = DEFAULT_SESSION_CHIP_MODE,
@@ -102,6 +111,9 @@ data class AppSettings(
         const val DEFAULT_INBOX_IDEA_STYLE = INBOX_IDEA_STYLE_CORNER
         const val DEFAULT_INBOX_COLUMNS = 1
         const val DEFAULT_TASK_SWIPE_MODE = TASK_SWIPE_SEGMENTS
+        const val DEFAULT_TASK_BOARD_LAYOUT = TASK_BOARD_KANBAN
+        const val DEFAULT_TASK_BOARD_KANBAN_COLUMNS = 2
+        const val DEFAULT_TASK_BOARD_LIST_COLUMNS = 1
         const val DEFAULT_SESSION_CHIP_MODE = SESSION_CHIP_DEVICES
         /** The initial value [AppSettingsStore.settings] exposes before DataStore's
          *  first emission; used to detect "settings not loaded yet". */
@@ -176,6 +188,12 @@ class AppSettingsStore @Inject constructor(
             keepAliveEnabled = prefs[KEEP_ALIVE_ENABLED] ?: false,
             taskSwipeMode = prefs[TASK_SWIPE_MODE]?.takeIf { it in TASK_SWIPE_MODES }
                 ?: AppSettings.DEFAULT_TASK_SWIPE_MODE,
+            taskBoardLayout = prefs[TASK_BOARD_LAYOUT]?.takeIf { it in TASK_BOARD_LAYOUTS }
+                ?: AppSettings.DEFAULT_TASK_BOARD_LAYOUT,
+            taskBoardKanbanColumns = (prefs[TASK_BOARD_KANBAN_COLUMNS]
+                ?: AppSettings.DEFAULT_TASK_BOARD_KANBAN_COLUMNS).coerceIn(1, 2),
+            taskBoardListColumns = (prefs[TASK_BOARD_LIST_COLUMNS]
+                ?: AppSettings.DEFAULT_TASK_BOARD_LIST_COLUMNS).coerceIn(1, 2),
             sessionChipMode = prefs[SESSION_CHIP_MODE]?.takeIf { it in SESSION_CHIP_MODES }
                 ?: AppSettings.DEFAULT_SESSION_CHIP_MODE,
             projectChipOrder = prefs[PROJECT_CHIP_ORDER]?.split(',')?.filter { it.isNotBlank() }
@@ -333,6 +351,24 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[TASK_SWIPE_MODE] = mode.takeIf { m -> m in TASK_SWIPE_MODES } ?: AppSettings.DEFAULT_TASK_SWIPE_MODE }
     }
 
+    /** 批v161: persist the task board's layout; unknown values coerce back. */
+    suspend fun setTaskBoardLayout(layout: String) {
+        dataStore.edit {
+            it[TASK_BOARD_LAYOUT] = layout.takeIf { l -> l in TASK_BOARD_LAYOUTS }
+                ?: AppSettings.DEFAULT_TASK_BOARD_LAYOUT
+        }
+    }
+
+    /** 批v161: persist the kanban page's column count (1 or 2). */
+    suspend fun setTaskBoardKanbanColumns(columns: Int) {
+        dataStore.edit { it[TASK_BOARD_KANBAN_COLUMNS] = columns.coerceIn(1, 2) }
+    }
+
+    /** 批v161: persist the list mode's column count (1 or 2). */
+    suspend fun setTaskBoardListColumns(columns: Int) {
+        dataStore.edit { it[TASK_BOARD_LIST_COLUMNS] = columns.coerceIn(1, 2) }
+    }
+
     /** Persist the font-scale multiplier (coerced to the usable band on read too). */
     suspend fun setFontScale(scale: Float) {
         dataStore.edit { it[FONT_SCALE] = scale.coerceIn(0.5f, 2f) }
@@ -423,6 +459,9 @@ class AppSettingsStore @Inject constructor(
         val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")
         val KEEP_ALIVE_ENABLED = booleanPreferencesKey("keep_alive_enabled")
         val TASK_SWIPE_MODE = stringPreferencesKey("task_swipe_mode")
+        val TASK_BOARD_LAYOUT = stringPreferencesKey("task_board_layout")
+        val TASK_BOARD_KANBAN_COLUMNS = intPreferencesKey("task_board_kanban_columns")
+        val TASK_BOARD_LIST_COLUMNS = intPreferencesKey("task_board_list_columns")
         val SESSION_CHIP_MODE = stringPreferencesKey("session_chip_mode")
         val PROJECT_CHIP_ORDER = stringPreferencesKey("project_chip_order")
         val PROJECT_CHIP_SORT_BY_COUNT = booleanPreferencesKey("project_chip_sort_by_count")
@@ -446,6 +485,11 @@ val INBOX_IDEA_STYLES = setOf(INBOX_IDEA_STYLE_CORNER, INBOX_IDEA_STYLE_CENTER_W
 const val TASK_SWIPE_SEGMENTS = "segments"
 const val TASK_SWIPE_DEVICES = "devices"
 val TASK_SWIPE_MODES = setOf(TASK_SWIPE_SEGMENTS, TASK_SWIPE_DEVICES)
+
+/** Legal task-board layouts (批v161) — screens branch on the constants. */
+const val TASK_BOARD_KANBAN = "kanban"
+const val TASK_BOARD_LIST = "list"
+val TASK_BOARD_LAYOUTS = setOf(TASK_BOARD_KANBAN, TASK_BOARD_LIST)
 
 /** Legal top chip-row dimensions (批v160 W9) — screens branch on the constants. */
 const val SESSION_CHIP_DEVICES = "devices"

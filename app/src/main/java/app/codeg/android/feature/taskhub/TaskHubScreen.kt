@@ -27,9 +27,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +56,9 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay
@@ -73,6 +80,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -88,6 +96,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -97,11 +106,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
@@ -109,18 +122,27 @@ import app.codeg.android.core.data.DEFERRABLE_STATUSES
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.SEGMENT_ORDER
 import app.codeg.android.core.data.TaskAccentTone
+import app.codeg.android.core.data.TaskBoardData
 import app.codeg.android.core.data.TaskBoardEntry
 import app.codeg.android.core.data.TaskSegment
 import app.codeg.android.core.data.archiveAllCandidates
+import app.codeg.android.core.data.initialKanbanPage
 import app.codeg.android.core.data.isEffectivelyDeferred
+import app.codeg.android.core.data.pageSegments
+import app.codeg.android.core.data.pageStepIndex
 import app.codeg.android.core.data.segmentAccentTone
+import app.codeg.android.core.data.segmentPageIndex
 import app.codeg.android.core.data.segmentStepIndex
+import app.codeg.android.core.data.taskBoardColumnsPerPage
+import app.codeg.android.core.data.taskBoardCompactCards
+import app.codeg.android.core.data.taskBoardPageCount
 import app.codeg.android.core.data.taskStatusLabelRes
 import app.codeg.android.core.data.taskStatusUi
-import app.codeg.android.core.data.TaskStatusUi
-import app.codeg.android.core.data.TaskSegmentBus
+import app.codeg.android.core.data.TASK_BOARD_COLUMN_GAP_DP
+import app.codeg.android.core.data.TASK_BOARD_SIDE_PADDING_DP
 import app.codeg.android.core.datastore.DispatchRef
 import app.codeg.android.core.datastore.DispatchState
+import app.codeg.android.core.datastore.TASK_BOARD_LIST
 import app.codeg.android.core.designsystem.component.AgentChipRow
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.FullscreenTextEditorDialog
@@ -160,45 +182,129 @@ fun TaskHubScreen(
     val board by viewModel.board.collectAsStateWithLifecycle()
     val folderOptions by viewModel.folderOptions.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
+    // 批v161: one "the whole board is empty" notion for the global empty state
+    // and the per-column hint, so the two never speak at the same time.
+    val boardLoaded = ui.hasLoaded
+    val boardIsEmpty = boardLoaded &&
+        board.segments.values.all { it.isEmpty() } && board.unknown.isEmpty()
+    val showEmptyHint = boardLoaded && !boardIsEmpty
 
-    // 批v160 W5: the board is a four-column kanban now — no selected segment,
-    // just the LazyRow and a scroll target for the programmatic jumps.
-    val columnState = rememberLazyListState()
-    var pendingColumn by remember { mutableStateOf<Int?>(null) }
+    // 批v161: the board has two shapes. Kanban pages through the four columns
+    // (one or two per page on a phone, all four on a tablet); list mode keeps
+    // one selected status and lists its rows. Both share the status bar, and
+    // [focusIndex] is the chip it highlights / the list's active tab.
+    val appSettings by viewModel.settings.collectAsStateWithLifecycle()
+    val boardLayout = appSettings.taskBoardLayout
+    val configuration = LocalConfiguration.current
+    val kanbanColumns = taskBoardColumnsPerPage(
+        configuration.screenWidthDp, appSettings.taskBoardKanbanColumns,
+    )
+    val listColumns = appSettings.taskBoardListColumns.coerceIn(1, 2)
+    val pageCount = taskBoardPageCount(kanbanColumns)
+    val pagerState = rememberPagerState(pageCount = { pageCount })
+    var focusIndex by rememberSaveable { mutableStateOf(0) }
+    // Jump requests (a status chip, the task that just moved columns) and the
+    // shell's swipe steps funnel through these two hand-offs, so the gesture
+    // collector never captures a stale layout.
+    var pendingSegment by remember { mutableStateOf<TaskSegment?>(null) }
+    var pendingStep by remember { mutableStateOf<Int?>(null) }
     // 批v152: the workbench stat cards / 需要处理 preview ask for a SPECIFIC
     // column. Consumed once on entry (the request is read-then-cleared in the
-    // repository), so a later plain tab return keeps the columns where the user
-    // left them.
+    // repository), so a later plain tab return keeps the board where the user
+    // left it.
     LaunchedEffect(viewModel) {
-        viewModel.consumeSegmentRequest()?.let { seg ->
-            pendingColumn = SEGMENT_ORDER.indexOf(seg).coerceAtLeast(0)
-        }
+        viewModel.consumeSegmentRequest()?.let { seg -> pendingSegment = seg }
     }
     // 批v156: after an action (启动/取消/重试…) the card moves columns — follow
-    // it so it never "vanishes" one swipe away (the VM emits the landed segment
+    // it so it never "vanishes" one page away (the VM emits the landed segment
     // once per action).
     val actedLanded by viewModel.actedLandedSegment.collectAsStateWithLifecycle()
     LaunchedEffect(actedLanded) {
         val landed = actedLanded ?: return@LaunchedEffect
-        pendingColumn = SEGMENT_ORDER.indexOf(landed).coerceAtLeast(0)
+        pendingSegment = landed
         viewModel.consumeActedLandedSegment()
     }
-    // 批v160 W5: the 「切任务状态」 horizontal swipe — step between the four
-    // columns, clamped at the ends (segmentStepIndex; no wraparound).
+    // 批v160 W5: the 「切任务状态」 horizontal swipe — a page step in kanban
+    // mode, a selected-status step in list mode (both clamp at the ends).
     LaunchedEffect(viewModel) {
-        viewModel.segmentBus.steps.collect { step ->
-            pendingColumn = segmentStepIndex(columnState.firstVisibleItemIndex, step)
+        viewModel.segmentBus.steps.collect { step -> pendingStep = step }
+    }
+    // A user swipe lands on the next page: move the highlight to that page's
+    // first column, but never override a deliberate chip tap whose segment is
+    // already visible on the page it lands on.
+    LaunchedEffect(pagerState, kanbanColumns) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            // All four columns on one page: there is no page→status hop to
+            // follow, and mapping a stale settled page after a rotation would
+            // move the highlight for no reason. Chip taps own it here.
+            if (pageCount <= 1) return@collect
+            if (segmentPageIndex(focusIndex, kanbanColumns) != page) {
+                focusIndex = (page * kanbanColumns).coerceIn(0, SEGMENT_ORDER.lastIndex)
+            }
         }
     }
-    LaunchedEffect(pendingColumn) {
-        val target = pendingColumn ?: return@LaunchedEffect
-        pendingColumn = null
-        if (target in SEGMENT_ORDER.indices) {
-            runCatching { columnState.animateScrollToItem(target) }
+    // The column count changed (setting flip / rotation): keep the focused
+    // column in view instead of leaving the pager on a page that may vanish.
+    LaunchedEffect(kanbanColumns) {
+        val target = segmentPageIndex(focusIndex, kanbanColumns)
+        if (target != pagerState.currentPage) runCatching { pagerState.scrollToPage(target) }
+    }
+    // Switching from list back to kanban must open on the status the user was
+    // reading, not on whatever page the pager happened to be left at.
+    LaunchedEffect(boardLayout) {
+        if (boardLayout == TASK_BOARD_LIST) return@LaunchedEffect
+        val target = segmentPageIndex(focusIndex, kanbanColumns)
+        if (target != pagerState.currentPage) runCatching { pagerState.scrollToPage(target) }
+    }
+    LaunchedEffect(pendingSegment, boardLayout, kanbanColumns) {
+        val segment = pendingSegment ?: return@LaunchedEffect
+        pendingSegment = null
+        val index = SEGMENT_ORDER.indexOf(segment).coerceAtLeast(0)
+        focusIndex = index
+        if (boardLayout != TASK_BOARD_LIST) {
+            runCatching { pagerState.animateScrollToPage(segmentPageIndex(index, kanbanColumns)) }
         }
+    }
+    LaunchedEffect(pendingStep, boardLayout, kanbanColumns) {
+        val step = pendingStep ?: return@LaunchedEffect
+        pendingStep = null
+        // A single page (tablet, or 4 columns resolving to one page) has nowhere
+        // to page to — step the highlight instead of swallowing the gesture.
+        if (boardLayout == TASK_BOARD_LIST || pageCount <= 1) {
+            focusIndex = segmentStepIndex(focusIndex, step)
+        } else {
+            runCatching {
+                pagerState.animateScrollToPage(pageStepIndex(pagerState.currentPage, step, pageCount))
+            }
+        }
+    }
+    // Two-column paging must not open on a blank page: when the visible page
+    // holds nothing but another status does, land on that status instead. This
+    // is a ONE-SHOT per column count — re-running on every poll would yank the
+    // user back off an intentionally-viewed empty column.
+    var anchoredColumns by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(ui.hasLoaded, board, kanbanColumns) {
+        if (!ui.hasLoaded || anchoredColumns == kanbanColumns) return@LaunchedEffect
+        // An empty board must not spend the one-shot: the first poll that
+        // brings rows is exactly the moment the anchor exists for.
+        if (boardIsEmpty) return@LaunchedEffect
+        val visible = pageSegments(pagerState.currentPage, kanbanColumns)
+        val visibleEmpty = visible.all { segment ->
+            board.segments[segment].isNullOrEmpty() &&
+                !(segment == TaskSegment.ATTENTION && board.unknown.isNotEmpty())
+        }
+        if (visibleEmpty) {
+            val page = initialKanbanPage(board, kanbanColumns)
+            if (page != pagerState.currentPage) runCatching { pagerState.scrollToPage(page) }
+            focusIndex = (page * kanbanColumns).coerceIn(0, SEGMENT_ORDER.lastIndex)
+        }
+        anchoredColumns = kanbanColumns
     }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var folderSheet by remember { mutableStateOf(false) }
+    // 批v161: the four-column mini overview — an ENTRY, not a layout mode (the
+    // phone keeps its kanban/list shapes; this is the "see everything" glance).
+    var overviewOpen by rememberSaveable { mutableStateOf(false) }
     // The detail sheet holds a KEY, not a row snapshot: the 25s poll keeps
     // mutating the board, and a frozen entry would keep showing stale status
     // and stale actions (e.g. merge buttons on a task someone else already
@@ -244,6 +350,7 @@ fun TaskHubScreen(
                 onShowCanceled = viewModel::setShowCanceled,
                 onShowArchived = viewModel::setShowArchived,
                 onNewTask = { showNewTask = true },
+                onOverview = { overviewOpen = true },
             )
             if (searchOpen) {
                 OutlinedTextField(
@@ -298,7 +405,7 @@ fun TaskHubScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            if (ui.hasLoaded && board.segments.values.all { it.isEmpty() } && board.unknown.isEmpty()) {
+            if (boardIsEmpty) {
                 EmptyState(
                     icon = Icons.Rounded.Refresh,
                     title = stringResource(
@@ -308,43 +415,70 @@ fun TaskHubScreen(
                     modifier = Modifier.padding(top = 48.dp),
                 )
             }
-            // 批v160 W5 kanban: four side-by-side columns (web board parity).
-            // Column width = max(240dp, 72% of the screen) — a phone never sees
-            // two full columns at once, and the 240dp floor keeps every card
-            // footer's buttons reachable (施工图 W5 风险条目).
-            val configuration = LocalConfiguration.current
-            val columnWidth = maxOf(240.dp, configuration.screenWidthDp.dp * 0.72f)
-            LazyRow(
-                state = columnState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(SEGMENT_ORDER, key = { it.name }, contentType = { "column" }) { seg ->
-                    val rows = board.segments[seg].orEmpty()
-                    KanbanColumn(
-                        segment = seg,
-                        entries = rows,
-                        // Unknown statuses surface under 等你处理 (the old
-                        // single-column view showed them in the same section).
-                        unknown = if (seg == TaskSegment.ATTENTION) board.unknown else emptyList(),
-                        modifier = Modifier.width(columnWidth).fillParentMaxHeight(),
-                        folderNames = ui.folderNames,
-                        busy = ui.busyKey != null,
-                        spinningKey = ui.busyKey,
-                        canArchiveAll = seg == TaskSegment.DONE &&
-                            archiveAllCandidates(rows).isNotEmpty(),
-                        onArchiveAll = viewModel::archiveAllDone,
-                        onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
-                        onOpenSession = onOpenSession,
-                        onAction = { action ->
-                            // 编辑 opens a sheet, not a confirm dialog.
-                            if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
-                        },
-                    )
-                }
+            // 批v161: the four-status bar is shared by both shapes — one tap
+            // jumps a phone to that status, and it doubles as list mode's tabs.
+            TaskBoardStatusBar(
+                counts = board.counts,
+                selectedIndex = focusIndex,
+                onSelect = { segment -> pendingSegment = segment },
+            )
+            val onCardAction: (ConfirmAction) -> Unit = { action ->
+                // 编辑 opens a sheet, not a confirm dialog.
+                if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
+            }
+            if (boardLayout == TASK_BOARD_LIST) {
+                val segment = SEGMENT_ORDER[focusIndex.coerceIn(0, SEGMENT_ORDER.lastIndex)]
+                TaskBoardList(
+                    segment = segment,
+                    entries = board.segments[segment].orEmpty(),
+                    unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
+                    columns = listColumns,
+                    folderNames = ui.folderNames,
+                    busy = ui.busyKey != null,
+                    spinningKey = ui.busyKey,
+                    canArchiveAll = segment == TaskSegment.DONE &&
+                        archiveAllCandidates(board.segments[segment].orEmpty()).isNotEmpty(),
+                    onArchiveAll = viewModel::archiveAllDone,
+                    onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
+                    onOpenSession = onOpenSession,
+                    onAction = onCardAction,
+                    modifier = Modifier.weight(1f),
+                    showEmptyHint = showEmptyHint,
+                )
+            } else {
+                // 批v161 kanban: pages of one or two columns (four on a tablet),
+                // so a narrow phone shows complete columns instead of "one
+                // column plus a sliver" (批v160's 72%-width LazyRow).
+                KanbanPager(
+                    pagerState = pagerState,
+                    columnsPerPage = kanbanColumns,
+                    board = board,
+                    folderNames = ui.folderNames,
+                    busy = ui.busyKey != null,
+                    spinningKey = ui.busyKey,
+                    onArchiveAll = viewModel::archiveAllDone,
+                    onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
+                    onOpenSession = onOpenSession,
+                    onAction = onCardAction,
+                    modifier = Modifier.weight(1f),
+                    showEmptyHint = showEmptyHint,
+                )
             }
         }
+    }
+
+    // 批v161 P3=B: the toolbar's 总览 entry — a full-screen glance at all four
+    // statuses. It is a modal overlay, not a layout: closing it returns to
+    // whatever shape the user chose.
+    if (overviewOpen) {
+        TaskBoardOverviewDialog(
+            board = board,
+            onDismiss = { overviewOpen = false },
+            onOpenDetail = { entry ->
+                overviewOpen = false
+                detailKey = entry.serverId to entry.task.id
+            },
+        )
     }
 
     if (folderSheet) {
@@ -494,6 +628,7 @@ private fun ToolbarRow(
     onShowCanceled: (Boolean) -> Unit,
     onShowArchived: (Boolean) -> Unit,
     onNewTask: () -> Unit,
+    onOverview: () -> Unit,
 ) {
     val colors = CodegTheme.colors
     var filterMenu by remember { mutableStateOf(false) }
@@ -506,6 +641,10 @@ private fun ToolbarRow(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+                // 批v161: four toolbar icons leave ~200dp for the folder chip on
+                // a 360dp phone — it has to be the one that shrinks, or a long
+                // folder name pushes the icons off the row.
+                .weight(1f)
                 .clip(RoundedCornerShape(10.dp))
                 .clickable(onClick = onFolderClick)
                 .padding(horizontal = 8.dp, vertical = 8.dp)
@@ -532,7 +671,14 @@ private fun ToolbarRow(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.weight(1f))
+        // 批v161 P3=B: the mini overview entry (all four statuses on one screen).
+        IconButton(onClick = onOverview, modifier = Modifier.size(40.dp)) {
+            Icon(
+                Icons.Rounded.GridView,
+                contentDescription = stringResource(R.string.task_overview_entry),
+                tint = colors.textSecondary,
+            )
+        }
         // 批v155: the board's own 新建任务 entry (web parity) — opens the
         // task-locked dispatch form sheet.
         IconButton(onClick = onNewTask, modifier = Modifier.size(40.dp)) {
@@ -609,6 +755,126 @@ private fun FolderOptionRow(label: String, selected: Boolean, onClick: () -> Uni
 }
 
 /**
+ * 批v161: the four-status bar every board shape shares. On a phone it is the
+ * kanban's page index (tap a status to jump to the page that holds it); on a
+ * tablet it highlights the visible quarter; in list mode it is the tab row.
+ * Counts are the pre-search sizes, so the bar keeps telling the user where
+ * work is waiting even while a query filters the columns.
+ */
+@Composable
+private fun TaskBoardStatusBar(
+    counts: Map<TaskSegment, Int>,
+    selectedIndex: Int,
+    onSelect: (TaskSegment) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val focused = selectedIndex.coerceIn(0, SEGMENT_ORDER.lastIndex)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = TASK_BOARD_SIDE_PADDING_DP.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SEGMENT_ORDER.forEachIndexed { index, segment ->
+            val isSelected = index == focused
+            val tone = segmentAccentTone(segment).composeColor(colors)
+            // Two stacked lines (name over count) instead of an inline badge:
+            // at 360dp each chip is ~80dp, and 等你处理 + a count side by side
+            // would ellipsize the name at 1.3× font scale.
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isSelected) tone.copy(alpha = 0.16f)
+                        else colors.bgElevated.copy(alpha = 0.55f),
+                    )
+                    .clickable { onSelect(segment) }
+                    .heightIn(min = 40.dp)
+                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                    // 局部变量刻意叫 isSelected：若叫 selected，下方 semantics
+                    // lambda 的左值会解析到局部变量报编译错（v151 lesson）。
+                    .semantics { selected = isSelected },
+            ) {
+                Text(
+                    stringResource(segment.labelRes),
+                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
+                    color = if (isSelected) colors.textPrimary else colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${counts[segment] ?: 0}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    color = if (isSelected) tone else colors.textTertiary,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 批v161: the kanban body — [columnsPerPage] columns side by side per page, so
+ * a narrow phone shows complete 180dp columns instead of 批v160's 72%-width
+ * columns peeking in from the edge. Tablets resolve to four columns and keep
+ * the exact web-parity board.
+ */
+@Composable
+private fun KanbanPager(
+    pagerState: PagerState,
+    columnsPerPage: Int,
+    board: TaskBoardData,
+    folderNames: Map<String, Map<Int, String>>,
+    busy: Boolean,
+    spinningKey: String?,
+    onArchiveAll: () -> Unit,
+    onOpenDetail: (TaskBoardEntry) -> Unit,
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit,
+    onAction: (ConfirmAction) -> Unit,
+    modifier: Modifier = Modifier,
+    showEmptyHint: Boolean = true,
+) {
+    val compact = taskBoardCompactCards(columnsPerPage)
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier.fillMaxWidth(),
+        key = { page -> "board-page-$page" },
+    ) { page ->
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = TASK_BOARD_SIDE_PADDING_DP.dp),
+            horizontalArrangement = Arrangement.spacedBy(TASK_BOARD_COLUMN_GAP_DP.dp),
+        ) {
+            pageSegments(page, columnsPerPage).forEach { segment ->
+                KanbanColumn(
+                    segment = segment,
+                    entries = board.segments[segment].orEmpty(),
+                    unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    compact = compact,
+                    folderNames = folderNames,
+                    busy = busy,
+                    spinningKey = spinningKey,
+                    canArchiveAll = segment == TaskSegment.DONE &&
+                        archiveAllCandidates(board.segments[segment].orEmpty()).isNotEmpty(),
+                    onArchiveAll = onArchiveAll,
+                    onOpenDetail = onOpenDetail,
+                    onOpenSession = onOpenSession,
+                    onAction = onAction,
+                    showEmptyHint = showEmptyHint,
+                )
+            }
+        }
+    }
+}
+
+/**
  * 批v160 W5: one kanban column (web board parity) — a fixed header (accent
  * bar + name + count badge, and 全部归档 on DONE) over a vertical list of
  * cards. Unknown statuses ride at the bottom of 等你处理 like the old
@@ -620,6 +886,7 @@ private fun KanbanColumn(
     entries: List<TaskBoardEntry>,
     unknown: List<TaskBoardEntry>,
     modifier: Modifier,
+    compact: Boolean,
     folderNames: Map<String, Map<Int, String>>,
     busy: Boolean,
     spinningKey: String?,
@@ -628,16 +895,39 @@ private fun KanbanColumn(
     onOpenDetail: (TaskBoardEntry) -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onAction: (ConfirmAction) -> Unit,
+    showEmptyHint: Boolean,
 ) {
+    val colors = CodegTheme.colors
     Column(modifier) {
         KanbanColumnHeader(
             segment = segment,
             count = entries.size,
+            compact = compact,
             showArchiveAll = segment == TaskSegment.DONE,
             canArchiveAll = canArchiveAll,
             busy = busy,
             onArchiveAll = onArchiveAll,
         )
+        if (showEmptyHint && entries.isEmpty() && unknown.isEmpty()) {
+            // An empty page column must say so: the old board simply showed a
+            // blank strip, which reads like a load failure on a narrow screen.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 4.dp, vertical = 16.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Text(
+                    stringResource(R.string.task_segment_empty),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = colors.textTertiary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            return@Column
+        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -655,32 +945,14 @@ private fun KanbanColumn(
                     folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
                     busy = busy,
                     spinning = spinningKey == "${entry.serverId}:${entry.task.id}",
+                    compact = compact,
                     onOpenDetail = { onOpenDetail(entry) },
                     onOpenSession = onOpenSession,
                     onAction = onAction,
                 )
             }
             if (unknown.isNotEmpty()) {
-                item(key = "unknown-header") {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.task_unknown_section),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = CodegTheme.colors.textPrimary,
-                        )
-                        Text(
-                            "${unknown.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = CodegTheme.colors.textSecondary,
-                        )
-                    }
-                }
+                item(key = "unknown-header") { UnknownSectionHeader(unknown.size) }
                 items(
                     unknown,
                     key = { "u-${it.serverId}-${it.task.id}" },
@@ -691,6 +963,7 @@ private fun KanbanColumn(
                         folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
                         busy = busy,
                         spinning = false,
+                        compact = compact,
                         onOpenDetail = { onOpenDetail(entry) },
                         onOpenSession = onOpenSession,
                         onAction = onAction,
@@ -701,11 +974,353 @@ private fun KanbanColumn(
     }
 }
 
+/** The 未知状态 sub-section header shared by the kanban column and list mode. */
+@Composable
+private fun UnknownSectionHeader(count: Int) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.task_unknown_section),
+            style = MaterialTheme.typography.titleSmall,
+            color = CodegTheme.colors.textPrimary,
+        )
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = CodegTheme.colors.textSecondary,
+        )
+    }
+}
+
+/**
+ * 批v161 W4: the list shape — the pre-v160 board (one status tab + its rows),
+ * which some users prefer for long titles. [columns] = 1 is the classic single
+ * column of full-width cards; 2 packs compact cards into a two-column grid, so
+ * the fallback layout also answers "single or double" as the review asked.
+ */
+@Composable
+private fun TaskBoardList(
+    segment: TaskSegment,
+    entries: List<TaskBoardEntry>,
+    unknown: List<TaskBoardEntry>,
+    columns: Int,
+    folderNames: Map<String, Map<Int, String>>,
+    busy: Boolean,
+    spinningKey: String?,
+    canArchiveAll: Boolean,
+    onArchiveAll: () -> Unit,
+    onOpenDetail: (TaskBoardEntry) -> Unit,
+    onOpenSession: (serverId: String, conversationId: Int) -> Unit,
+    onAction: (ConfirmAction) -> Unit,
+    modifier: Modifier = Modifier,
+    showEmptyHint: Boolean = true,
+) {
+    val colors = CodegTheme.colors
+    val twoColumns = columns >= 2
+    Column(modifier.fillMaxWidth()) {
+        if (segment == TaskSegment.DONE && entries.isNotEmpty()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = TASK_BOARD_SIDE_PADDING_DP.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onArchiveAll, enabled = canArchiveAll && !busy) {
+                    Text(
+                        stringResource(R.string.task_archive_all_done),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+        if (showEmptyHint && entries.isEmpty() && unknown.isEmpty()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.task_segment_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textTertiary,
+                )
+            }
+            return@Column
+        }
+        val contentPadding = PaddingValues(
+            start = TASK_BOARD_SIDE_PADDING_DP.dp,
+            end = TASK_BOARD_SIDE_PADDING_DP.dp,
+            top = 2.dp,
+            bottom = 24.dp,
+        )
+        val card: @Composable (TaskBoardEntry) -> Unit = { entry ->
+            TaskCardWeb(
+                entry = entry,
+                folderName = folderNames[entry.serverId]?.get(entry.task.folderId),
+                busy = busy,
+                spinning = spinningKey == "${entry.serverId}:${entry.task.id}",
+                compact = twoColumns,
+                onOpenDetail = { onOpenDetail(entry) },
+                onOpenSession = onOpenSession,
+                onAction = onAction,
+            )
+        }
+        if (twoColumns) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = contentPadding,
+                horizontalArrangement = Arrangement.spacedBy(TASK_BOARD_COLUMN_GAP_DP.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                gridItems(
+                    entries,
+                    key = { "${it.serverId}-${it.task.id}" },
+                    contentType = { "task" },
+                ) { entry -> card(entry) }
+                if (unknown.isNotEmpty()) {
+                    // The header spans both columns; the unknown rows then flow
+                    // through the grid like any other card.
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "unknown-header") {
+                        UnknownSectionHeader(unknown.size)
+                    }
+                    gridItems(
+                        unknown,
+                        key = { "u-${it.serverId}-${it.task.id}" },
+                        contentType = { "task" },
+                    ) { entry -> card(entry) }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = contentPadding,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(
+                    entries,
+                    key = { "${it.serverId}-${it.task.id}" },
+                    contentType = { "task" },
+                ) { entry -> card(entry) }
+                if (unknown.isNotEmpty()) {
+                    item(key = "unknown-header") { UnknownSectionHeader(unknown.size) }
+                    items(
+                        unknown,
+                        key = { "u-${it.serverId}-${it.task.id}" },
+                        contentType = { "task" },
+                    ) { entry -> card(entry) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 批v161 P3=B: the four-column mini overview — all four statuses on one screen
+ * as a read-only glance, reached from the toolbar and never a default layout.
+ * At roughly 80dp per column the cards reduce to a status dot, the title and a
+ * relative time; that is exactly the "shape of the board" this entry is for.
+ * Tapping a card closes the overview and opens the normal detail sheet.
+ */
+@Composable
+private fun TaskBoardOverviewDialog(
+    board: TaskBoardData,
+    onDismiss: () -> Unit,
+    onOpenDetail: (TaskBoardEntry) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(color = colors.bg, modifier = Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(vertical = 8.dp),
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.task_overview_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textPrimary,
+                        )
+                        Text(
+                            stringResource(R.string.task_overview_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textTertiary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.common_close))
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SEGMENT_ORDER.forEach { segment ->
+                        MiniColumn(
+                            segment = segment,
+                            entries = board.segments[segment].orEmpty(),
+                            unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            onOpen = onOpenDetail,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One quarter of the overview: a tiny header and a scrolling stack of dots. */
+@Composable
+private fun MiniColumn(
+    segment: TaskSegment,
+    entries: List<TaskBoardEntry>,
+    unknown: List<TaskBoardEntry>,
+    modifier: Modifier,
+    onOpen: (TaskBoardEntry) -> Unit,
+) {
+    val colors = CodegTheme.colors
+    val total = entries.size + unknown.size
+    Column(modifier) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 28.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(width = 3.dp, height = 12.dp)
+                    .background(segmentAccentTone(segment).composeColor(colors), RoundedCornerShape(2.dp)),
+            )
+            Text(
+                stringResource(segment.labelRes),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            )
+            Text(
+                "$total",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = colors.textTertiary,
+            )
+        }
+        if (total == 0) {
+            Text(
+                stringResource(R.string.task_segment_empty),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 12.sp),
+                color = colors.textTertiary,
+                maxLines = 2,
+                modifier = Modifier.padding(top = 8.dp, start = 2.dp),
+            )
+            return@Column
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            items(
+                entries,
+                key = { "${it.serverId}-${it.task.id}" },
+                contentType = { "mini" },
+            ) { entry -> MiniCard(entry = entry, onClick = { onOpen(entry) }) }
+            items(
+                unknown,
+                key = { "u-${it.serverId}-${it.task.id}" },
+                contentType = { "mini" },
+            ) { entry -> MiniCard(entry = entry, onClick = { onOpen(entry) }) }
+        }
+    }
+}
+
+/** The smallest readable card: a status dot, two title lines, a relative time. */
+@Composable
+private fun MiniCard(entry: TaskBoardEntry, onClick: () -> Unit) {
+    val colors = CodegTheme.colors
+    val task = entry.task
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (task.isArchivedLike) Modifier.alpha(0.6f) else Modifier)
+            .clip(shape)
+            .background(colors.bgElevated)
+            .border(1.dp, colors.textPrimary.copy(alpha = 0.10f), shape)
+            .clickable(onClick = onClick)
+            .padding(6.dp),
+    ) {
+        Row {
+            Box(
+                Modifier
+                    .padding(top = 3.dp)
+                    .size(5.dp)
+                    .background(statusDotColor(task.status, colors), CircleShape),
+            )
+            Text(
+                task.title,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                color = colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp),
+            )
+        }
+        relativeLabel(task.finishedAt ?: task.settledAt ?: task.startedAt ?: task.createdAt)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                color = colors.textTertiary,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 2.dp, start = 9.dp),
+            )
+        }
+    }
+}
+
 /** Column header: the 4dp accent bar + name + live count (+ 全部归档 on DONE). */
 @Composable
 private fun KanbanColumnHeader(
     segment: TaskSegment,
     count: Int,
+    compact: Boolean,
     showArchiveAll: Boolean,
     canArchiveAll: Boolean,
     busy: Boolean,
@@ -744,16 +1359,33 @@ private fun KanbanColumnHeader(
         }
         Spacer(Modifier.weight(1f))
         if (showArchiveAll) {
-            // 批v160 W5: one-tap sweep of every finished row on the board.
-            TextButton(
-                onClick = onArchiveAll,
-                enabled = canArchiveAll && !busy,
-                contentPadding = PaddingValues(horizontal = 8.dp),
-            ) {
-                Text(
-                    stringResource(R.string.task_archive_all_done),
-                    style = MaterialTheme.typography.labelMedium,
-                )
+            if (compact) {
+                // 180dp column: the 4-char label would push the count out at
+                // 1.3× font scale, so compact columns keep the action as icon.
+                IconButton(
+                    onClick = onArchiveAll,
+                    enabled = canArchiveAll && !busy,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Archive,
+                        contentDescription = stringResource(R.string.task_archive_all_done),
+                        tint = if (canArchiveAll && !busy) colors.textSecondary else colors.textTertiary.copy(alpha = 0.4f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else {
+                // 批v160 W5: one-tap sweep of every finished row on the board.
+                TextButton(
+                    onClick = onArchiveAll,
+                    enabled = canArchiveAll && !busy,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.task_archive_all_done),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }
@@ -1040,6 +1672,7 @@ private fun TaskCardWeb(
     folderName: String?,
     busy: Boolean,
     spinning: Boolean,
+    compact: Boolean = false,
     onOpenDetail: () -> Unit,
     onOpenSession: (serverId: String, conversationId: Int) -> Unit,
     onAction: (ConfirmAction) -> Unit,
@@ -1050,17 +1683,21 @@ private fun TaskCardWeb(
     val actions = buildCardActions(task)
     val metaStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
     val monoStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+    val cardShape = RoundedCornerShape(if (compact) 14.dp else 16.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (task.isArchivedLike) Modifier.alpha(0.6f) else Modifier)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(cardShape)
             .background(colors.bgElevated)
-            .border(1.dp, colors.textPrimary.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+            .border(1.dp, colors.textPrimary.copy(alpha = 0.15f), cardShape)
             .combinedClickable(onClick = onOpenDetail, onLongClick = { menuOpen = true })
-            .padding(12.dp),
+            .padding(if (compact) 10.dp else 12.dp),
     ) {
         // Header: agent mark rides the first title line, chip pinned right.
+        // The compact (two-column) card drops the chip here — at ~156dp the
+        // chip would leave the title two characters wide — and prints it as
+        // the first meta item instead.
         Row(verticalAlignment = Alignment.Top) {
             if (spinning) {
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -1090,7 +1727,7 @@ private fun TaskCardWeb(
                     .weight(1f)
                     .padding(horizontal = 6.dp),
             )
-            WebStatusChip(task)
+            if (!compact) WebStatusChip(task)
         }
         // Meta line (web 468-506). The server name is Android-only — this board
         // aggregates across devices, the web board never does.
@@ -1099,21 +1736,24 @@ private fun TaskCardWeb(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.padding(top = 6.dp),
         ) {
+            if (compact) WebStatusChip(task)
             Text(
                 entry.serverName,
                 style = metaStyle, color = colors.textSecondary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 96.dp),
+                modifier = Modifier.widthIn(max = if (compact) 72.dp else 96.dp),
             )
             folderName?.let {
                 Text(
                     it,
                     style = metaStyle, color = colors.textSecondary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 160.dp),
+                    modifier = Modifier.widthIn(max = if (compact) 96.dp else 160.dp),
                 )
             }
-            task.workBranch?.let { branch ->
+            // The branch is the first thing to go at 180dp: it is long, mono,
+            // and already lives in the detail sheet.
+            if (!compact) task.workBranch?.let { branch ->
                 Text(
                     branch,
                     style = monoStyle, color = colors.textSecondary,
@@ -1134,14 +1774,15 @@ private fun TaskCardWeb(
                 SchedulePill(task.scheduledAt)
             }
         }
-        // Review cards quote the agent's verdict, two lines (web 546-550).
+        // Review cards quote the agent's verdict, two lines (web 546-550); the
+        // narrow card keeps one so the primary action stays visible.
         if (task.status == "review") {
             task.resultSummary?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
                     color = colors.textSecondary,
-                    maxLines = 2,
+                    maxLines = if (compact) 1 else 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 6.dp),
                 )
@@ -1151,7 +1792,7 @@ private fun TaskCardWeb(
         // (web 560-597). Always composed, only disabled — removing buttons on an
         // in-flight action made every card's row height jump.
         if (actions.primary != null || actions.secondaries.isNotEmpty()) {
-            Column(Modifier.padding(top = 12.dp)) {
+            Column(Modifier.padding(top = if (compact) 10.dp else 12.dp)) {
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -1163,16 +1804,41 @@ private fun TaskCardWeb(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = if (compact) 10.dp else 12.dp),
                 ) {
                     actions.primary?.let { primary ->
                         CardPrimaryPill(
                             action = primary,
                             enabled = !busy,
-                            modifier = Modifier.weight(1f, fill = false),
+                            // Compact: fill the row so the ⋯ pins to its right
+                            // edge and the label keeps the full ~120dp. Wide:
+                            // wrap at half-row as v160 shipped.
+                            modifier = Modifier.weight(1f, fill = compact),
                         ) { dispatchCardAction(primary, entry, onOpenSession, onAction) }
                     }
-                    if (actions.secondaries.isNotEmpty()) {
+                    if (compact) {
+                        // A 180dp card cannot host two 32dp circles next to a
+                        // pill. They collapse into the long-press menu (which is
+                        // a superset — nothing is lost except the circles).
+                        if (actions.secondaries.isNotEmpty() || task.conversationId != null) {
+                            if (actions.primary == null) Spacer(Modifier.weight(1f))
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, colors.textPrimary.copy(alpha = 0.18f), CircleShape)
+                                    .clickable { menuOpen = true },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Rounded.MoreHoriz,
+                                    contentDescription = stringResource(R.string.task_more_actions),
+                                    tint = colors.textSecondary,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    } else if (actions.secondaries.isNotEmpty()) {
                         Spacer(Modifier.weight(1f))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             actions.secondaries.forEach { secondary ->
