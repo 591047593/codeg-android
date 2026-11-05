@@ -3,7 +3,8 @@ name: Verify
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/fleet-v1]
+  workflow_dispatch:
 
 permissions:
   contents: read
