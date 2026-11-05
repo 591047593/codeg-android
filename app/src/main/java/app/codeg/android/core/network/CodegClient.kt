@@ -1,6 +1,17 @@
 package app.codeg.android.core.network
 
 import app.codeg.android.core.model.AgentType
+import app.codeg.android.core.model.AutomationCancelRunBody
+import app.codeg.android.core.model.AutomationComputeNextRunBody
+import app.codeg.android.core.model.AutomationDraftBody
+import app.codeg.android.core.model.AutomationDraftDto
+import app.codeg.android.core.model.AutomationIdBody
+import app.codeg.android.core.model.AutomationInfo
+import app.codeg.android.core.model.AutomationRunInfo
+import app.codeg.android.core.model.AutomationRunNowBody
+import app.codeg.android.core.model.AutomationRunsBody
+import app.codeg.android.core.model.AutomationSetEnabledBody
+import app.codeg.android.core.model.AutomationUpdateBody
 import app.codeg.android.core.model.WorkTaskChangedFile
 import app.codeg.android.core.model.WorkTaskEvent
 import app.codeg.android.core.model.WorkTaskInfo
@@ -843,6 +854,74 @@ class CodegClient(
             ?: throw ApiError.Decoding("work_task_start_all returned a non-number body")
     }
 
+    // ── Automations (fleet M2) ─────────────────────────────────────────────
+    // Response rows are plain snake_case Serialize structs → CodegJson.response's
+    // naming strategy matches. Request params are rename_all=camelCase structs,
+    // but the nested draft has NO rename (snake_case wire) — AutomationDraftDto
+    // spells it with @SerialName.
+
+    suspend fun automationList(): List<AutomationInfo> =
+        decode(
+            send("automation_list", encode(EmptyBody)),
+            ListSerializer(AutomationInfo.serializer()),
+        )
+
+    suspend fun automationGet(id: Int): AutomationInfo =
+        decode(send("automation_get", encode(AutomationIdBody(id))), AutomationInfo.serializer())
+
+    suspend fun automationRuns(automationId: Int, limit: Int = 100): List<AutomationRunInfo> =
+        decode(
+            send("automation_runs", encode(AutomationRunsBody(automationId, limit))),
+            ListSerializer(AutomationRunInfo.serializer()),
+        )
+
+    suspend fun automationCreate(draft: AutomationDraftDto): AutomationInfo =
+        decode(send("automation_create", encode(AutomationDraftBody(draft))), AutomationInfo.serializer())
+
+    suspend fun automationUpdate(id: Int, draft: AutomationDraftDto): AutomationInfo =
+        decode(
+            send("automation_update", encode(AutomationUpdateBody(id, draft))),
+            AutomationInfo.serializer(),
+        )
+
+    suspend fun automationSetEnabled(id: Int, enabled: Boolean): AutomationInfo =
+        decode(
+            send("automation_set_enabled", encode(AutomationSetEnabledBody(id, enabled))),
+            AutomationInfo.serializer(),
+        )
+
+    suspend fun automationDelete(id: Int) {
+        send("automation_delete", encode(AutomationIdBody(id)))
+    }
+
+    /** Clears every automation's unseen-failure counters (no id — server-wide). */
+    suspend fun automationMarkSeen() {
+        send("automation_mark_seen", encode(EmptyBody))
+    }
+
+    /** Preview only — server evaluates the cron in [timezone] (IANA), strictly
+     *  "now" at the server. Returns the next fire instant (RFC3339) or null
+     *  (unparseable cron/zone, or no next occurrence). */
+    suspend fun automationComputeNextRun(cron: String, timezone: String): String? =
+        decodeBareStringOrNull(
+            send(
+                "automation_compute_next_run",
+                encode(AutomationComputeNextRunBody(cron, timezone)),
+            ),
+        )
+
+    /** Fire immediately — returns the new run id (bare JSON number). The run
+     *  settles ASYNC: poll [automationRuns] for the outcome, never await here. */
+    suspend fun automationRunNow(automationId: Int): Int {
+        val text = send("automation_run_now", encode(AutomationRunNowBody(automationId)))
+        return decodeBareInt(text)
+            ?: throw ApiError.Decoding("automation_run_now returned a non-number body")
+    }
+
+    suspend fun automationCancelRun(runId: Int) {
+        send("automation_cancel_run", encode(AutomationCancelRunBody(runId)))
+    }
+
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())
         return (root as? JsonObject)?.let { WorkTaskInfo.fromWire(it) }
@@ -1549,6 +1628,20 @@ class CodegClient(
                     }
                 }.getOrNull()
 
+        /**
+         * fleet M2: parse a bare JSON string-or-null response —
+         * `automation_compute_next_run` returns an RFC3339 instant or JSON null.
+         * `null`/`"null"`/empty → null; a quoted string → its content; an
+         * unquoted RFC3339 token (defensive) → as-is.
+         */
+        internal fun decodeBareStringOrNull(text: String): String? =
+            runCatching { CodegJson.response.parseToJsonElement(text) }.getOrNull()?.let { el ->
+                when (el) {
+                    is JsonNull -> null
+                    is JsonPrimitive -> el.content.trim().ifEmpty { null }
+                    else -> null
+                }
+            }
 
         /**
          * `acp_connect` returns a bare JSON string connection id. Require exactly
