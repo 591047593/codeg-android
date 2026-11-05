@@ -75,6 +75,7 @@ fun QuickNewSessionSheet(
             DispatchForm(
                 host = viewModel,
                 defaultSessionMode = true,
+                draftEntry = "quicknew",
                 onResult = { ref ->
                     val convId = ref.remoteTodoId
                     if (ref.sessionMode && ref.state == DispatchState.CONFIRMED && convId != null) {

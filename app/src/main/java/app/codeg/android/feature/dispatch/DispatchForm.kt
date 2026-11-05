@@ -75,6 +75,8 @@ import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.model.FolderDetail
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -105,13 +107,24 @@ interface DispatchFormHost {
      *  LOCAL copies; [DispatchService] uploads them to the chosen device. */
     val attachmentStager: app.codeg.android.core.data.AttachmentStager
 
+    /** P0: dispatch-form drafts (title + body) — the same store the composer uses. */
+    val drafts: app.codeg.android.core.datastore.DraftStore
+
     fun loadTarget(serverId: String)
     fun loadBranches(serverId: String, folder: FolderDetail)
 
     /** 批v155: the agent's mode list for the 模型 row — cache-first probe via
      *  [app.codeg.android.core.data.AgentOptionsProber] (one CLI spawn per
      *  server+agent+dir, shared across forms). null = probe failed. */
-    suspend fun probeAgentOptions(serverId: String, agentType: AgentType, workingDir: String?): app.codeg.android.core.model.AgentOptionsSnapshot?
+    suspend fun probeAgentOptions(
+        serverId: String,
+        agentType: AgentType,
+        workingDir: String?,
+        configValues: Map<String, String> = emptyMap(),
+    ): app.codeg.android.core.model.AgentOptionsSnapshot?
+
+    /** P0-5: remember the 「创建后立即开始」 choice for the next time the form opens. */
+    fun setTaskAutoStartDefault(value: Boolean)
 
     /** Fire the pipeline; [onDone] delivers the ledger ref (PENDING included). */
     fun dispatch(submit: DispatchFormSubmit, onDone: (DispatchRef) -> Unit)
@@ -142,8 +155,12 @@ data class DispatchFormSubmit(
     val title: String,
     val description: String,
     val baseBranch: String?,
-    /** 批v155: the picked agent mode (模型 row), list-validated by the form. */
+    /** 批v155: the picked agent mode (执行模式 row), list-validated by the form. */
     val modeId: String? = null,
+    /** P0: picked config options (model / reasoning effort), id → value. Sent as
+     *  `config_values` on a task; for a session they pin the conversation's first
+     *  connect. Empty = the agent's own defaults. */
+    val configValues: Map<String, String> = emptyMap(),
     val scheduleLocalMillis: Long?,
     val sessionMode: Boolean,
     val autoStart: Boolean = true,
@@ -191,6 +208,10 @@ fun DispatchForm(
     /** 批v154: files already owned by the source (an idea's attachments). The form
      *  shows them as removable chips; it only DELETES copies it staged itself. */
     initialAttachments: List<app.codeg.android.core.data.LocalAttachment> = emptyList(),
+    /** P0 草稿: non-null persists title/body per (server, entry, project). The inbox
+     *  idea path passes null — its fields are seeded from the idea and must not be
+     *  overwritten by an older draft. */
+    draftEntry: String? = null,
 ) {
     val colors = CodegTheme.colors
     val targets by host.targets.collectAsStateWithLifecycle()
@@ -206,16 +227,33 @@ fun DispatchForm(
     var sessionMode by rememberSaveable { mutableStateOf(!newTaskMode && defaultSessionMode) }
     var title by rememberSaveable { mutableStateOf(initialTitle) }
     var description by rememberSaveable { mutableStateOf(initialDescription) }
+    // P0 草稿: saving stays OFF until the stored draft was read back — otherwise the
+    // first (blank) frame would erase it. [draftClosed] stops the saver after a
+    // confirmed submit so the just-sent text can't come back.
+    var draftRestored by remember(draftEntry) { mutableStateOf(false) }
+    var draftClosed by remember(draftEntry) { mutableStateOf(false) }
+    // P0-5 创建后立即开始: seeded from the remembered choice; the switch writes it
+    // back on change, so the next open starts where the user left it.
+    var taskAutoStart by rememberSaveable { mutableStateOf(settings.taskAutoStartDefault) }
+    var autoStartTouched by rememberSaveable { mutableStateOf(false) }
     var scheduled by rememberSaveable { mutableStateOf(false) }
     var scheduleMillis by rememberSaveable { mutableStateOf(0L) }
-    // 批v155 模型行（仅任务模式 + 具体 Agent）。modelId survives process death,
-    // the OPTIONS list does not — a restored id must revalidate against the
-    // fresh probe result before it can ride along on a submit.
-    var modelId by rememberSaveable { mutableStateOf<String?>(null) }
-    var modelOptions by remember { mutableStateOf<List<app.codeg.android.core.model.SessionModeInfo>>(emptyList()) }
-    var modelLoading by remember { mutableStateOf(false) }
-    var modelFailed by remember { mutableStateOf(false) }
-    var modelSheet by remember { mutableStateOf(false) }
+    // 批v155/P0-2 权限模式行 (plan/Build): these were mislabelled 「模型」 — they
+    // are the ACP session modes. modeId survives process death, the OPTIONS list
+    // does not: a restored id must revalidate against the fresh probe.
+    var modeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var modeOptions by remember { mutableStateOf<List<app.codeg.android.core.model.SessionModeInfo>>(emptyList()) }
+    var modeSheet by remember { mutableStateOf(false) }
+    // P0-2 model / reasoning effort: the same probe returns the agent's config
+    // catalog. Picks are USER-ONLY — an absent entry means "the agent's own
+    // current value" (what the row displays), so a probe never writes its own
+    // output back into the next probe (no feedback loop) and an untouched form
+    // sends no config_values at all.
+    var agentOptions by remember { mutableStateOf<app.codeg.android.core.model.AgentOptionsSnapshot?>(null) }
+    val configPicks = remember { androidx.compose.runtime.mutableStateMapOf<String, String>() }
+    var configSheetId by remember { mutableStateOf<String?>(null) }
+    var optionsLoading by remember { mutableStateOf(false) }
+    var optionsFailed by remember { mutableStateOf(false) }
     // 批v154 attachments. A plain remember (not saveable): the staged model is not
     // Bundle-able, and the sheet closes on rotation anyway — the private copies
     // simply outlive the chip list. Locally staged copies are ours to delete on
@@ -286,21 +324,32 @@ fun DispatchForm(
         val d = device
         if (!sessionMode && !newTaskMode && d != null && folder != null) host.loadBranches(d, folder)
     }
-    // 模型探测 (批v155): task mode + a concrete agent on a picked device+project
-    // → describeAgentOptions for the mode list. Cache-first on the prober, so a
-    // re-opened form answers instantly; a key change resets the picked id
-    // (a fresh list may differ) and re-resolves. Cancellation-safe: the store
-    // keeps the probe running, only the await is cancelled.
-    LaunchedEffect(sessionMode, device, agent, folder?.path) {
-        modelId = null
-        modelOptions = emptyList()
-        modelLoading = false
-        modelFailed = false
+    // P0-2 探测: agent + project → describeAgentOptions (modes + config catalog).
+    // Session mode probes the EFFECTIVE agent (explicit pick, else the project
+    // default) so the model row also works when creating a conversation. The
+    // prober is cache-first; a target change resets picks, a config change
+    // re-probes with the picked values so the effort list matches the model.
+    val probeAgent = agent
+        ?: folder?.defaultAgentType?.takeIf { it != AgentType.UNKNOWN }
+    // One place that folds a probe result into the rows (target probe + re-probe).
+    fun applyProbe(snapshot: app.codeg.android.core.model.AgentOptionsSnapshot) {
+        agentOptions = snapshot
+        val modes = snapshot.modes?.availableModes.orEmpty()
+        modeOptions = modes
+        modeId = snapshot.modes?.currentModeId?.takeIf { cur -> modes.any { it.id == cur } }
+    }
+    LaunchedEffect(device, probeAgent, folder?.path) {
+        modeId = null
+        modeOptions = emptyList()
+        agentOptions = null
+        configPicks.clear()
+        optionsLoading = false
+        optionsFailed = false
         val d = device
-        val a = agent
+        val a = probeAgent
         val f = folder
-        if (sessionMode || d == null || a == null || f == null) return@LaunchedEffect
-        modelLoading = true
+        if (d == null || a == null || f == null) return@LaunchedEffect
+        optionsLoading = true
         val snapshot = try {
             host.probeAgentOptions(d, a, f.path)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -308,15 +357,30 @@ fun DispatchForm(
         } catch (_: Exception) {
             null
         }
-        modelLoading = false
+        optionsLoading = false
         if (snapshot == null) {
-            modelFailed = true
+            optionsFailed = true
         } else {
-            modelOptions = snapshot.modes?.availableModes.orEmpty()
-            snapshot.modes?.currentModeId
-                ?.takeIf { current -> modelOptions.any { it.id == current } }
-                ?.let { modelId = it }
+            applyProbe(snapshot)
         }
+    }
+    // A picked model can change the reasoning-effort choices — re-probe with the
+    // current picks. Deliberately silent: the old rows stay usable meanwhile, and
+    // a failed re-probe must not blank a catalog the user is looking at.
+    val configKey = configPicks.toSortedMap().entries.joinToString(",") { "${it.key}=${it.value}" }
+    LaunchedEffect(configKey) {
+        if (configKey.isEmpty()) return@LaunchedEffect
+        val d = device ?: return@LaunchedEffect
+        val a = probeAgent ?: return@LaunchedEffect
+        val f = folder ?: return@LaunchedEffect
+        val snapshot = try {
+            host.probeAgentOptions(d, a, f.path, configPicks.toMap())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        if (snapshot != null) agentOptions = snapshot
     }
     // Process-death restore (v146 invariant): saved device/folder/agent come back
     // but the loaded folders/agents died with the process — re-request once.
@@ -366,6 +430,43 @@ fun DispatchForm(
                 agent = wire
             }
         }
+    }
+
+    // Adopt the remembered choice until the user flips the switch this session.
+    LaunchedEffect(settings.taskAutoStartDefault) {
+        if (!autoStartTouched) taskAutoStart = settings.taskAutoStartDefault
+    }
+
+    // P0 草稿: per server + entry + project. Nothing to key on until the defaults
+    // have settled (device/folder null → no draft, no save).
+    val draftKey = remember(draftEntry, device, folderId) {
+        val e = draftEntry
+        val d = device
+        val f = folderId
+        if (e == null || d == null || f == null) null
+        else app.codeg.android.core.datastore.DraftStore.dispatchKey(d, e, f)
+    }
+    val draftScope = rememberCoroutineScope()
+    LaunchedEffect(draftKey) {
+        draftRestored = false
+        val key = draftKey ?: return@LaunchedEffect
+        val stored = host.drafts.draftNow(key)
+        // Only fill blanks: a host-seeded value (or a restored saveable) wins.
+        if (title.isBlank()) title = stored.title
+        if (description.isBlank()) description = stored.text
+        draftRestored = true
+    }
+    LaunchedEffect(draftKey, draftRestored) {
+        val key = draftKey ?: return@LaunchedEffect
+        if (!draftRestored) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { title to description }
+            .distinctUntilChanged()
+            .collectLatest { (t, b) ->
+                kotlinx.coroutines.delay(500)
+                if (draftClosed) return@collectLatest
+                if (t.isBlank() && b.isBlank()) host.drafts.clearDraft(key)
+                else host.drafts.setDraft(key, t, b)
+            }
     }
 
     Column(
@@ -477,35 +578,74 @@ fun DispatchForm(
             enabled = targets.folders.isNotEmpty(),
         )
 
-        // ⑤b 模型（仅任务模式 + 具体 Agent）— the agent's live mode list via
-        // describeAgentOptions (批v155). 自动 agent can't be probed (no concrete
-        // CLI), so the row hides; an agent without modes dispatches mode-less.
-        if (!sessionMode && agent != null) {
+        // ⑤b 权限模式 (plan/Build) — the agent's live MODE list. P0-2: this
+        // row used to be labelled 「模型」, which is why the picker only ever
+        // offered plan/Build. It now sits under its own name, in both modes.
+        if (modeOptions.isNotEmpty()) {
+            PickerField(
+                icon = Icons.Rounded.Tune,
+                label = stringResource(R.string.dispatch_mode_permission),
+                value = modeOptions.firstOrNull { it.id == modeId }
+                    ?.let { it.name.ifBlank { it.id } },
+                placeholder = "",
+                onClick = { modeSheet = true },
+            )
+        }
+
+        // ⑤c 模型 / ⑤d 推理强度 — the agent's config catalog. Shown in BOTH
+        // modes: a conversation pins them through its first acp_connect, a task
+        // sends them as config_values. Untouched rows = the agent's own default.
+        val modelOption = agentOptions?.configOptions?.firstOrNull {
+            it.id == "model" || it.category == "model"
+        }
+        val effortOption = agentOptions?.configOptions?.firstOrNull {
+            it.id != modelOption?.id &&
+                (it.category == "thought_level" || it.id == "reasoning_effort")
+        }
+        if (modelOption != null) {
             PickerField(
                 icon = Icons.Rounded.Tune,
                 label = stringResource(R.string.dispatch_model),
-                value = modelOptions.firstOrNull { it.id == modelId }
-                    ?.let { it.name.ifBlank { it.id } },
+                value = modelOption.displayValue(configPicks),
+                placeholder = "",
+                onClick = { configSheetId = modelOption.id },
+            )
+        } else {
+            // No model selector yet: say which reason, never fake a list.
+            PickerField(
+                icon = Icons.Rounded.Tune,
+                label = stringResource(R.string.dispatch_model),
+                value = null,
                 placeholder = stringResource(
                     when {
-                        modelLoading -> R.string.dispatch_model_loading
-                        modelFailed -> R.string.dispatch_model_failed
+                        optionsLoading -> R.string.dispatch_model_loading
+                        optionsFailed -> R.string.dispatch_model_failed
                         // R3 P3-6: no project selected → the probe hasn't run;
                         // "无模型" reads as a verdict, not a pending state.
                         folder == null -> R.string.dispatch_model_pending
+                        probeAgent == null -> R.string.dispatch_model_needs_agent
                         else -> R.string.dispatch_model_none
                     },
                 ),
-                onClick = { modelSheet = true },
-                enabled = modelOptions.isNotEmpty(),
+                onClick = {},
+                enabled = false,
             )
-            if (modelFailed && !modelLoading) {
-                Text(
-                    stringResource(R.string.dispatch_model_failed_note),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textTertiary,
-                )
-            }
+        }
+        if (effortOption != null) {
+            PickerField(
+                icon = Icons.Rounded.Tune,
+                label = stringResource(R.string.dispatch_reasoning),
+                value = effortOption.displayValue(configPicks),
+                placeholder = "",
+                onClick = { configSheetId = effortOption.id },
+            )
+        }
+        if (optionsFailed && !optionsLoading) {
+            Text(
+                stringResource(R.string.dispatch_model_failed_note),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textTertiary,
+            )
         }
 
         // ⑤ 分支（仅任务模式）— real git_list_all_branches; failure keeps the
@@ -653,6 +793,27 @@ fun DispatchForm(
             )
         }
 
+        // ⑥b 创建后立即开始（仅任务模式）: off → 待办, on → 立刻入队并显示在进行中。
+        if (!sessionMode) {
+            FormSectionLabel(stringResource(R.string.dispatch_task_autostart))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = taskAutoStart,
+                    onCheckedChange = {
+                        taskAutoStart = it
+                        autoStartTouched = true
+                        host.setTaskAutoStartDefault(it)
+                    },
+                )
+                Text(
+                    stringResource(R.string.dispatch_task_autostart_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+
         // ⑦ 定时（仅任务模式）— 会话模式无定时（定时拉起的是 work_task）。
         // 任务板新建模式同样无定时 (批v155)：定时走卡片长按菜单。
         if (!sessionMode && !newTaskMode) {
@@ -705,7 +866,7 @@ fun DispatchForm(
             folderName = folder?.name,
             agent = agent,
             folderDefaultAgent = folder?.defaultAgentType,
-            modelName = modelOptions.firstOrNull { it.id == modelId }?.let { it.name.ifBlank { it.id } },
+            modelName = modelOption?.displayValue(configPicks),
             branch = if (!sessionMode && !newTaskMode && branch != null && branchFresh) branch else null,
             followBranch = if (!sessionMode && !newTaskMode) folder?.gitBranch else null,
             scheduledAt = if (!sessionMode && !newTaskMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
@@ -727,7 +888,13 @@ fun DispatchForm(
             (description.isNotBlank() || attachments.isNotEmpty()) &&
             !ui.dispatching && !scheduleNotSetNow && !scheduleInPastNow
         PrimaryButton(
-            text = stringResource(if (sessionMode) R.string.dispatch_button_session else R.string.dispatch_button_task),
+            text = stringResource(
+                when {
+                    sessionMode -> R.string.dispatch_button_session
+                    taskAutoStart -> R.string.dispatch_button_task_start
+                    else -> R.string.dispatch_button_task
+                },
+            ),
             onClick = {
                 val dev = device ?: return@PrimaryButton
                 val fid = folderId ?: return@PrimaryButton
@@ -739,9 +906,10 @@ fun DispatchForm(
                 val effectiveAgent = if (sessionMode) {
                     agent ?: folder?.defaultAgentType?.takeIf { it != AgentType.UNKNOWN }
                 } else agent
-                // 模型行只在任务模式出现；restored id 必须能在当前列表里找到
-                // 才放行（probe 未回来时宁可 mode-less，不发未校验的 mode_id）。
-                val effectiveModeId = modelOptions.firstOrNull { it.id == modelId }?.id
+                // 权限模式：restored id 必须能在当前列表里找到才放行（probe
+                // 未回来时宁可 mode-less，不发未校验的 mode_id）。会话模式也带：
+                // CONFIRMED 后写入 ConversationSelectorStore，首次 acp_connect 消费。
+                val effectiveModeId = modeOptions.firstOrNull { it.id == modeId }?.id
                 host.dispatch(
                     DispatchFormSubmit(
                         ideaId = ideaId,
@@ -752,12 +920,20 @@ fun DispatchForm(
                         title = title,
                         description = description,
                         baseBranch = if (sessionMode || newTaskMode) null else effectiveBranch,
-                        modeId = if (sessionMode) null else effectiveModeId,
+                        modeId = effectiveModeId,
+                        configValues = configPicks.toMap(),
                         scheduleLocalMillis = if (!sessionMode && !newTaskMode && scheduled && scheduleMillis > 0) scheduleMillis else null,
                         sessionMode = sessionMode,
+                        autoStart = taskAutoStart,
                         attachments = attachments.toList(),
                     ),
                 ) { ref ->
+                    // A confirmed submit consumes the draft; UNKNOWN/PENDING keep
+                    // it — that text is exactly what a redispatch has to resend.
+                    if (ref.state == app.codeg.android.core.datastore.DispatchState.CONFIRMED) {
+                        draftClosed = true
+                        draftKey?.let { k -> draftScope.launch { host.drafts.clearDraft(k) } }
+                    }
                     result = ref
                     onResult(ref)
                 }
@@ -805,13 +981,29 @@ fun DispatchForm(
             onDismiss = { branchSheet = false },
         )
     }
-    if (modelSheet) {
+    if (modeSheet) {
         OptionListSheet(
-            title = stringResource(R.string.dispatch_model),
-            options = modelOptions.map { PickerOption(id = it.id, label = it.name.ifBlank { it.id }) },
-            selectedId = modelId,
-            onSelect = { option -> modelId = option.id },
-            onDismiss = { modelSheet = false },
+            title = stringResource(R.string.dispatch_mode_permission),
+            options = modeOptions.map { PickerOption(id = it.id, label = it.name.ifBlank { it.id }) },
+            selectedId = modeId,
+            onSelect = { option -> modeId = option.id },
+            onDismiss = { modeSheet = false },
+        )
+    }
+    // P0-2 config sheet: one generic list for whichever row opened it (model or
+    // reasoning effort). Grouped catalogs are flattened in declaration order.
+    agentOptions?.configOptions?.firstOrNull { it.id == configSheetId }?.let { option ->
+        OptionListSheet(
+            title = option.name.ifBlank { stringResource(R.string.dispatch_model) },
+            options = option.selectValues().map {
+                PickerOption(id = it.value, label = it.name.ifBlank { it.value }, note = it.description)
+            },
+            selectedId = configPicks[option.id] ?: option.kind.currentValue,
+            onSelect = { picked ->
+                configPicks[option.id] = picked.id
+                configSheetId = null
+            },
+            onDismiss = { configSheetId = null },
         )
     }
     if (showDatePicker) {
@@ -966,8 +1158,10 @@ private fun DispatchSummaryCard(
             agent?.displayName
                 ?: folderDefaultAgent?.takeIf { it != AgentType.UNKNOWN }?.displayName,
         )
-        if (!sessionMode) {
+        if (modelName != null || !sessionMode) {
             SummaryRow(stringResource(R.string.dispatch_model), modelName)
+        }
+        if (!sessionMode) {
             SummaryRow(
                 stringResource(R.string.dispatch_branch),
                 branch ?: followBranch?.let { stringResource(R.string.dispatch_branch_follow, it) },
@@ -1002,4 +1196,22 @@ private fun SummaryRow(label: String, value: String?) {
             modifier = Modifier.padding(start = 12.dp),
         )
     }
+}
+
+/** Values of a select option: the flat list first, else the grouped one. */
+private fun app.codeg.android.core.model.SessionConfigOption.selectValues():
+    List<app.codeg.android.core.model.SessionConfigSelectOption> =
+    kind.options.ifEmpty { kind.groups.flatMap { it.options } }
+
+/**
+ * The label to show for a config option: the user's pick, else the agent's own
+ * current value [picks] doesn't carry — resolved to a display name, falling back
+ * to the raw value id (never fabricated, same rule as the session screen).
+ */
+private fun app.codeg.android.core.model.SessionConfigOption.displayValue(
+    picks: Map<String, String>,
+): String? {
+    val current = picks[id] ?: kind.currentValue?.takeIf { it.isNotBlank() } ?: return null
+    return selectValues().firstOrNull { it.value == current }?.name?.takeIf { it.isNotBlank() }
+        ?: current
 }

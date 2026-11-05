@@ -565,6 +565,7 @@ fun TaskHubScreen(
                 DispatchForm(
                     host = viewModel,
                     newTaskMode = true,
+                    draftEntry = "hub",
                     defaultSessionMode = false,
                     onResult = { ref ->
                         newTaskResult = ref

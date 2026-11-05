@@ -24,6 +24,12 @@ import javax.inject.Singleton
 @Singleton
 class SessionAutoStart @Inject constructor() {
 
+    /** One image that rides inside the first prompt (base64, never a path). */
+    data class InlineImage(
+        val base64: String,
+        val mimeType: String,
+    )
+
     data class Pending(
         val serverId: String,
         val conversationId: Int,
@@ -35,6 +41,12 @@ class SessionAutoStart @Inject constructor() {
          * 把它拼成 [FileAttachment] 挂在首条消息上（同手动附件走同一条发送链）。
          */
         val files: List<UploadedAttachment> = emptyList(),
+        /**
+         * P0-3: images dispatched with the idea. They are NOT uploaded into the
+         * project — they ride inside the first prompt exactly like composer
+         * images, so an attachment never litters the user's repository.
+         */
+        val images: List<InlineImage> = emptyList(),
     )
 
     /** 可注入时钟：单测把时间拨快，生产用墙钟（10 分钟窗对 NTP 跳变不敏感）。 */
@@ -52,10 +64,11 @@ class SessionAutoStart @Inject constructor() {
         conversationId: Int,
         prompt: String,
         files: List<UploadedAttachment> = emptyList(),
+        images: List<InlineImage> = emptyList(),
     ) {
         val trimmed = prompt.trim()
-        if (trimmed.isEmpty() && files.isEmpty()) return
-        pending = Pending(serverId, conversationId, trimmed, clock(), files)
+        if (trimmed.isEmpty() && files.isEmpty() && images.isEmpty()) return
+        pending = Pending(serverId, conversationId, trimmed, clock(), files, images)
     }
 
     /**

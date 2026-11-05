@@ -101,8 +101,12 @@ private const val SNAPSHOT_TTL_MS = 30_000L
 /** Server-side folder (inside the working directory) that receives session handoff JSON. */
 private const val HANDOFF_DIR = ".codeg-handoff"
 
-/** Session file-upload staging dir (root-relative) for documents picked from the phone. */
-private const val UPLOAD_DIR = "uploads"
+/**
+ * Session file-upload staging dir (root-relative) for documents picked from the
+ * phone. P0-3: `.codeg/uploads` instead of the project's `uploads/` — sending a
+ * PDF from the composer must not litter the repository root the user browses.
+ */
+private const val UPLOAD_DIR = ".codeg/uploads"
 
 /** Per-session staged file caps: the server allows up to 100 MB per multipart upload. */
 private const val FILE_MAX_COUNT = 5
@@ -425,6 +429,15 @@ class SessionDetailViewModel @Inject constructor(
                                         absolutePath = f.absolutePath,
                                     )
                                 },
+                                // P0-3: dispatched images arrive as base64 blocks —
+                                // the same path a composer image takes.
+                                extraImages = armed.images.map { img ->
+                                    Attachment(
+                                        id = "dispatch-${UUID.randomUUID()}",
+                                        base64 = img.base64,
+                                        mimeType = img.mimeType,
+                                    )
+                                },
                             )
                         }
                     }
@@ -517,9 +530,12 @@ class SessionDetailViewModel @Inject constructor(
         /** Files an app-generated prompt brings along (批v154 dispatch payload) —
          *  already on the target device, so nothing to upload here. */
         extraFiles: List<FileAttachment> = emptyList(),
+        /** P0-3: images dispatched with the idea ride INLINE (base64), exactly
+         *  like composer images — never a workspace copy. */
+        extraImages: List<Attachment> = emptyList(),
     ) {
         val trimmed = text.trim()
-        val attachments = if (withAttachments) _ui.value.attachments else emptyList()
+        val attachments = (if (withAttachments) _ui.value.attachments else emptyList()) + extraImages
         val fileAttachments = (if (withAttachments) _ui.value.fileAttachments else emptyList()) + extraFiles
         if ((trimmed.isEmpty() && attachments.isEmpty() && fileAttachments.isEmpty()) || _ui.value.isInFlight) return
         // A fork is mid-flight: the session row is about to be re-pointed, so a send

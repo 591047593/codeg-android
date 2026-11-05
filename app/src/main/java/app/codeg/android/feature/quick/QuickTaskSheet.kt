@@ -71,6 +71,7 @@ fun QuickTaskSheet(
             DispatchForm(
                 host = viewModel,
                 defaultSessionMode = false,
+                draftEntry = "quick",
                 onResult = { ref ->
                     if (ref.state == DispatchState.CONFIRMED) {
                         viewModel.confirmCreated(ref)

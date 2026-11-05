@@ -85,7 +85,7 @@
     <!-- Sessions (Chats) -->
     <string name="session_untitled">未命名会话</string>
     <string name="session_title_fallback">会话</string>
-    <string name="session_new_task">新建任务</string>
+    <string name="session_new_task">新建会话</string>
     <string name="session_pin">置顶</string>
     <string name="session_unpin">取消置顶</string>
     <string name="session_handoff">接手到新会话继续</string>
@@ -1374,7 +1374,7 @@
     <string name="task_empty_hint">创建的任务（或从想法派发的任务）会出现在这里。</string>
     <string name="dispatch_pending_note">已提交，等待服务端回执…</string>
     <string name="ball_action_quick_idea">记录想法</string>
-    <string name="ball_action_quick_task">创建任务</string>
+    <string name="ball_action_quick_task">快速创建</string>
     <string name="ball_action_quick_handoff">会话交接</string>
     <string name="ball_action_quick_search">全局搜索</string>
     <string name="ball_panel_all_actions">全部动作</string>
@@ -1389,11 +1389,14 @@
     <string name="quick_idea_desc_hint">想法内容…</string>
     <string name="quick_idea_empty_hint">写点内容再保存。</string>
     <string name="quick_idea_auto_title">想法 %1$s</string>
-    <string name="quick_task_title">创建任务</string>
+    <string name="quick_task_title">快速创建</string>
     <string name="quick_new_session_title">新建会话</string>
     <string name="dispatch_summary_title">派发摘要</string>
     <string name="dispatch_button_session">创建会话</string>
     <string name="dispatch_button_task">创建任务</string>
+    <string name="dispatch_button_task_start">创建并开始</string>
+    <string name="dispatch_task_autostart">创建后立即开始</string>
+    <string name="dispatch_task_autostart_note">关：放进待办。开：马上开跑，直接出现在进行中。</string>
     <string name="recent_pick_title">选择要交接的会话</string>
     <string name="recent_pick_empty">所有设备都没有最近会话。</string>
     <string name="recent_pick_failed">会话加载失败——点击重试。</string>
@@ -1409,6 +1412,9 @@
     <string name="dispatch_model_failed">探测失败</string>
     <string name="dispatch_model_failed_note">读不到该 Agent 的模型列表，任务将以默认模型运行。</string>
     <string name="dispatch_model_none">无模型</string>
+    <string name="dispatch_mode_permission">权限模式</string>
+    <string name="dispatch_reasoning">推理强度</string>
+    <string name="dispatch_model_needs_agent">选定 Agent 后可改模型</string>
     <string name="inbox_insert_toggle">添加到待办</string>
     <string name="inbox_insert_hint">任务以待办状态挂上任务板，开始前不会运行；设备确认前草稿只存在本机。</string>
     <string name="inbox_insert_submit">创建任务</string>

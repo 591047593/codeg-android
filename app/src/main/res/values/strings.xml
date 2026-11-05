@@ -85,7 +85,7 @@
     <!-- Sessions (Chats) -->
     <string name="session_untitled">Untitled session</string>
     <string name="session_title_fallback">Session</string>
-    <string name="session_new_task">New Task</string>
+    <string name="session_new_task">New session</string>
     <string name="session_pin">Pin</string>
     <string name="session_unpin">Unpin</string>
     <string name="session_handoff">Handoff to new session</string>
@@ -1388,7 +1388,7 @@
     <string name="task_empty_hint">Tasks you create (or dispatch from Ideas) will appear here.</string>
     <string name="dispatch_pending_note">Submitting — waiting for the server receipt.</string>
     <string name="ball_action_quick_idea">Quick idea</string>
-    <string name="ball_action_quick_task">Quick task</string>
+    <string name="ball_action_quick_task">Quick create</string>
     <string name="ball_action_quick_handoff">Quick handoff</string>
     <string name="ball_action_quick_search">Global search</string>
     <string name="ball_panel_all_actions">All actions</string>
@@ -1403,11 +1403,14 @@
     <string name="quick_idea_desc_hint">Idea…</string>
     <string name="quick_idea_empty_hint">Write something to save.</string>
     <string name="quick_idea_auto_title">Idea %1$s</string>
-    <string name="quick_task_title">New task</string>
+    <string name="quick_task_title">Quick create</string>
     <string name="quick_new_session_title">New session</string>
     <string name="dispatch_summary_title">Summary</string>
     <string name="dispatch_button_session">Create session</string>
     <string name="dispatch_button_task">Create task</string>
+    <string name="dispatch_button_task_start">Create &amp; start</string>
+    <string name="dispatch_task_autostart">Start right after creating</string>
+    <string name="dispatch_task_autostart_note">Off: lands in To-do. On: starts immediately and shows in In progress.</string>
     <string name="recent_pick_title">Hand off a session</string>
     <string name="recent_pick_empty">No recent sessions on any device.</string>
     <string name="recent_pick_failed">Couldn\'t load sessions — tap to retry.</string>
@@ -1423,6 +1426,9 @@
     <string name="dispatch_model_failed">Detect failed</string>
     <string name="dispatch_model_failed_note">Could not read this agent’s model list; the task will run with its default model.</string>
     <string name="dispatch_model_none">No models</string>
+    <string name="dispatch_mode_permission">Permission mode</string>
+    <string name="dispatch_reasoning">Reasoning effort</string>
+    <string name="dispatch_model_needs_agent">Pick an agent to change the model</string>
     <string name="inbox_insert_toggle">Add to task board</string>
     <string name="inbox_insert_hint">Creates a task on the board in todo state — start it there when ready. The draft stays on this device until the target confirms.</string>
     <string name="inbox_insert_submit">Create task</string>

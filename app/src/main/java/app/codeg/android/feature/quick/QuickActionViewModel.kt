@@ -49,8 +49,9 @@ class QuickActionViewModel @Inject constructor(
     /** 批v155: the dispatch form's 模型 row probes agent modes through this. */
     private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
     /** 批v154: the shared form stages picked files here. */
+    override val drafts: app.codeg.android.core.datastore.DraftStore,
     override val attachmentStager: AttachmentStager,
-    appSettingsStore: AppSettingsStore,
+    private val appSettingsStore: AppSettingsStore,
 ) : ViewModel(), DispatchFormHost {
 
     override val settings: StateFlow<AppSettings> = appSettingsStore.settings
@@ -172,12 +173,17 @@ class QuickActionViewModel @Inject constructor(
     }
 
     /** 批v155: the shared form's 模型 row — cache-first probe, shared store. */
+    override fun setTaskAutoStartDefault(value: Boolean) {
+        viewModelScope.launch { appSettingsStore.setTaskAutoStartDefault(value) }
+    }
+
     override suspend fun probeAgentOptions(
         serverId: String,
         agentType: AgentType,
         workingDir: String?,
+        configValues: Map<String, String>,
     ): app.codeg.android.core.model.AgentOptionsSnapshot? =
-        agentOptionsProber.probe(serverId, agentType, workingDir)
+        agentOptionsProber.probe(serverId, agentType, workingDir, configValues)
 
     // endregion
 
@@ -225,6 +231,7 @@ class QuickActionViewModel @Inject constructor(
                         agentTypeWire = submit.agentType?.wire,
                         baseBranch = submit.baseBranch,
                         modeId = submit.modeId,
+                        configValues = submit.configValues,
                         scheduleLocalMillis = effectiveSchedule,
                         autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,

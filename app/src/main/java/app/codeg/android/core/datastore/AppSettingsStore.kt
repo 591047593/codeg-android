@@ -98,6 +98,9 @@ data class AppSettings(
     val dispatchDefaultFolderId: Int = -1,
     val dispatchDefaultFolderName: String = "",
     val dispatchDefaultAgent: String = "",
+    /** P0: remember the board form's 「创建后立即开始」 choice (default off —
+     *  a tap on 创建任务 must not silently start a run). */
+    val taskAutoStartDefault: Boolean = false,
 ) {
     companion object {
         // 批v150 §2.1 克制的青蓝：持久化层默认值必须与 AccentPalette.DEFAULT 的
@@ -204,6 +207,7 @@ class AppSettingsStore @Inject constructor(
             dispatchDefaultFolderId = prefs[DISPATCH_DEFAULT_FOLDER_ID] ?: -1,
             dispatchDefaultFolderName = prefs[DISPATCH_DEFAULT_FOLDER_NAME] ?: "",
             dispatchDefaultAgent = prefs[DISPATCH_DEFAULT_AGENT] ?: "",
+            taskAutoStartDefault = prefs[TASK_AUTOSTART_DEFAULT] ?: false,
         ).also { latest = it }
     }
 
@@ -220,6 +224,11 @@ class AppSettingsStore @Inject constructor(
             it[DISPATCH_DEFAULT_FOLDER_NAME] = folderName
             it[DISPATCH_DEFAULT_AGENT] = agentWire
         }
+    }
+
+    /** P0: persist the board form's auto-start choice for the next open. */
+    suspend fun setTaskAutoStartDefault(value: Boolean) {
+        dataStore.edit { it[TASK_AUTOSTART_DEFAULT] = value }
     }
 
     /** Clear the dispatch defaults (sheet falls back to no preselection). */
@@ -454,6 +463,7 @@ class AppSettingsStore @Inject constructor(
         val DISPATCH_DEFAULT_FOLDER_ID = intPreferencesKey("dispatch_default_folder_id")
         val DISPATCH_DEFAULT_FOLDER_NAME = stringPreferencesKey("dispatch_default_folder_name")
         val DISPATCH_DEFAULT_AGENT = stringPreferencesKey("dispatch_default_agent")
+        val TASK_AUTOSTART_DEFAULT = booleanPreferencesKey("task_autostart_default")
         val INBOX_NEW_IDEA_STYLE = stringPreferencesKey("inbox_new_idea_style")
         val INBOX_COLUMNS = intPreferencesKey("inbox_columns")
         val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")

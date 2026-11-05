@@ -31,10 +31,18 @@ class AgentOptionsProber @Inject constructor(
      * returns instantly; a miss single-flights the probe on the store's scope
      * (it outlives the calling ViewModel).
      */
-    suspend fun probe(serverId: String, agentType: AgentType, workingDir: String?): AgentOptionsSnapshot? {
+    suspend fun probe(
+        serverId: String,
+        agentType: AgentType,
+        workingDir: String?,
+        /** Already-picked config values (the model) — the option list can depend
+         *  on them, so they are part of the cache key, not just the request. */
+        configValues: Map<String, String> = emptyMap(),
+    ): AgentOptionsSnapshot? {
         // serverId first: worktree paths collide across devices, and a probe
         // result is only valid for the server that produced it (store contract).
-        val key = "$serverId|${agentType.wire}|${workingDir.orEmpty()}"
+        val configKey = configValues.toSortedMap().entries.joinToString(",") { "${it.key}=${it.value}" }
+        val key = "$serverId|${agentType.wire}|${workingDir.orEmpty()}|c:$configKey"
         catalog.get(key)?.let { return it }
         return catalog.getOrProbe(key) {
             val profile = repository.profiles.first().firstOrNull { it.id == serverId }
@@ -42,7 +50,13 @@ class AgentOptionsProber @Inject constructor(
             // client() is nullable (token may be missing) — a missing token is
             // just "probe unavailable", same as any other failure.
             val client = repository.client(profile) ?: return@getOrProbe null
-            runCatching { client.describeAgentOptions(agentType, workingDir) }.getOrNull()
+            runCatching {
+                client.describeAgentOptions(
+                    agentType,
+                    workingDir,
+                    configValues.takeIf { it.isNotEmpty() },
+                )
+            }.getOrNull()
         }.await()
     }
 }

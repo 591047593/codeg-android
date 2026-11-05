@@ -22,6 +22,8 @@ private const val MAX_DRAFT_CHARS = 100_000
 @Serializable
 data class DraftEntry(
     val text: String = "",
+    /** Dispatch-form drafts carry a title; the composer leaves it empty. */
+    val title: String = "",
     val updatedAt: Long = 0,
 )
 
@@ -59,12 +61,34 @@ class DraftStore @Inject constructor(
                 if (text.isEmpty()) {
                     map.remove(key)
                 } else {
-                    map[key] = DraftEntry(text.take(MAX_DRAFT_CHARS), System.currentTimeMillis())
+                    map[key] = DraftEntry(
+                        text = text.take(MAX_DRAFT_CHARS),
+                        updatedAt = System.currentTimeMillis(),
+                    )
                 }
             }
             prefs[KEY] = json.encodeToString(SERIALIZER, map)
         }
     }
+
+    /** Dispatch-form draft: title + body in one entry (the composer only uses [text]). */
+    suspend fun setDraft(key: String, title: String, text: String) {
+        dataStore.edit { prefs ->
+            val map = decode(prefs[KEY]).toMutableMap()
+            if (title.isEmpty() && text.isEmpty()) {
+                map.remove(key)
+            } else {
+                map[key] = DraftEntry(
+                    text = text.take(MAX_DRAFT_CHARS),
+                    title = title.take(MAX_DRAFT_CHARS),
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
+            prefs[KEY] = json.encodeToString(SERIALIZER, map)
+        }
+    }
+
+    suspend fun clearDraft(key: String) = setDraft(key, "", "")
 
     private fun decode(raw: String?): Map<String, DraftEntry> =
         raw?.let { runCatching { json.decodeFromString(SERIALIZER, it) }.getOrNull() } ?: emptyMap()
@@ -80,5 +104,11 @@ class DraftStore @Inject constructor(
         /** Key for the new-task composer (conversation not created yet). */
         fun newTaskKey(serverId: String?, folderId: Int): String =
             "${serverId ?: "?"}:new:$folderId"
+
+        /** Key for the shared dispatch form. [entry] separates the hosts
+         *  (hub / quick / quicknew) so their half-written tasks never cross-feed,
+         *  and a different project keeps its own draft. */
+        fun dispatchKey(serverId: String?, entry: String, folderId: Int): String =
+            "${serverId ?: "?"}:dispatch:$entry:$folderId"
     }
 }

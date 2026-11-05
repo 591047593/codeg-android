@@ -1374,8 +1374,15 @@ class CodegClient(
     }
 
     /** Per-agent catalog of modes + config (probes the agent; slow). */
-    suspend fun describeAgentOptions(agentType: AgentType, workingDir: String?): AgentOptionsSnapshot =
-        decode(send("acp_describe_agent_options", encode(DescribeAgentOptionsBody(agentType, workingDir))), AgentOptionsSnapshot.serializer())
+    suspend fun describeAgentOptions(
+        agentType: AgentType,
+        workingDir: String?,
+        configValues: Map<String, String>? = null,
+    ): AgentOptionsSnapshot =
+        decode(
+            send("acp_describe_agent_options", encode(DescribeAgentOptionsBody(agentType, workingDir, configValues))),
+            AgentOptionsSnapshot.serializer(),
+        )
 
     suspend fun acpSetMode(connectionId: String, modeId: String) {
         send("acp_set_mode", encode(SetModeBody(connectionId, modeId)))

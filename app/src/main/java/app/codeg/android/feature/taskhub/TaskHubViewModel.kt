@@ -71,8 +71,9 @@ class TaskHubViewModel @Inject constructor(
     private val dispatchService: app.codeg.android.core.data.DispatchService,
     private val targetLoader: app.codeg.android.core.data.DispatchTargetLoader,
     private val agentOptionsProber: app.codeg.android.core.data.AgentOptionsProber,
+    override val drafts: app.codeg.android.core.datastore.DraftStore,
     override val attachmentStager: app.codeg.android.core.data.AttachmentStager,
-    appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
+    private val appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
     /** 批v160 W5: the shell's 「切任务状态」 swipe steps — the screen collects
      *  them to step the kanban's columns (same singleton the shell emits into). */
     val segmentBus: app.codeg.android.core.data.TaskSegmentBus,
@@ -731,12 +732,17 @@ class TaskHubViewModel @Inject constructor(
         }
     }
 
+    override fun setTaskAutoStartDefault(value: Boolean) {
+        viewModelScope.launch { appSettingsStore.setTaskAutoStartDefault(value) }
+    }
+
     override suspend fun probeAgentOptions(
         serverId: String,
         agentType: app.codeg.android.core.model.AgentType,
         workingDir: String?,
+        configValues: Map<String, String>,
     ): app.codeg.android.core.model.AgentOptionsSnapshot? =
-        agentOptionsProber.probe(serverId, agentType, workingDir)
+        agentOptionsProber.probe(serverId, agentType, workingDir, configValues)
 
     override fun dispatch(
         submit: app.codeg.android.feature.dispatch.DispatchFormSubmit,
@@ -756,9 +762,10 @@ class TaskHubViewModel @Inject constructor(
                         description = submit.description,
                         agentTypeWire = submit.agentType?.wire,
                         modeId = submit.modeId,
+                        configValues = submit.configValues,
                         baseBranch = null,
                         scheduleLocalMillis = submit.scheduleLocalMillis,
-                        autoStart = false,
+                        autoStart = submit.autoStart,
                         sessionMode = submit.sessionMode,
                         attachments = submit.attachments,
                     ),

@@ -55,6 +55,7 @@ class InboxViewModel @Inject constructor(
     private val sessionAutoStart: SessionAutoStart,
     /** 批v154 附件：SAF 选择 → 应用私有目录落盘（想法要跨重启/跨设备存活）。
      *  派发表单也通过这个接口自己收附件（同一套存储布局）。 */
+    override val drafts: app.codeg.android.core.datastore.DraftStore,
     override val attachmentStager: AttachmentStager,
     private val appSettingsStore: app.codeg.android.core.datastore.AppSettingsStore,
 ) : ViewModel(), app.codeg.android.feature.dispatch.DispatchFormHost {
@@ -393,12 +394,17 @@ class InboxViewModel @Inject constructor(
     // endregion
 
     /** 批v155: the shared form's 模型 row — cache-first probe, shared store. */
+    override fun setTaskAutoStartDefault(value: Boolean) {
+        viewModelScope.launch { appSettingsStore.setTaskAutoStartDefault(value) }
+    }
+
     override suspend fun probeAgentOptions(
         serverId: String,
         agentType: app.codeg.android.core.model.AgentType,
         workingDir: String?,
+        configValues: Map<String, String>,
     ): app.codeg.android.core.model.AgentOptionsSnapshot? =
-        agentOptionsProber.probe(serverId, agentType, workingDir)
+        agentOptionsProber.probe(serverId, agentType, workingDir, configValues)
 
     // region Dispatch
 
@@ -454,6 +460,8 @@ class InboxViewModel @Inject constructor(
         restoreOnHardFail: DispatchRef? = null,
         /** 批v154: files to ride along (uploaded on the target device before create). */
         attachments: List<LocalAttachment> = emptyList(),
+        /** P0-2: model / reasoning-effort selections from the shared form. */
+        configValues: Map<String, String> = emptyMap(),
     ) {
         if (_ui.value.dispatching) {
             // A redispatch whose old ref was ALREADY removed must not lose it on
@@ -512,6 +520,7 @@ class InboxViewModel @Inject constructor(
                         sessionMode = sessionMode,
                         restoreOnHardFail = restoreOnHardFail,
                         attachments = attachments,
+                        configValues = configValues,
                     ),
                 )
                 when (outcome) {
@@ -598,6 +607,7 @@ class InboxViewModel @Inject constructor(
             // 批v154: files picked in the form ride along; the pipeline uploads
             // them to the target device before creating anything.
             attachments = submit.attachments,
+            configValues = submit.configValues,
         )
     }
 

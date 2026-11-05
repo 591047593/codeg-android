@@ -45,6 +45,9 @@ class DispatchService @Inject constructor(
     private val sessionAutoStart: SessionAutoStart,
     // 批v154: the private copies of dispatched files are freed on CONFIRMED.
     private val attachmentStager: AttachmentStager,
+    // P0: a session created by the form pins the picked model to THAT
+    // conversation, so its first connect starts on the chosen model.
+    private val conversationSelector: app.codeg.android.core.datastore.ConversationSelectorStore,
 ) {
     data class SendRequest(
         val ideaId: String? = null,
@@ -63,6 +66,9 @@ class DispatchService @Inject constructor(
          *  agent's default). Session mode ignores it — a live conversation's
          *  mode is chosen inside the session. */
         val modeId: String? = null,
+        /** P0: picked config options (model / reasoning effort) — task mode sends
+         *  them as `config_values`; session mode pins them on the conversation. */
+        val configValues: Map<String, String> = emptyMap(),
         val scheduleLocalMillis: Long? = null,
         /** Immediate (non-scheduled) dispatches start the task right after
          * create — the server parks new tasks in todo forever, so without this
@@ -131,8 +137,16 @@ class DispatchService @Inject constructor(
                 it.title == cap(title.trim(), 120)
         }
 
-    /** Where dispatched attachments land inside the target workspace. */
-    private val DISPATCH_UPLOAD_DIR = "uploads"
+    /**
+     * P0-3: where dispatched attachments land inside the target workspace.
+     * Deliberately NOT `uploads/` — that is the folder the SERVER's own composer
+     * uses, and a dispatch must never drop files into the project the user
+     * browses. One directory per request keeps two dispatches apart.
+     */
+    private val STAGE_ROOT = ".codeg/uploads"
+
+    /** Makes git ignore everything staged above (written best-effort, once per dir). */
+    private val STAGE_GITIGNORE = "*\n"
 
     /** PENDING entries younger than this are considered in flight, not dead. */
     private val PENDING_SWEEP_AGE_MS = 120_000L
@@ -155,8 +169,12 @@ class DispatchService @Inject constructor(
         val now = System.currentTimeMillis()
         val profile = repository.profiles.first().firstOrNull { it.id == req.serverId }
         val client = profile?.let { repository.client(it) }
+        // Generated BEFORE the upload: the staging directory is per-request, so
+        // the id has to exist while there is still no ledger entry to borrow it
+        // from (P0-3 坑一).
+        val requestId = UUID.randomUUID().toString()
         val request = DispatchRef(
-            requestId = UUID.randomUUID().toString(),
+            requestId = requestId,
             ideaId = req.ideaId,
             serverId = req.serverId,
             serverName = profile?.name.orEmpty(),
@@ -185,19 +203,34 @@ class DispatchService @Inject constructor(
         // before the task/conversation is created — uploading afterwards would leave
         // a created row whose prompt points at nothing. A failure here is a clean
         // hard failure (the ledger has not reserved the title yet, nothing exists).
-        val uploaded = if (req.attachments.isEmpty()) {
-            emptyList()
-        } else {
-            try {
-                uploadAttachments(client, req)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                restoreOnHardFail(req.restoreOnHardFail)
-                return DispatchOutcome.HardFailed(
-                    "附件上传失败：" + (e.message ?: "未知错误"),
-                )
+        // P0-3: a conversation's first send carries its IMAGES inline (base64 in
+        // the prompt), exactly like the composer — no workspace copy at all. Only
+        // non-image files need a real path on the target device.
+        val inlineImages: List<SessionAutoStart.InlineImage>
+        val uploaded: List<UploadedAttachment>
+        try {
+            inlineImages = if (req.sessionMode) {
+                req.attachments.filter { it.isImage }.map { inlineImageOf(it) }
+            } else {
+                emptyList()
             }
+            val toUpload = if (req.sessionMode) {
+                req.attachments.filterNot { it.isImage }
+            } else {
+                req.attachments
+            }
+            uploaded = if (toUpload.isEmpty()) {
+                emptyList()
+            } else {
+                uploadAttachments(client, req, requestId, toUpload)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            restoreOnHardFail(req.restoreOnHardFail)
+            return DispatchOutcome.HardFailed(
+                "附件处理失败：" + (e.message ?: "未知错误"),
+            )
         }
         // Atomic check-and-reserve: the VM-level gates can both pass for the
         // same title from two surfaces (TOCTOU across VMs) — re-check under a
@@ -221,14 +254,16 @@ class DispatchService @Inject constructor(
         // session mode gets the conversation id straight from create_conversation
         // (a bare JSON int). null/<=0 = the request reached the server but the
         // row did not decode — ambiguous, handled identically below.
+        // The server requires a concrete agent_type; resolve 自动 (null) and
+        // an UNKNOWN wire to the client default, same fallback the new-task
+        // draft screen applies when a device reports no agents. Hoisted out of
+        // the session branch because the selector-prefs write after CONFIRMED
+        // needs the same value.
+        val sessionAgent = req.agentTypeWire?.let { app.codeg.android.core.model.AgentType.fromWire(it) }
+            ?.takeIf { it != app.codeg.android.core.model.AgentType.UNKNOWN }
+            ?: app.codeg.android.core.model.AgentType.CLAUDE_CODE
         val created: kotlin.Result<Int?> = if (req.sessionMode) {
-            // The server requires a concrete agent_type; resolve 自动 (null) and
-            // an UNKNOWN wire to the client default, same fallback the new-task
-            // draft screen applies when a device reports no agents.
-            val agent = req.agentTypeWire?.let { app.codeg.android.core.model.AgentType.fromWire(it) }
-                ?.takeIf { it != app.codeg.android.core.model.AgentType.UNKNOWN }
-                ?: app.codeg.android.core.model.AgentType.CLAUDE_CODE
-            runCatching { client.createConversation(req.folderId, agent, anchored.title) }
+            runCatching { client.createConversation(req.folderId, sessionAgent, anchored.title) }
         } else {
             val config = DispatchPipeline.taskConfig(
                 // Task mode has no attachment channel, so the uploaded paths ride
@@ -238,6 +273,7 @@ class DispatchService @Inject constructor(
                 agentTypeWire = req.agentTypeWire,
                 modeId = req.modeId,
                 baseBranch = req.baseBranch,
+                configValues = req.configValues,
             )
             runCatching { client.workTaskCreate(req.folderId, anchored.title, config)?.id }
         }
@@ -252,7 +288,23 @@ class DispatchService @Inject constructor(
                     if (req.sessionMode) {
                         confirm(anchored, remoteId, profile, null, false).also { outcome ->
                             if (outcome is DispatchOutcome.Confirmed) {
-                                sessionAutoStart.arm(req.serverId, remoteId, req.description, uploaded)
+                                // P0: the picked model follows the conversation it was
+                                // created for (it can't ride create_conversation — the
+                                // server row has no model field). The first connect
+                                // replays these via acp_connect preferred values.
+                                runCatching {
+                                    req.modeId?.let {
+                                        conversationSelector.saveMode(req.serverId, remoteId, sessionAgent, it)
+                                    }
+                                    req.configValues.forEach { (id, value) ->
+                                        conversationSelector.saveConfig(
+                                            req.serverId, remoteId, sessionAgent, id, value,
+                                        )
+                                    }
+                                }
+                                sessionAutoStart.arm(
+                                    req.serverId, remoteId, req.description, uploaded, inlineImages,
+                                )
                             }
                         }
                     } else confirm(anchored, remoteId, profile, req.scheduleLocalMillis, req.autoStart)
@@ -277,12 +329,12 @@ class DispatchService @Inject constructor(
                     // well have happened. This is the ambiguous case; treating it
                     // as a hard failure deleted the ledger's only trace and
                     // invited a double create (批v146 对抗审查 #1).
-                    e is ApiError.Decoding -> probeOrMarkUnknown(anchored, profile, uploaded)
+                    e is ApiError.Decoding -> probeOrMarkUnknown(anchored, profile, uploaded, inlineImages)
                     // Timeout-style failures are ambiguous: the task may exist.
                     // Self-heal: one immediate probe — if the request actually
                     // landed, the ledger resolves to CONFIRMED and the user
                     // never sees a 提交结果未知 card at all.
-                    isAmbiguous(e) -> probeOrMarkUnknown(anchored, profile, uploaded)
+                    isAmbiguous(e) -> probeOrMarkUnknown(anchored, profile, uploaded, inlineImages)
                     else -> {
                         dispatchStore.remove(anchored.requestId)
                         req.restoreOnHardFail?.let { dispatchStore.put(it.copy(state = DispatchState.UNKNOWN)) }
@@ -296,50 +348,76 @@ class DispatchService @Inject constructor(
     }
 
     /**
-     * Upload every attachment into `<folder>/uploads/` and return the absolute
-     * paths the prompt will point at. One 409 retry under an auto-renamed name
-     * (the server refuses to overwrite, and a prior attempt may have landed the
-     * bytes before the client saw an error). Throws on the first real failure —
-     * a partial attachment set must never be dispatched silently.
+     * Upload every attachment into `<folder>/.codeg/uploads/<requestId>/` and
+     * return the absolute paths the prompt will point at. Throws on the first
+     * real failure — a partial attachment set must never be dispatched silently.
+     *
+     * A 409 is NOT retried under a renamed file: the directory is unique per
+     * request, so a collision can only be our own earlier attempt whose bytes
+     * already landed — the same path is the honest answer. Renaming would also
+     * turn the `.gitignore` seed into `.gitignore-2` and silently un-ignore the
+     * whole staging directory (P0-3 坑二).
      */
     private suspend fun uploadAttachments(
         client: app.codeg.android.core.network.CodegClient,
         req: SendRequest,
+        requestId: String,
+        attachments: List<LocalAttachment>,
     ): List<UploadedAttachment> {
         val folders = client.listFolders()
         val root = folders.firstOrNull { it.id == req.folderId }?.path
             ?: throw IllegalStateException("目标项目路径未找到，附件未上传")
-        return req.attachments.map { att ->
+        val targetDir = "$STAGE_ROOT/$requestId"
+        // Best-effort: an existing seed (409) is exactly what we want. Without
+        // it every dispatch would leave an untracked directory in the repo.
+        runCatching {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                client.uploadWorkspaceFile(root, STAGE_ROOT, ".gitignore", STAGE_GITIGNORE.length.toLong()) {
+                    STAGE_GITIGNORE.byteInputStream()
+                }
+            }
+        }
+        return attachments.map { att ->
             val file = java.io.File(att.localPath)
             if (!file.canRead()) throw IllegalStateException("${att.name}：本地文件不可读")
-            suspend fun attempt(fileName: String): UploadedAttachment {
+            try {
                 val res = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    client.uploadWorkspaceFile(root, DISPATCH_UPLOAD_DIR, fileName, file.length()) {
+                    client.uploadWorkspaceFile(root, targetDir, att.name, file.length()) {
                         file.inputStream()
                     }
                 }
-                return UploadedAttachment(
-                    name = res.name.ifBlank { fileName },
+                UploadedAttachment(
+                    name = res.name.ifBlank { att.name },
                     absolutePath = root.trimEnd('/') + "/" + res.path.trimStart('/'),
                 )
-            }
-            try {
-                attempt(att.name)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val conflict = e is ApiError.Server &&
                     (e.status == 409 || e.serverMessage.contains("already exists", ignoreCase = true))
                 if (!conflict) throw IllegalStateException("${att.name}：${e.displayMessage()}")
-                attempt(renamed(att.name))
+                UploadedAttachment(
+                    name = att.name,
+                    absolutePath = root.trimEnd('/') + "/" + targetDir + "/" + att.name,
+                )
             }
         }
     }
 
-    /** `a.png` → `a-2.png` (second attempt only; never overwrites). */
-    private fun renamed(name: String): String {
-        val dot = name.lastIndexOf('.')
-        return if (dot <= 0) "$name-2" else name.substring(0, dot) + "-2" + name.substring(dot)
+    /**
+     * Encode one local image for INLINE delivery (a conversation's first prompt
+     * carries base64, same as the composer). Fails loudly: a silently dropped
+     * image is exactly the bug this path exists to fix.
+     */
+    private suspend fun inlineImageOf(att: LocalAttachment): SessionAutoStart.InlineImage {
+        val file = java.io.File(att.localPath)
+        if (!file.canRead()) throw IllegalStateException("${att.name}：本地图片不可读")
+        val bytes = withContext(kotlinx.coroutines.Dispatchers.IO) { file.readBytes() }
+        if (bytes.isEmpty()) throw IllegalStateException("${att.name}：图片为空")
+        return SessionAutoStart.InlineImage(
+            base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
+            mimeType = att.mimeType ?: "image/jpeg",
+        )
     }
 
     /**
@@ -460,6 +538,7 @@ class DispatchService @Inject constructor(
         // 批v155(R2C#2): the already-uploaded files — a probe-resolved session
         // create arms its first prompt with them (same as the CONFIRMED path).
         uploaded: List<UploadedAttachment> = emptyList(),
+        inlineImages: List<SessionAutoStart.InlineImage> = emptyList(),
     ): DispatchOutcome {
         markUnknown(request)
         try {
@@ -491,7 +570,9 @@ class DispatchService @Inject constructor(
                     // staleness window in take() bounds it.
                     return confirm(request, id, profile, null, false).also { outcome ->
                         if (outcome is DispatchOutcome.Confirmed) {
-                            sessionAutoStart.arm(request.serverId, id, request.description, uploaded)
+                            sessionAutoStart.arm(
+                                request.serverId, id, request.description, uploaded, inlineImages,
+                            )
                         }
                     }
                 }

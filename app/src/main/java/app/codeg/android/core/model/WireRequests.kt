@@ -381,7 +381,13 @@ data class ChatWebhooksBody(val webhooks: List<WebhookConfig>)
 // MARK: - Session snapshot / agent options request bodies
 
 @Serializable
-data class DescribeAgentOptionsBody(val agentType: AgentType, val workingDir: String? = null)
+data class DescribeAgentOptionsBody(
+    val agentType: AgentType,
+    val workingDir: String? = null,
+    /** Config picks to apply before reading the snapshot, so a per-model
+     *  option list (e.g. the reasoning-effort ladder) matches the model. */
+    val configValues: Map<String, String>? = null,
+)
 
 @Serializable
 data class SetModeBody(val connectionId: String, val modeId: String)
