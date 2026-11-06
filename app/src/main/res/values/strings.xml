@@ -1644,6 +1644,22 @@
     <string name="usage_top_projects">Top projects</string>
     <string name="usage_totals_detail">%1$s in · %2$s out · %3$s cache read · %4$d turns · %5$d conversations</string>
     <string name="usage_q6_note">Gateway-side cost accounting lives in zcode-hub; this page and that panel are complementary and deliberately never reconciled.</string>
+    <string name="session_import_title">Import sessions</string>
+    <string name="session_import_scanning">Scanning local CLI sessions…</string>
+    <string name="session_import_unsupported">This device\'s codeg build predates the import surface — upgrade it to import.</string>
+    <string name="session_import_load_failed">Scan failed</string>
+    <string name="session_import_empty_title">Nothing to import</string>
+    <string name="session_import_empty_hint">Sessions run by CLIs on that device will show up here, grouped by project folder.</string>
+    <string name="session_import_summary">%1$d importable of %2$d sessions</string>
+    <string name="session_import_no_folder">Another %1$d session(s) carry no project path and are not listed.</string>
+    <string name="session_import_include_deleted">Include deleted</string>
+    <string name="session_import_badge_imported">Imported</string>
+    <string name="session_import_badge_deleted">Deleted</string>
+    <string name="session_import_folder_meta">%1$d new of %2$d</string>
+    <string name="session_import_cta">Import %1$d selected</string>
+    <string name="session_import_receipt">Done: %1$d imported · %2$d updated · %3$d restored</string>
+    <string name="session_import_receipt_issue">Skipped %1$d · not found %2$d · failed %3$d</string>
+    <string name="session_import_done">Close</string>
     <string name="workbench_stat_usage">Today\'s tokens</string>
     <string name="workbench_stat_usage_action">View usage</string>
 </resources>

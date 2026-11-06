@@ -1630,6 +1630,22 @@
     <string name="usage_top_projects">项目 TopN</string>
     <string name="usage_totals_detail">输入 %1$s · 输出 %2$s · 缓存读 %3$s · %4$d 轮 · %5$d 会话</string>
     <string name="usage_q6_note">网关侧成本口径在 zcode-hub 面板；本页与该面板互补、刻意不对账。</string>
+    <string name="session_import_title">导入历史会话</string>
+    <string name="session_import_scanning">正在扫描本机 CLI 会话…</string>
+    <string name="session_import_unsupported">该设备的 codeg 版本尚不支持导入——升级后可用。</string>
+    <string name="session_import_load_failed">扫描失败</string>
+    <string name="session_import_empty_title">没有可导入的会话</string>
+    <string name="session_import_empty_hint">在该设备上用各 CLI 跑过的会话会出现在这里，按项目文件夹分组。</string>
+    <string name="session_import_summary">共 %2$d 个会话，可导入 %1$d 个</string>
+    <string name="session_import_no_folder">另有 %1$d 个会话无项目路径，未列出。</string>
+    <string name="session_import_include_deleted">含已删除</string>
+    <string name="session_import_badge_imported">已导入</string>
+    <string name="session_import_badge_deleted">已删除</string>
+    <string name="session_import_folder_meta">%1$d / %2$d 可导入</string>
+    <string name="session_import_cta">导入所选 %1$d 条</string>
+    <string name="session_import_receipt">完成：新增 %1$d · 更新 %2$d · 恢复 %3$d</string>
+    <string name="session_import_receipt_issue">跳过 %1$d · 未找到 %2$d · 失败 %3$d</string>
+    <string name="session_import_done">关闭</string>
     <string name="workbench_stat_usage">今日用量</string>
     <string name="workbench_stat_usage_action">查看用量</string>
 </resources>

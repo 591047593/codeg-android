@@ -16,6 +16,12 @@ import app.codeg.android.core.model.TokenUsageReportBody
 import app.codeg.android.core.model.TokenUsageFacets
 import app.codeg.android.core.model.TokenUsageSyncBody
 import app.codeg.android.core.model.TokenUsageSyncResult
+import app.codeg.android.core.model.ImportLocalBody
+import app.codeg.android.core.model.ImportResult
+import app.codeg.android.core.model.ImportSelectedBody
+import app.codeg.android.core.model.ImportSelectedResult
+import app.codeg.android.core.model.ScanResult
+import app.codeg.android.core.model.SelectedSessionKey
 import app.codeg.android.core.model.TokenUsageSyncStatus
 import app.codeg.android.core.model.AutomationSetEnabledBody
 import app.codeg.android.core.model.AutomationUpdateBody
@@ -954,6 +960,22 @@ class CodegClient(
             send("token_usage_sync", encode(TokenUsageSyncBody(mode)), timeoutMs = SYNC_HTTP_TIMEOUT_MS),
             TokenUsageSyncResult.serializer(),
         )
+
+    /** 会话导入（fleet M4）：扫本机各 CLI 的会话文件并与 DB 对账
+     *  （new/imported/deleted 三态）。服务端已按文件夹可导入数排序。 */
+    suspend fun scanImportableSessions(): ScanResult =
+        decode(send("scan_importable_sessions", encode(EmptyBody)), ScanResult.serializer())
+
+    /** 勾选导入：按 cwd 建夹/复用夹，逐会话导入；软删除的会话选中即原地恢复。 */
+    suspend fun importSelectedSessions(selections: List<SelectedSessionKey>): ImportSelectedResult =
+        decode(
+            send("import_selected_sessions", encode(ImportSelectedBody(selections))),
+            ImportSelectedResult.serializer(),
+        )
+
+    /** 旧版整夹导入（服务端已无 UI 调用，仅为 API 对账保留）。 */
+    suspend fun importLocalConversations(folderId: Int): ImportResult =
+        decode(send("import_local_conversations", encode(ImportLocalBody(folderId))), ImportResult.serializer())
 
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())

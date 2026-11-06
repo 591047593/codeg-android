@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Close
@@ -199,6 +200,14 @@ fun SessionListScreen(
         onDispose { viewModel.focusHub.unregister(CHATS_FOCUS_OWNER) }
     }
 
+    var showImportSheet by remember { mutableStateOf(false) }
+    if (showImportSheet) {
+        SessionImportSheet(
+            onDismiss = { showImportSheet = false },
+            // 导入改变了会话表 —— 立刻刷新列表，别等下一轮 25s 轮询。
+            onImported = viewModel::refresh,
+        )
+    }
     Scaffold(
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -208,6 +217,15 @@ fun SessionListScreen(
                 // the title is a plain label, and the Dns icon keeps the manage entry.
                 title = { Text(selectedName) },
                 actions = {
+                    // 批v163（舰队 M4）：导入历史会话——扫当前设备的本机 CLI
+                    // 会话文件，勾选导入（sheet 内可切设备）。
+                    IconButton(onClick = { showImportSheet = true }) {
+                        Icon(
+                            Icons.Rounded.CloudDownload,
+                            contentDescription = stringResource(R.string.session_import_title),
+                            tint = colors.textSecondary,
+                        )
+                    }
                     // 批v153（UX 审查）：会话页补搜索入口——此前按名字找会话必须
                     // 先离开当前页去工作台的搜索卡。
                     IconButton(onClick = onOpenSearch) {
