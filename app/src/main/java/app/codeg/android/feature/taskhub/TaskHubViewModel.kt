@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
@@ -301,6 +302,20 @@ class TaskHubViewModel @Inject constructor(
                 kotlinx.coroutines.delay(if (attempt < 3) 1_000 else 5_000)
                 true
             }
+            .launchIn(viewModelScope)
+        // 批v161.2: the membership ledger is written from five other surfaces
+        // (Chats long-press, detail ⋮ menu, Activity, Search, dispatch) — none
+        // of them can reach this VM, so the ledger flow itself is the
+        // "just added" signal: every write bumps the tick and the poll round
+        // starts immediately instead of at the next 25s beat. drop(1) so the
+        // initial emission doesn't double-fetch against the cold-start round.
+        // Converges: a prune write re-triggers one round, which then finds no
+        // stale keys and writes nothing; an idempotent track() edit that
+        // changes nothing emits nothing.
+        boardTrack.tracked
+            .drop(1)
+            .distinctUntilChanged()
+            .onEach { _refreshTick.value += 1 }
             .launchIn(viewModelScope)
     }
 

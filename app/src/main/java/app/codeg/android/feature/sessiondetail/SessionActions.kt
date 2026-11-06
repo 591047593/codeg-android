@@ -73,13 +73,19 @@ fun SessionActionsMenu(
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_rename)) }, onClick = { menu = false; showRename = true })
             DropdownMenuItem(text = { Text(if (summary.isPinned) stringResource(R.string.sessionactions_unpin) else stringResource(R.string.sessionactions_pin)) }, onClick = { menu = false; viewModel.togglePin() })
-            DropdownMenuItem(
-                text = { Text(stringResource(if (onBoard) R.string.board_conv_remove else R.string.board_conv_add)) },
-                onClick = {
-                    menu = false
-                    ui.serverId?.let { boardMenu.toggle(it, summary.id, summary.folderId) }
-                },
-            )
+            // 批v161.2: a session without a server link has no device to track
+            // under — hiding the item beats toggling into a silent no-op that
+            // still toasted 「已加入」.
+            val boardSid = ui.serverId
+            if (boardSid != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(if (onBoard) R.string.board_conv_remove else R.string.board_conv_add)) },
+                    onClick = {
+                        menu = false
+                        boardMenu.toggle(boardSid, summary.id, summary.folderId)
+                    },
+                )
+            }
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_session_details)) }, onClick = { menu = false; showDetails = true })
             DropdownMenuItem(text = { Text(stringResource(R.string.handoff_menu)) }, onClick = { menu = false; onHandoff() })
             DropdownMenuItem(text = { Text(stringResource(R.string.sessionactions_change_status)) }, onClick = { menu = false; showStatus = true })

@@ -1470,6 +1470,7 @@
     <string name="board_conv_remove">Remove from board</string>
     <string name="board_conv_tracked">On the board</string>
     <string name="board_conv_added">Added to the board</string>
+    <string name="board_conv_failed">Board update failed</string>
     <string name="board_conv_remove_title">Remove from the board?</string>
     <string name="board_conv_remove_body">Only the board entry goes away — the session itself is untouched.</string>
     <string name="board_conv_set_status">Change session status</string>

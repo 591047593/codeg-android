@@ -58,6 +58,9 @@ fun pageStepIndex(currentPage: Int, step: Int, pageCount: Int): Int =
 fun initialKanbanPage(board: TaskBoardData, columnsPerPage: Int): Int {
     val index = SEGMENT_ORDER.indexOfFirst { segment ->
         !board.segments[segment].isNullOrEmpty() ||
+            // 批v161.2: tracked conversations share the column — a board holding
+            // only sessions must not anchor on a blank first page either.
+            !board.conversations[segment].isNullOrEmpty() ||
             (segment == TaskSegment.ATTENTION && board.unknown.isNotEmpty())
     }
     return if (index < 0) 0 else segmentPageIndex(index, columnsPerPage)

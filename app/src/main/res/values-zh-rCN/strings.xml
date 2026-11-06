@@ -1456,6 +1456,7 @@
     <string name="board_conv_remove">移出看板</string>
     <string name="board_conv_tracked">已在看板中</string>
     <string name="board_conv_added">已加入任务板</string>
+    <string name="board_conv_failed">任务板操作失败</string>
     <string name="board_conv_remove_title">移出任务板？</string>
     <string name="board_conv_remove_body">只移出看板，不删除会话。</string>
     <string name="board_conv_set_status">改会话状态</string>

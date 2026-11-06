@@ -39,15 +39,19 @@ class BoardTrackViewModel @Inject constructor(
         .map { members -> members.map { it.key }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
-    fun toggle(serverId: String, conversationId: Int, folderId: Int) {
+    fun toggle(serverId: String, conversationId: Int, folderId: Int, onResult: (Boolean) -> Unit = {}) {
         val onBoard = key(serverId, conversationId) in trackedKeys.value
         viewModelScope.launch {
             // A DataStore failure must not crash a list that is only offering a
-            // convenience: the next poll simply keeps the old membership.
+            // convenience: the next poll simply keeps the old membership. The
+            // caller's toast waits for the write — 批v161.2, a failed write
+            // must not claim success.
             runCatching {
                 if (onBoard) store.untrack(serverId, conversationId)
                 else store.track(serverId, conversationId, folderId)
             }
+                .onSuccess { onResult(true) }
+                .onFailure { onResult(false) }
         }
     }
 
@@ -86,12 +90,21 @@ fun rememberBoardTrackMenu(): BoardTrackMenu {
     return remember(viewModel, keys, context) {
         BoardTrackMenu(keys) { serverId, conversationId, folderId ->
             val onBoard = BoardTrackViewModel.key(serverId, conversationId) in keys
-            viewModel.toggle(serverId, conversationId, folderId)
-            Toast.makeText(
-                context,
-                context.getString(if (onBoard) R.string.board_conv_remove else R.string.board_conv_added),
-                Toast.LENGTH_SHORT,
-            ).show()
+            viewModel.toggle(serverId, conversationId, folderId) { ok ->
+                // 批v161.2: success/failure toast — the old code toasted before
+                // the write, so a failed DataStore write still claimed 「已加入」.
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        when {
+                            !ok -> R.string.board_conv_failed
+                            onBoard -> R.string.board_conv_remove
+                            else -> R.string.board_conv_added
+                        },
+                    ),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 }
