@@ -1613,4 +1613,23 @@
     <string name="workbench_automation_title">自动化失败 · %1$d</string>
     <string name="workbench_automation_chip">失败 %1$d</string>
     <string name="workbench_automation_open">打开自动化</string>
+    <string name="settings_leaf_usage">Token 用量</string>
+    <string name="usage_period_today">今日</string>
+    <string name="usage_period_week">7 天</string>
+    <string name="usage_scope_note">口径：以 codeg 服务端会话真实用量为真源；网关侧成本口径另见 zcode-hub 面板（两套互补不对账）。</string>
+    <string name="usage_no_devices">当前范围没有设备。</string>
+    <string name="usage_loading">正在加载用量…</string>
+    <string name="usage_unsupported">该服务端版本暂不支持 Token 用量。</string>
+    <string name="usage_load_failed">用量加载失败</string>
+    <string name="usage_sync">立即同步</string>
+    <string name="usage_refresh">刷新</string>
+    <string name="usage_sync_status">已同步会话 %1$d/%2$d</string>
+    <string name="usage_truncated">扫描已到行数上限——数字只覆盖最近一段。</string>
+    <string name="usage_top_agents">Agent TopN</string>
+    <string name="usage_top_models">模型 TopN</string>
+    <string name="usage_top_projects">项目 TopN</string>
+    <string name="usage_totals_detail">输入 %1$s · 输出 %2$s · 缓存读 %3$s · %4$d 轮 · %5$d 会话</string>
+    <string name="usage_q6_note">网关侧成本口径在 zcode-hub 面板；本页与该面板互补、刻意不对账。</string>
+    <string name="workbench_stat_usage">今日用量</string>
+    <string name="workbench_stat_usage_action">查看用量</string>
 </resources>

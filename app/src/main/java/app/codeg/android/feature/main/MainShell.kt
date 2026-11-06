@@ -1458,6 +1458,11 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                         jumpToTab(HomeTab.TASKS)
                         if (servers.size >= 2 && !activityAll) appViewModel.setTasksAll(false)
                     },
+                    // 批v163（舰队 M3）：今日用量卡 → 设置页用量 leaf（一次性总线）。
+                    onOpenUsage = {
+                        app.codeg.android.feature.usage.UsageOpenBus.request()
+                        jumpToTab(HomeTab.SETTINGS)
+                    },
                 )
             }
             composable(ROUTE_SEARCH) {

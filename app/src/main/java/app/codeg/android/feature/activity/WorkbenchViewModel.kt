@@ -73,6 +73,9 @@ data class WorkbenchStats(
     val automationFailuresKnown: Boolean = false,
     /** Per-device rows with unseen_failures > 0 (device name resolved). */
     val automationFailureDevices: List<AutomationFailureDevice> = emptyList(),
+    /** 批v163（M3）：今日 token 总量（sum），[usageTodayKnown] 才展示。 */
+    val usageTodayTokens: Long = 0,
+    val usageTodayKnown: Boolean = false,
     /** False until the first fetch round completes: without it the cards would
      *  flash "0 everywhere" while the spinners are still running. */
     val hasLoaded: Boolean = false,
@@ -207,6 +210,10 @@ class WorkbenchViewModel @Inject constructor(
      */
     private val automationFailures = MutableStateFlow<Map<String, Int?>>(emptyMap())
 
+    /** 批v163（M3）：今日 token 总量 per device（非 null=已探测；旧服务端=0；
+     *  失败=null→未知）。全已知才进统计卡，绝不混算。 */
+    private val usageTodayTokens = MutableStateFlow<Map<String, Long?>>(emptyMap())
+
     private val round = MutableStateFlow(RoundState())
 
     val stats: StateFlow<WorkbenchStats> =
@@ -224,10 +231,10 @@ class WorkbenchViewModel @Inject constructor(
             ) { round, tasks, profiles, selectedId, allMode ->
                 BoardInputs(round, tasks, profiles, selectedId, allMode)
             },
-            combine(attentionCounts, watcher.requests, automationFailures) { counts, interactive, autoFails ->
-                Triple(counts, interactive, autoFails)
+            combine(attentionCounts, watcher.requests, automationFailures, usageTodayTokens) { counts, interactive, autoFails, usage ->
+                combine4(counts, interactive, autoFails, usage)
             },
-        ) { inputs, (counts, interactive, autoFails) ->
+        ) { inputs, (counts, interactive, autoFails, usage) ->
             val scope = scopeIds(inputs.profiles, inputs.allMode, inputs.selectedId)
             val board = buildBoard(inputs.tasks.filter { it.serverId in scope })
             val scopeCounts = counts.filterKeys { it in scope }
@@ -247,6 +254,10 @@ class WorkbenchViewModel @Inject constructor(
             } else {
                 emptyList()
             }
+            val scopeUsage = usage.filterKeys { it in scope }
+            val usageKnown = scope.isNotEmpty() && scopeUsage.keys.containsAll(scope) &&
+                scopeUsage.values.all { it != null }
+            val usageTotal = if (usageKnown) scopeUsage.values.sumOf { it ?: 0L } else 0L
             WorkbenchStats(
                 runningTasks = board.segments[TaskSegment.RUNNING].orEmpty().size,
                 attentionTasks = if (allReported) {
@@ -261,6 +272,8 @@ class WorkbenchViewModel @Inject constructor(
                 automationFailures = autoTotal,
                 automationFailuresKnown = autoKnown,
                 automationFailureDevices = autoDevices,
+                usageTodayTokens = usageTotal,
+                usageTodayKnown = usageKnown,
                 onlineDevices = inputs.round.deviceStates.count { it.serverId in scope && it.status == DeviceLoadStatus.OK },
                 totalDevices = inputs.round.deviceStates.count { it.serverId in scope },
                 hasLoaded = inputs.round.hasLoaded,
@@ -398,6 +411,7 @@ class WorkbenchViewModel @Inject constructor(
         tasks.update { it.filter { e -> e.serverId in ids } }
         attentionCounts.update { it.filterKeys { id -> id in ids } }
         automationFailures.update { it.filterKeys { id -> id in ids } }
+        usageTodayTokens.update { it.filterKeys { id -> id in ids } }
         coroutineScope {
             devices.forEach { profile ->
                 launch {
@@ -440,6 +454,31 @@ class WorkbenchViewModel @Inject constructor(
                                 ) 0 else null
                             }
                             automationFailures.update { it + (profile.id to autoFails) }
+                            // 批v163（M3）: today's token total, same degrade
+                            // shape as the failure probe — old server pins 0
+                            // (nothing to report), a failed probe leaves null
+                            // and the stat card hides the whole sum.
+                            val usageToday = try {
+                                val r = withTimeoutOrNull(USAGE_PROBE_TIMEOUT_MS) {
+                                    client.tokenUsageReport(
+                                        app.codeg.android.core.model.usageFilter(
+                                            app.codeg.android.feature.usage.UsagePeriod.TODAY,
+                                        ),
+                                    )
+                                }
+                                r ?: run {
+                                    android.util.Log.w("WorkbenchViewModel", "token_usage_report timeout on ${profile.id}")
+                                    null
+                                }?.totals?.totalTokens
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                if ((e as? ApiError)?.let { err ->
+                                        (err as? ApiError.Server)?.status == 404
+                                    } == true || app.codeg.android.core.network.isUnsupportedMethod(e)
+                                ) 0L else null
+                            }
+                            usageTodayTokens.update { it + (profile.id to usageToday) }
                             list to count
                         } ?: throw java.util.concurrent.TimeoutException("device timeout")
                     }
@@ -490,6 +529,9 @@ class WorkbenchViewModel @Inject constructor(
         /** automation_list 探测独立 10s 预算：复用 3s 的 attention 预算会把慢
          *  设备整轮打成 null，琥珀行随之整块消失。 */
         private const val AUTOMATION_PROBE_TIMEOUT_MS = 10_000L
+
+        /** token_usage_report 探测（今日总量）独立预算。 */
+        private const val USAGE_PROBE_TIMEOUT_MS = 10_000L
         /** Workbench poll cadence — counters, not a live board (the board tab
          *  polls at 25s); foreground-gated by the poll combine. */
         const val POLL_INTERVAL_MS = 60_000L
@@ -501,3 +543,19 @@ class WorkbenchViewModel @Inject constructor(
         const val INTERACTIVE_MAX = 3
     }
 }
+
+/** The stats combine rides a 4-way inner combine; the typed overload caps at
+ *  5 params, so the payload travels as one holder. */
+private data class StatsPayload(
+    val counts: Map<String, Int?>,
+    val interactive: List<PendingInteraction>,
+    val autoFails: Map<String, Int?>,
+    val usage: Map<String, Long?>,
+)
+
+private fun combine4(
+    counts: Map<String, Int?>,
+    interactive: List<PendingInteraction>,
+    autoFails: Map<String, Int?>,
+    usage: Map<String, Long?>,
+) = StatsPayload(counts, interactive, autoFails, usage)

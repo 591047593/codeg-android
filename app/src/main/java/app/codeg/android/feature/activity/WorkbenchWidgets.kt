@@ -188,6 +188,7 @@ internal fun WorkbenchStatsRow(
     onOpenRunning: () -> Unit,
     onOpenAttention: () -> Unit,
     onOpenDevices: () -> Unit,
+    onOpenUsage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val value = { n: Int -> if (stats.hasLoaded) n.toString() else "…" }
@@ -212,6 +213,15 @@ internal fun WorkbenchStatsRow(
             if (stats.hasLoaded) "${stats.onlineDevices}/${stats.totalDevices}" else "…",
             stringResource(R.string.workbench_stat_online_action),
             onOpenDevices,
+            Modifier.weight(1f),
+        )
+        // 批v163（M3）：今日 token 用量——全设备已知才出数字，未知降级"…"；
+        // 点卡进设置页的用量 leaf（UsageOpenBus 一次性跳转）。
+        StatCard(
+            stringResource(R.string.workbench_stat_usage),
+            if (stats.usageTodayKnown) app.codeg.android.feature.usage.formatTokenCount(stats.usageTodayTokens) else "…",
+            stringResource(R.string.workbench_stat_usage_action),
+            onOpenUsage,
             Modifier.weight(1f),
         )
     }
@@ -597,6 +607,7 @@ internal fun WorkbenchHeader(
     onOpenTasks: (TaskSegment) -> Unit,
     onOpenInteraction: (PendingInteraction) -> Unit,
     onOpenAutomations: () -> Unit,
+    onOpenUsage: () -> Unit,
     onOpenDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -612,6 +623,7 @@ internal fun WorkbenchHeader(
                     onOpenRunning = { onOpenTasks(TaskSegment.RUNNING) },
                     onOpenAttention = { onOpenTasks(TaskSegment.ATTENTION) },
                     onOpenDevices = onOpenDevices,
+                    onOpenUsage = onOpenUsage,
                 )
                 WorkbenchQuickRow(onQuickTask, onOpenFolders, onOpenSearch, onOpenNewSession)
             }

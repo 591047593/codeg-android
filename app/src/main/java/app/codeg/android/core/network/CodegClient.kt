@@ -10,6 +10,13 @@ import app.codeg.android.core.model.AutomationInfo
 import app.codeg.android.core.model.AutomationRunInfo
 import app.codeg.android.core.model.AutomationRunNowBody
 import app.codeg.android.core.model.AutomationRunsBody
+import app.codeg.android.core.model.TokenUsageFilter
+import app.codeg.android.core.model.TokenUsageReport
+import app.codeg.android.core.model.TokenUsageReportBody
+import app.codeg.android.core.model.TokenUsageFacets
+import app.codeg.android.core.model.TokenUsageSyncBody
+import app.codeg.android.core.model.TokenUsageSyncResult
+import app.codeg.android.core.model.TokenUsageSyncStatus
 import app.codeg.android.core.model.AutomationSetEnabledBody
 import app.codeg.android.core.model.AutomationUpdateBody
 import app.codeg.android.core.model.WorkTaskChangedFile
@@ -921,6 +928,28 @@ class CodegClient(
     suspend fun automationCancelRun(runId: Int) {
         send("automation_cancel_run", encode(AutomationCancelRunBody(runId)))
     }
+
+    // ── Token usage (fleet M3) ──────────────────────────────────────────────
+    // Responses are plain snake_case Serialize structs → CodegJson.response's
+    // naming strategy matches; the filter rides in the request envelope as a
+    // camelCase struct (Rust `rename_all = "camelCase"`).
+
+    suspend fun tokenUsageReport(filter: TokenUsageFilter): TokenUsageReport =
+        decode(
+            send("token_usage_report", encode(TokenUsageReportBody(filter))),
+            TokenUsageReport.serializer(),
+        )
+
+    suspend fun tokenUsageFacets(): TokenUsageFacets =
+        decode(send("token_usage_facets", encode(EmptyBody)), TokenUsageFacets.serializer())
+
+    suspend fun tokenUsageStatus(): TokenUsageSyncStatus =
+        decode(send("token_usage_status", encode(EmptyBody)), TokenUsageSyncStatus.serializer())
+
+    /** `full` 丢掉全部 facts 重解析每份 transcript——CLI 在 codeg 背后把会话
+     *  文件写大了的逃生阀；日常用 incremental。 */
+    suspend fun tokenUsageSync(mode: String = "incremental"): TokenUsageSyncResult =
+        decode(send("token_usage_sync", encode(TokenUsageSyncBody(mode))), TokenUsageSyncResult.serializer())
 
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())

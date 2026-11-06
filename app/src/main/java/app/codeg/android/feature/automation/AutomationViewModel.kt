@@ -11,6 +11,7 @@ import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.network.ApiError
+import app.codeg.android.core.network.isUnsupportedMethod
 import app.codeg.android.core.network.displayMessage
 import app.codeg.android.core.model.AutomationInfo
 import app.codeg.android.core.model.AutomationRunInfo
@@ -278,16 +279,8 @@ class AutomationViewModel @Inject constructor(
         )
     }
 
-    /** Old-server gate: 404 or a "no such route/method" server error means the
-     *  automation surface doesn't exist there — not a transient failure. */
-    private fun isUnsupportedServer(e: Throwable): Boolean {
-        val server = e as? ApiError.Server ?: return false
-        if (server.status == 404) return true
-        val code = server.code?.lowercase().orEmpty()
-        if (code in UNSUPPORTED_CODES) return true
-        val msg = server.serverMessage.lowercase()
-        return UNSUPPORTED_MSG.any { msg.contains(it) }
-    }
+    /** Old-server gate（共享实现见 core/network.ApiUnsupported）。 */
+    private fun isUnsupportedServer(e: Throwable): Boolean = isUnsupportedMethod(e)
 
     private fun scopeIds(profiles: List<ServerProfile>, allMode: Boolean, selectedId: String?): Set<String> =
         if (allMode) {
@@ -636,10 +629,6 @@ class AutomationViewModel @Inject constructor(
         private const val RUN_CONFIRM_DELAY_MS = 3_000L
         private const val RUNS_LIMIT = 100
         private const val PREVIEW_TIMEOUT_MS = 8_000L
-        private val UNSUPPORTED_CODES = setOf(
-            "unknown_method", "method_not_found", "invalid_method", "no_such_method",
-        )
-        private val UNSUPPORTED_MSG = listOf("unknown method", "no such method", "method not found")
     }
 }
 

@@ -1627,4 +1627,23 @@
     <string name="workbench_automation_title">Automation failures · %1$d</string>
     <string name="workbench_automation_chip">%1$d failed</string>
     <string name="workbench_automation_open">Open automations</string>
+    <string name="settings_leaf_usage">Token usage</string>
+    <string name="usage_period_today">Today</string>
+    <string name="usage_period_week">7 days</string>
+    <string name="usage_scope_note">Source of truth: real session usage from the codeg server. Gateway-side cost lives in the zcode-hub panel — the two are complementary, never reconciled.</string>
+    <string name="usage_no_devices">No devices in the current scope.</string>
+    <string name="usage_loading">Loading usage…</string>
+    <string name="usage_unsupported">This server version doesn\'t support token usage yet.</string>
+    <string name="usage_load_failed">Usage load failed</string>
+    <string name="usage_sync">Sync now</string>
+    <string name="usage_refresh">Refresh</string>
+    <string name="usage_sync_status">%1$d/%2$d conversations synced</string>
+    <string name="usage_truncated">The scan hit its row cap — numbers cover only the most recent slice.</string>
+    <string name="usage_top_agents">Top agents</string>
+    <string name="usage_top_models">Top models</string>
+    <string name="usage_top_projects">Top projects</string>
+    <string name="usage_totals_detail">%1$s in · %2$s out · %3$s cache read · %4$d turns · %5$d conversations</string>
+    <string name="usage_q6_note">Gateway-side cost accounting lives in zcode-hub; this page and that panel are complementary and deliberately never reconciled.</string>
+    <string name="workbench_stat_usage">Today\'s tokens</string>
+    <string name="workbench_stat_usage_action">View usage</string>
 </resources>

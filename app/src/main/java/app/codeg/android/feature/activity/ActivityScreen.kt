@@ -98,6 +98,7 @@ fun ActivityScreen(
     onOpenInteraction: (PendingInteraction) -> Unit = {},
     // 批v163（舰队 M2，Q3）：琥珀区「自动化失败」行 → 任务板自动化段。
     onOpenAutomations: () -> Unit = {},
+    onOpenUsage: () -> Unit = {},
     viewModel: ActivityViewModel = hiltViewModel(),
     workbench: WorkbenchViewModel = hiltViewModel(),
 ) {
@@ -217,6 +218,7 @@ fun ActivityScreen(
                 onOpenTasks = onOpenTasks,
                 onOpenInteraction = onOpenInteraction,
                 onOpenAutomations = onOpenAutomations,
+                onOpenUsage = onOpenUsage,
                 // 在线设备卡 → 设备管理（与设备栏「管理设备」同一个去处）。
                 onOpenDevices = onManageServers,
             )

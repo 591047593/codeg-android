@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Brush
@@ -90,6 +91,7 @@ private enum class SettingsLeaf(@StringRes val titleRes: Int, val icon: ImageVec
     MCP(R.string.settings_leaf_mcp, Icons.Rounded.Memory, R.string.settings_group_ai_agents, true),
     VERSION_CONTROL(R.string.settings_leaf_version_control, Icons.Rounded.Difference, R.string.settings_group_integrations, true),
     CHAT_CHANNELS(R.string.settings_leaf_chat_channels, Icons.AutoMirrored.Rounded.Chat, R.string.settings_group_integrations, true),
+    USAGE(R.string.settings_leaf_usage, Icons.Rounded.DataUsage, R.string.settings_group_system, true),
     SYSTEM(R.string.settings_leaf_system, Icons.Rounded.Settings, R.string.settings_group_system, true),
     CONFIG_SYNC(R.string.settings_leaf_config_sync, Icons.Rounded.Sync, R.string.settings_group_system, true),
     OPEN_SOURCE_LICENSES(R.string.settings_leaf_open_source_licenses, Icons.Rounded.Policy, R.string.settings_group_system, true),
@@ -115,6 +117,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel(), configSyncVie
                 FloatingBallSettingsBus.pending.value = false
             }
         }
+    }
+    // 舰队 M3：动态工作台「今日用量」统计卡一键直达用量页（一次性请求总线）。
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (app.codeg.android.feature.usage.UsageOpenBus.consume()) leaf = SettingsLeaf.USAGE
     }
     // 批v160: the ProjectSettingsBus dance is gone — the sheets' 管理 link pushes
     // the standalone session_projects destination directly, so Back returns to
@@ -152,6 +158,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel(), configSyncVie
                 SettingsLeaf.ABOUT -> AboutScreen(viewModel)
                 SettingsLeaf.QUICK_MESSAGES -> QuickMessagesContent()
                 SettingsLeaf.PROJECTS -> SessionProjectsScreen()
+                SettingsLeaf.USAGE -> app.codeg.android.feature.usage.TokenUsageScreen()
                 SettingsLeaf.GENERAL -> GeneralContent(onOpenBallSettings = { leaf = SettingsLeaf.FLOATING_BALL })
                 SettingsLeaf.FLOATING_BALL -> FloatingBallContent(viewModel)
                 SettingsLeaf.MODEL_PROVIDERS -> ModelProvidersContent()
