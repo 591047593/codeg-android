@@ -362,6 +362,20 @@ fun GeneralContent(
                     } else viewModel.setNotifyInteractiveEnabled(false)
                 },
             )
+            // 系统级通知体系: per-channel switches — task-board outcomes (and
+            // turn completions share the channel) + silent device-offline alerts.
+            ToggleRow(
+                title = stringResource(R.string.settings_notify_task_results),
+                subtitle = stringResource(R.string.settings_notify_task_results_subtitle),
+                checked = appSettings.notifyTaskResultsEnabled,
+                onChange = viewModel::setNotifyTaskResultsEnabled,
+            )
+            ToggleRow(
+                title = stringResource(R.string.settings_notify_device_events),
+                subtitle = stringResource(R.string.settings_notify_device_events_subtitle),
+                checked = appSettings.notifyDeviceEventsEnabled,
+                onChange = viewModel::setNotifyDeviceEventsEnabled,
+            )
             ToggleRow(
                 title = stringResource(R.string.notify_keepalive_title),
                 subtitle = stringResource(
@@ -406,6 +420,14 @@ fun GeneralContent(
                         }.getOrNull()
                     }
                 },
+            )
+            // 系统级通知体系: point at the system notification settings for the
+            // per-channel sound/style knobs (importance, vibration, sound).
+            Text(
+                stringResource(R.string.notify_channels_hint),
+                fontSize = 12.sp,
+                color = colors.textTertiary,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
             )
         }
         Section(stringResource(R.string.general_floating_ball_section)) {

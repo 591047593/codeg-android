@@ -10,9 +10,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -53,6 +57,22 @@ data class PendingInteraction(
 }
 
 /**
+ * 系统级通知体系: a turn just finished on some conversation the watcher is
+ * attached to — the realtime "execution finished" signal behind the task-results
+ * notification. [conversationTitle] is best-effort: the watcher's own 30s poll
+ * already carries per-connection titles (zero extra requests); null → the
+ * notifier falls back to a generic string. [stopReason] rides the existing
+ * `turn_complete` event verbatim (never null from the wire decoder; kept
+ * nullable because it is informational only).
+ */
+data class TurnCompleteEvent(
+    val serverId: String,
+    val conversationId: Int,
+    val conversationTitle: String? = null,
+    val stopReason: String?,
+)
+
+/**
  * App-scoped watcher for "an agent is blocked waiting for the user" (批v160 需要处理
  * 汇聚 + W8 notifications). There is no global event firehose in the server, so the
  * watcher builds one out of the two primitives that exist:
@@ -81,11 +101,23 @@ class InteractiveRequestWatcher @Inject constructor(
     private val _requests = MutableStateFlow<List<PendingInteraction>>(emptyList())
     val requests: StateFlow<List<PendingInteraction>> = _requests.asStateFlow()
 
+    /** 系统级通知体系: hot stream of turn completions. Replay-free (a notifier
+     *  only cares about turns finishing from now on) with a small drop-oldest
+     *  buffer so a slow consumer cannot block the frame collectors. */
+    private val _turnComplete = MutableSharedFlow<TurnCompleteEvent>(
+        extraBufferCapacity = 16,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val turnComplete: SharedFlow<TurnCompleteEvent> = _turnComplete.asSharedFlow()
+
     /** Per-profile runtime: the cold stream, its collector job and the poll table. */
     private class ProfileRuntime(
         val stream: EventStream,
         /** connectionId → conversationId, fed by the poll and the snapshots. */
         val connections: ConcurrentHashMap<String, Int> = ConcurrentHashMap(),
+        /** connectionId → last title the poll saw (PetSessionRow.title) — the
+         *  zero-cost source for [TurnCompleteEvent.conversationTitle]. */
+        val titles: ConcurrentHashMap<String, String> = ConcurrentHashMap(),
     ) {
         var job: Job? = null
     }
@@ -144,6 +176,9 @@ class InteractiveRequestWatcher @Inject constructor(
 
             val runtime = runtimeFor(profile) ?: continue // no token → skip
             val desired = rows.associate { it.connectionId to it.conversationId }
+            // 系统级通知体系: remember what each connection is called while the
+            // poll is in hand — turn-complete notifications reuse these titles.
+            rows.forEach { row -> runtime.titles[row.connectionId] = row.title }
             val current = runtime.connections.keys.toSet()
             (desired.keys - current).forEach { conn ->
                 runtime.stream.attach(subscriptionId(profile.id, conn), conn)
@@ -152,6 +187,7 @@ class InteractiveRequestWatcher @Inject constructor(
                 runtime.stream.detach(subscriptionId(profile.id, conn))
                 removeConnection(profile.id, conn)
                 runtime.connections.remove(conn)
+                runtime.titles.remove(conn)
             }
             runtime.connections.putAll(desired)
         }
@@ -253,8 +289,22 @@ class InteractiveRequestWatcher @Inject constructor(
             is AcpEvent.PlanApprovalResolved ->
                 remove(profile.id, envelope.connectionId, InteractionKind.PLAN, e.approvalId)
             // Turn over → nothing can still be waiting on this connection (the
-            // detail screen clears its own cards with the same rule).
-            is AcpEvent.TurnComplete -> removeConnection(profile.id, envelope.connectionId)
+            // detail screen clears its own cards with the same rule). The same
+            // frame is the app-wide "execution finished" signal (系统级通知体系):
+            // emit it with the conversation the connection was bound to, plus
+            // whatever title the last poll had seen for it.
+            is AcpEvent.TurnComplete -> {
+                val title = runtime.titles.remove(envelope.connectionId)
+                _turnComplete.tryEmit(
+                    TurnCompleteEvent(
+                        serverId = profile.id,
+                        conversationId = conv,
+                        conversationTitle = title?.takeIf { it.isNotBlank() },
+                        stopReason = e.stopReason,
+                    ),
+                )
+                removeConnection(profile.id, envelope.connectionId)
+            }
             else -> {}
         }
     }

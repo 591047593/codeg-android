@@ -44,6 +44,21 @@ object ForegroundConversation {
 }
 
 /**
+ * 系统级通知体系: whether the TASK BOARD tab is the top of the nav stack right
+ * now, mirrored here by the shell (same LaunchedEffect that feeds
+ * [ForegroundConversation]) so the task-result notifier can suppress the
+ * "task finished" alert the user is already looking at. true = on the board.
+ */
+object ForegroundBoard {
+    private val _onBoard = MutableStateFlow(false)
+    val onBoard: StateFlow<Boolean> = _onBoard.asStateFlow()
+
+    fun set(onBoard: Boolean) {
+        _onBoard.value = onBoard
+    }
+}
+
+/**
  * System notifications for "an agent is blocked waiting for you" (批v160 W8).
  * Pure projection of [InteractiveRequestWatcher.requests]: one notification PER
  * CONVERSATION (stable id → tap-cancel / auto-cancel / re-post all agree), the
@@ -92,6 +107,27 @@ class InteractiveNotifier @Inject constructor(
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = context.getString(R.string.notif_channel_interactive_desc)
+            // 系统级通知体系: the P0 alert should break through physically too.
+            // (No setSound — null keeps the channel's system default, the style
+            // the two original channels shipped with.)
+            enableVibration(true)
+        }
+        val taskResults = NotificationChannel(
+            CHANNEL_TASK_RESULTS,
+            LocaleManager.wrap(context).getString(R.string.notif_channel_task_results),
+            // Second-tier semantics: the shade + sound, never heads-up.
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = context.getString(R.string.notif_channel_task_results_desc)
+            enableVibration(true)
+        }
+        val deviceEvents = NotificationChannel(
+            CHANNEL_DEVICE_EVENTS,
+            LocaleManager.wrap(context).getString(R.string.notif_channel_device_events),
+            // Silent log semantics — the alert exists in the shade for later.
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = context.getString(R.string.notif_channel_device_events_desc)
         }
         val keepAlive = NotificationChannel(
             CHANNEL_KEEPALIVE,
@@ -100,7 +136,9 @@ class InteractiveNotifier @Inject constructor(
         ).apply {
             description = context.getString(R.string.notif_channel_keepalive_desc)
         }
-        runCatching { nm.createNotificationChannels(listOf(interactive, keepAlive)) }
+        runCatching {
+            nm.createNotificationChannels(listOf(interactive, taskResults, deviceEvents, keepAlive))
+        }
     }
 
     private fun render(
@@ -168,6 +206,13 @@ class InteractiveNotifier @Inject constructor(
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n")))
             .setContentIntent(contentIntent)
+            // 系统级通知体系: readable on the lock screen (it names the device,
+            // never message content) and a full-screen promotion when the device
+            // is locked — an agent blocked on a permission is exactly what the
+            // full-screen intent use case was written for. Same deep link the
+            // content tap uses; immutable is fine (no fill-in needed).
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setFullScreenIntent(contentIntent, true)
             // Tap opens the conversation — the alert served its purpose.
             .setAutoCancel(true)
             // Re-posts while the same request still waits must stay silent (the
@@ -180,6 +225,8 @@ class InteractiveNotifier @Inject constructor(
 
     companion object {
         const val CHANNEL_INTERACTIVE = "interactive_requests"
+        const val CHANNEL_TASK_RESULTS = "task_results"
+        const val CHANNEL_DEVICE_EVENTS = "device_events"
         const val CHANNEL_KEEPALIVE = "service_keepalive"
 
         /** Stable per-conversation notification id (server-local conversation ids
