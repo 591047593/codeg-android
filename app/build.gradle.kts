@@ -104,6 +104,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.all {
+            //批v163: the DataStore real-I/O tests (ServerStoreTest / SessionProject*)
+            // were flaking on CI with rotating victims — after ~600 tests in ONE JVM
+            // the shared Dispatchers.IO pool is polluted by leaked coroutines from
+            // earlier tests and any withTimeout budget gets knife-edge. Restart the
+            // test JVM every 100 tests: fresh IO pool each segment, no parallel-fork
+            // contention (maxParallelForks stays 1). rc.2 Verify hit this 4 runs in
+            // a row; rerun-failed-jobs stopped rescuing it.
+            it.setForkEvery(100)
+            it.maxParallelForks = 1
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
