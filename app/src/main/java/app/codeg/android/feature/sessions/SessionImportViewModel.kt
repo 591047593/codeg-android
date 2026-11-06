@@ -193,7 +193,13 @@ class SessionImportViewModel @Inject constructor(
         }
     }
 
-    private suspend fun scanDevice(serverId: String) {
+    /** UI-called (device chips, retry, post-import refresh): launches its own
+     *  round — the generation guard makes a stale late arrival a no-op. */
+    private fun scanDevice(serverId: String) {
+        viewModelScope.launch { scanDeviceInner(serverId) }
+    }
+
+    private suspend fun scanDeviceInner(serverId: String) {
         val profile = repository.profiles.first().firstOrNull { it.id == serverId }
         if (profile == null) {
             _ui.update { it.copy(phase = Phase.FAILED, error = "设备不存在") }

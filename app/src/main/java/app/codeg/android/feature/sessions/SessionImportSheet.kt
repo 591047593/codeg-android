@@ -50,7 +50,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
-import app.codeg.android.core.designsystem.CodegTheme
+import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.EmptyState
 import app.codeg.android.core.designsystem.component.InlineError
@@ -70,6 +70,7 @@ import java.time.OffsetDateTime
  * deleted rows are opt-in (checking one restores the row in place).
  */
 @Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun SessionImportSheet(
     onDismiss: () -> Unit,
     onImported: () -> Unit,
