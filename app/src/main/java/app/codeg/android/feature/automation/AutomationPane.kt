@@ -581,9 +581,8 @@ private fun RunRow(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 private fun AutomationEditorSheet(
     state: AutomationViewModel.EditorState,
     viewModel: AutomationViewModel,
