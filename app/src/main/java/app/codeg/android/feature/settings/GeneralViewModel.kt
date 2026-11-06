@@ -319,6 +319,16 @@ class GeneralViewModel @Inject constructor(
         appSettingsStore.setNotifyInteractiveEnabled(enabled)
     }
 
+    /** 系统级通知体系: 任务完成提醒 toggle. */
+    fun setNotifyTaskResultsEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setNotifyTaskResultsEnabled(enabled)
+    }
+
+    /** 系统级通知体系: 设备离线提醒 toggle. */
+    fun setNotifyDeviceEventsEnabled(enabled: Boolean) = launchPersist {
+        appSettingsStore.setNotifyDeviceEventsEnabled(enabled)
+    }
+
     /** 批v160 W8: keep-alive 前台服务 toggle——只写偏好；服务的启停由
      *  Application 的设置收集器执行（唯一事实源，冷启动与改设置同路）. */
     fun setKeepAliveEnabled(enabled: Boolean) = launchPersist {

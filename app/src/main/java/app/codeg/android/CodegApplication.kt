@@ -6,9 +6,11 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.codeg.android.core.crash.CrashReporter
 import app.codeg.android.core.crash.CrashStore
+import app.codeg.android.core.data.InteractiveRequestWatcher
 import app.codeg.android.core.datastore.AppSettingsStore
 import app.codeg.android.core.notify.KeepAliveService
 import app.codeg.android.core.notify.InteractiveNotifier
+import app.codeg.android.core.notify.TaskResultWatcher
 import app.codeg.android.di.ApplicationScope
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,16 @@ class CodegApplication : Application() {
     @Inject
     lateinit var interactiveNotifier: InteractiveNotifier
 
+    // 系统级通知体系: both watchers run for the whole process now — the shell's
+    // old foreground-only refcount meant the app went deaf the moment it was
+    // backgrounded, but the notifications exist precisely for that state (the
+    // keep-alive service keeps its own refcount reference; harmless overlap).
+    @Inject
+    lateinit var interactionWatcher: InteractiveRequestWatcher
+
+    @Inject
+    lateinit var taskResultWatcher: TaskResultWatcher
+
     @Inject
     lateinit var appSettingsStore: AppSettingsStore
 
@@ -76,6 +88,10 @@ class CodegApplication : Application() {
         // the pref, this collector owns the Android side effect (start/stop),
         // so cold start and in-UI toggles take the same path.
         interactiveNotifier.ensureChannels()
+        // Reference-counted start: the shell no longer holds a reference (the
+        // MainShell DisposableEffect is gone) — this is THE process-lifetime one.
+        interactionWatcher.start()
+        taskResultWatcher.start()
         appScope.launch {
             appSettingsStore.settings
                 .map { it.keepAliveEnabled }

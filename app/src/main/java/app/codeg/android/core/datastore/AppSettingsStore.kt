@@ -63,6 +63,12 @@ data class AppSettings(
     /** 批v160 W8: system notification when an agent blocks waiting on the user
      *  (permission / question / plan approval). Default ON. */
     val notifyInteractiveEnabled: Boolean = true,
+    /** 系统级通知体系: task-board outcomes (done / failed) + turn completions
+     *  posted on the task_results channel. Default ON. */
+    val notifyTaskResultsEnabled: Boolean = true,
+    /** 系统级通知体系: device-offline alerts on the silent device_events channel.
+     *  Default ON. */
+    val notifyDeviceEventsEnabled: Boolean = true,
     /** 批v160 W8: keep the interaction listener alive in the background via a
      *  foreground service (dataSync). Default OFF — it costs battery; users on
      *  aggressive OEM ROMs opt in. */
@@ -188,6 +194,8 @@ class AppSettingsStore @Inject constructor(
                 ?: AppSettings.DEFAULT_INBOX_IDEA_STYLE,
             inboxColumns = (prefs[INBOX_COLUMNS] ?: AppSettings.DEFAULT_INBOX_COLUMNS).coerceIn(1, 2),
             notifyInteractiveEnabled = prefs[NOTIFY_INTERACTIVE_ENABLED] ?: true,
+            notifyTaskResultsEnabled = prefs[NOTIFY_TASK_RESULTS_ENABLED] ?: true,
+            notifyDeviceEventsEnabled = prefs[NOTIFY_DEVICE_EVENTS_ENABLED] ?: true,
             keepAliveEnabled = prefs[KEEP_ALIVE_ENABLED] ?: false,
             taskSwipeMode = prefs[TASK_SWIPE_MODE]?.takeIf { it in TASK_SWIPE_MODES }
                 ?: AppSettings.DEFAULT_TASK_SWIPE_MODE,
@@ -349,6 +357,16 @@ class AppSettingsStore @Inject constructor(
         dataStore.edit { it[NOTIFY_INTERACTIVE_ENABLED] = enabled }
     }
 
+    /** 系统级通知体系: persist the task-results notification toggle. */
+    suspend fun setNotifyTaskResultsEnabled(enabled: Boolean) {
+        dataStore.edit { it[NOTIFY_TASK_RESULTS_ENABLED] = enabled }
+    }
+
+    /** 系统级通知体系: persist the device-offline notification toggle. */
+    suspend fun setNotifyDeviceEventsEnabled(enabled: Boolean) {
+        dataStore.edit { it[NOTIFY_DEVICE_EVENTS_ENABLED] = enabled }
+    }
+
     /** 批v160 W8: persist the keep-alive foreground-service toggle (the service
      *  itself is started/stopped by whoever observes this flow — Application). */
     suspend fun setKeepAliveEnabled(enabled: Boolean) {
@@ -467,6 +485,8 @@ class AppSettingsStore @Inject constructor(
         val INBOX_NEW_IDEA_STYLE = stringPreferencesKey("inbox_new_idea_style")
         val INBOX_COLUMNS = intPreferencesKey("inbox_columns")
         val NOTIFY_INTERACTIVE_ENABLED = booleanPreferencesKey("notify_interactive_enabled")
+        val NOTIFY_TASK_RESULTS_ENABLED = booleanPreferencesKey("notify_task_results")
+        val NOTIFY_DEVICE_EVENTS_ENABLED = booleanPreferencesKey("notify_device_events")
         val KEEP_ALIVE_ENABLED = booleanPreferencesKey("keep_alive_enabled")
         val TASK_SWIPE_MODE = stringPreferencesKey("task_swipe_mode")
         val TASK_BOARD_LAYOUT = stringPreferencesKey("task_board_layout")

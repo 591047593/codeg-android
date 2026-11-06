@@ -41,7 +41,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -347,12 +346,10 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // 批v160 W7: 动态 tab 徽标——智能体卡在等用户确认的会话数（watcher 全量，
     // 环境感知与收件箱徽标同款）。
     val activityBadge by appViewModel.activityBadge.collectAsStateWithLifecycle()
-    // 批v160 W7: watcher 与 app UI 同生命周期（前台）——引用计数启动/停止，
-    // W8 的 keep-alive 服务可再持有一份把轮询带进后台。
-    DisposableEffect(appViewModel.interactionWatcher) {
-        appViewModel.interactionWatcher.start()
-        onDispose { appViewModel.interactionWatcher.stop() }
-    }
+    // 系统级通知体系: the foreground start/stop DisposableEffect is GONE — the
+    // watchers are process-lifetime now (CodegApplication.onCreate holds the
+    // reference), otherwise the global start followed by this shell's stop on
+    // dispose would drive the refcount to zero and kill polling in background.
     // Aggregate "全部" mode for the Chats tab + the project filter (batch v132).
     val chatsAll by appViewModel.chatsAll.collectAsStateWithLifecycle()
     // 批v151: the Search push joins the aggregate family (device bar All chip).
@@ -878,9 +875,15 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
     // 批v160 W8: mirror "which conversation is on screen" to the notifier so the
     // system alert for the session the user is ALREADY looking at is suppressed
     // (and comes back the moment they navigate away while it still waits).
+    // 系统级通知体系: the same mirror also reports whether the TASK BOARD is the
+    // top route, so finished-task alerts the user is already looking at are
+    // suppressed the same way.
     LaunchedEffect(nav) {
         nav.currentBackStackEntryFlow.collect {
             app.codeg.android.core.notify.ForegroundConversation.set(currentConversationRef())
+            app.codeg.android.core.notify.ForegroundBoard.set(
+                it.destination.route == HomeTab.TASKS.route,
+            )
         }
     }
 

@@ -72,6 +72,21 @@
     <string name="notif_keepalive_title">Listening for agents</string>
     <string name="notif_keepalive_text">You will be alerted when an agent needs you</string>
     <string name="notif_interactive_multi">%1$d requests waiting</string>
+    <!-- 系统级通知体系: task results / device events channels + their toggles. -->
+    <string name="notify_task_done">Task completed</string>
+    <string name="notify_task_failed">Task failed</string>
+    <string name="notify_turn_done">Run finished</string>
+    <string name="notify_turn_title">Session finished</string>
+    <string name="notify_device_offline">Device offline</string>
+    <string name="notify_channels_hint">Sounds and style live in the system app notification settings</string>
+    <string name="settings_notify_task_results">Task results</string>
+    <string name="settings_notify_task_results_subtitle">Notify when a task finishes or fails</string>
+    <string name="settings_notify_device_events">Device offline alerts</string>
+    <string name="settings_notify_device_events_subtitle">A quiet alert when a device stops answering</string>
+    <string name="notif_channel_task_results">Task results</string>
+    <string name="notif_channel_task_results_desc">Tasks finishing or failing</string>
+    <string name="notif_channel_device_events">Device events</string>
+    <string name="notif_channel_device_events_desc">Quiet log of devices going offline</string>
     <string name="workbench_overview_summary">%1$d running · %2$d need attention · %3$s online</string>
     <string name="workbench_overview_collapse">Collapse overview</string>
     <string name="workbench_overview_expand">Expand overview</string>

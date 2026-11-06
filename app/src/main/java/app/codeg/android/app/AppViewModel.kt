@@ -47,9 +47,10 @@ class AppViewModel @Inject constructor(
     private val ideaStore: IdeaStore,
     /** Floating-ball session cycling — the shell dispatches the ball actions here. */
     val focusHub: SessionFocusHub,
-    /** 批v160 W7: "agent blocked waiting for you" watcher — the shell owns its
-     *  start/stop (foreground) and reads [InteractiveRequestWatcher.requests]
-     *  for the bottom-bar badge; the workbench re-scopes the same list. */
+    /** 批v160 W7: "agent needs you" watcher — held process-lifetime since the
+     *  系统级通知体系 batch ([app.codeg.android.CodegApplication] starts it;
+     *  the shell only reads [InteractiveRequestWatcher.requests] for the
+     *  bottom-bar badge; the workbench re-scopes the same list. */
     val interactionWatcher: InteractiveRequestWatcher,
     /** 批v160 W5: the shell's gesture layer emits kanban column steps here when
      *  the Tasks tab's swipe semantics is 「切任务状态」; the board collects them. */

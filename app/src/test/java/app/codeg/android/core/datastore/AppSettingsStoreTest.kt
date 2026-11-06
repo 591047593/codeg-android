@@ -64,6 +64,16 @@ class AppSettingsStoreTest {
     }
 
     @Test
+    fun `task result and device event notification defaults are both on`() {
+        // 系统级通知体系: the second/third tiers ship ON like the interactive
+        // tier — they are the point of the feature; each channel switch is
+        // independent so users mute outcomes without losing alerts (or voice).
+        val s = AppSettings()
+        assertTrue(s.notifyTaskResultsEnabled)
+        assertTrue(s.notifyDeviceEventsEnabled)
+    }
+
+    @Test
     fun `preferences key names stay distinct`() {
         // The Key constants pin the wire keys: a copy-paste that made two toggles
         // read the same DataStore key would pass compile and silently corrupt
@@ -83,6 +93,8 @@ class AppSettingsStoreTest {
         assertEquals(1, keys.count { it == "float_ball_bindings" })
         assertEquals(1, keys.count { it == "float_ball_cycle_depth" })
         assertEquals(1, keys.count { it == "notify_interactive_enabled" })
+        assertEquals(1, keys.count { it == "notify_task_results" })
+        assertEquals(1, keys.count { it == "notify_device_events" })
         assertEquals(1, keys.count { it == "keep_alive_enabled" })
         assertEquals(1, keys.count { it == "task_swipe_mode" })
         // 批v160 W9: the session chip row's dimension, order and count sort.
@@ -219,6 +231,38 @@ class AppSettingsStoreTest {
             // stranding the board.
             store.setTaskSwipeMode("nonsense")
             assertEquals(TASK_SWIPE_SEGMENTS, store.settings.first().taskSwipeMode)
+        } finally {
+            scope.cancel()
+            tmp.delete()
+        }
+    }
+
+    @Test
+    fun `notification channel toggles survive a real datastore roundtrip`() = runBlocking {
+        // 系统级通知体系: read-side guard for the two new channel switches —
+        // the pure-default test above never exercises prefs → AppSettings.
+        // Plain booleans: no coerce branch to probe, just the persisted value.
+        val tmp = TemporaryFolder()
+        tmp.create()
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        try {
+            val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
+                File(tmp.root, "settings.preferences_pb")
+            }
+            val store = AppSettingsStore(dataStore)
+            store.setNotifyTaskResultsEnabled(false)
+            store.setNotifyDeviceEventsEnabled(false)
+            var s = store.settings.first()
+            assertFalse(s.notifyTaskResultsEnabled)
+            assertFalse(s.notifyDeviceEventsEnabled)
+            store.setNotifyTaskResultsEnabled(true)
+            store.setNotifyDeviceEventsEnabled(true)
+            s = store.settings.first()
+            assertTrue(s.notifyTaskResultsEnabled)
+            assertTrue(s.notifyDeviceEventsEnabled)
+            // The untouched interactive/keepalive pair stays at its own values.
+            assertTrue(s.notifyInteractiveEnabled)
+            assertFalse(s.keepAliveEnabled)
         } finally {
             scope.cancel()
             tmp.delete()
