@@ -158,6 +158,7 @@ import app.codeg.android.core.model.DescribeAgentOptionsBody
 import app.codeg.android.core.model.SetModeBody
 import app.codeg.android.core.model.SetConfigOptionBody
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.forms.ChannelProvider
@@ -949,7 +950,10 @@ class CodegClient(
     /** `full` 丢掉全部 facts 重解析每份 transcript——CLI 在 codeg 背后把会话
      *  文件写大了的逃生阀；日常用 incremental。 */
     suspend fun tokenUsageSync(mode: String = "incremental"): TokenUsageSyncResult =
-        decode(send("token_usage_sync", encode(TokenUsageSyncBody(mode))), TokenUsageSyncResult.serializer())
+        decode(
+            send("token_usage_sync", encode(TokenUsageSyncBody(mode)), timeoutMs = SYNC_HTTP_TIMEOUT_MS),
+            TokenUsageSyncResult.serializer(),
+        )
 
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())
@@ -1589,13 +1593,23 @@ class CodegClient(
      * `POST /api/<path>` with [bodyJson] as the body. Returns the raw response
      * text, or throws an [ApiError] for any non-2xx / transport failure.
      */
-    private suspend fun send(path: String, bodyJson: String): String {
+    private suspend fun send(path: String, bodyJson: String, timeoutMs: Long? = null): String {
         val url = "$baseUrl/api/$path"
         val response = try {
             http.post(url) {
                 header(HttpHeaders.Authorization, "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(bodyJson)
+                timeoutMs?.let { t ->
+                    // Per-request ceiling (fleet M3 审查): the shared engine's
+                    // 30s readTimeout would abort a long first token_usage_sync
+                    // while the server is still parsing transcripts. Inert on
+                    // every other call — no default is configured on the plugin.
+                    timeout {
+                        requestTimeoutMillis = t
+                        socketTimeoutMillis = t
+                    }
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // Cancellation must stay cancellation — never masquerade as a transport error,
@@ -1640,6 +1654,10 @@ class CodegClient(
     // endregion
 
     companion object {
+        /** token_usage_sync 的专用读上限——服务端同步跑完才回包，首台大库
+         *  存量机器解析全部会话可能远超共享引擎的 30s readTimeout。 */
+        const val SYNC_HTTP_TIMEOUT_MS = 120_000L
+
         /** Trim a trailing slash so `"$baseUrl/api/<name>"` never doubles up. */
         fun normalizeBaseUrl(raw: String): String =
             raw.trim().trimEnd('/')

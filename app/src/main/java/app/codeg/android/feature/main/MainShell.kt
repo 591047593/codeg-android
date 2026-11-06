@@ -1462,6 +1462,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onOpenUsage = {
                         app.codeg.android.feature.usage.UsageOpenBus.request()
                         jumpToTab(HomeTab.SETTINGS)
+                        // M3 审查 H1: the usage page reads the task board's scope
+                        // flow (tasksAll) while this card counts the workbench's
+                        // (activityAll) — mirror the tapped scope or the landing
+                        // page can show a different device set than the number
+                        // just tapped. SETTINGS has no enterTab default to lean
+                        // on, so mirror both directions unconditionally.
+                        if (servers.size >= 2) appViewModel.setTasksAll(activityAll)
                     },
                 )
             }

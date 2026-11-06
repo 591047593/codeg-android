@@ -2,6 +2,7 @@ package app.codeg.android.di
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.websocket.WebSockets
@@ -24,6 +25,11 @@ object NetworkModule {
      * event stream is never torn down — while ordinary HTTP POSTs still get a 30s
      * ceiling. `expectSuccess = false` so [app.codeg.android.core.network.CodegClient]
      * maps non-2xx responses to its own typed errors.
+     *
+     * `HttpTimeout` is installed with **no defaults** (fleet M3 审查): it only
+     * activates for requests that opt in via `send(..., timeoutMs=...)` (e.g.
+     * the long-running token_usage_sync), leaving engine-level 30s for everyone
+     * else including WebSockets.
      */
     @Provides
     @Singleton
@@ -32,6 +38,7 @@ object NetworkModule {
         install(WebSockets) {
             pingIntervalMillis = 20_000
         }
+        install(HttpTimeout)
         install(Logging) {
             level = LogLevel.NONE
         }

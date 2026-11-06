@@ -41,6 +41,15 @@ class TokenUsageFilterTest {
     }
 
     @Test
+    fun `western hemisphere reports negative offset`() {
+        // EST (DST ended Nov 1 2026): local midnight is 05:00Z, wire offset is
+        // -300 — pins the sign convention against a silent negation regression.
+        val f = usageFilter(UsagePeriod.TODAY, now, ZoneId.of("America/New_York"))
+        assertEquals("2026-11-06T05:00:00Z", f.start)
+        assertEquals(-300, f.tzOffsetMinutes)
+    }
+
+    @Test
     fun `token counts compact to K and M`() {
         assertEquals("990", formatTokenCount(990))
         assertEquals("1.0K", formatTokenCount(1_000))

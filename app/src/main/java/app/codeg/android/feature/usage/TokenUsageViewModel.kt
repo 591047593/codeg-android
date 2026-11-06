@@ -122,49 +122,62 @@ class TokenUsageViewModel @Inject constructor(
 
     /** Incremental sync on every in-scope supported device, then a data
      *  refresh. Fire-and-forget with a seq guard; the note surfaces the
-     *  only counter the web UI also toasts about: failures. */
+     *  only counter the web UI also toasts about: failures. Every exit path
+     *  (normal / error / cancel) clears `syncing` — a DataStore hiccup inside
+     *  [inScopeProfiles] must not leave the sync button spinning forever
+     *  (fleet M3 审查 H2). */
     fun syncAll() {
         if (_ui.value.syncing) return
         _ui.update { it.copy(syncing = true, actionNote = null, actionError = null) }
         val seq = ++syncSeq
         viewModelScope.launch {
-            val profiles = inScopeProfiles()
-            var synced = 0
-            var failed = 0
-            var unsupported = 0
-            for (profile in profiles) {
-                if (seq != syncSeq) return@launch
-                val result = runCatching {
-                    val client = repository.client(profile)
-                        ?: throw IllegalStateException("Token 缺失，无法连接该设备")
-                    withTimeoutOrNull(SYNC_TIMEOUT_MS) { client.tokenUsageSync("incremental") }
-                }
-                if (seq != syncSeq) return@launch
-                result.fold(
-                    onSuccess = { r ->
-                        if (r == null) failed += 1 else {
-                            synced += r.synced
-                            failed += r.failed
-                            refreshDeviceSlice(profile.id)
-                        }
-                    },
-                    onFailure = { e ->
-                        if (e is CancellationException) throw e
-                        if (isUnsupportedMethod(e)) unsupported += 1 else failed += 1
-                    },
-                )
+            try {
+                syncAllInner(seq)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _ui.update { it.copy(syncing = false, actionError = e.message ?: "同步失败") }
             }
-            if (seq != syncSeq) return@launch
-            _ui.update {
-                it.copy(
-                    syncing = false,
-                    actionNote = "同步完成：新增 $synced 条会话记录" +
-                        (if (failed > 0) "，$failed 条失败" else "") +
-                        (if (unsupported > 0) "，$unsupported 台设备不支持" else ""),
-                )
-            }
-            refresh()
         }
+    }
+
+    private suspend fun syncAllInner(seq: Int) {
+        val profiles = inScopeProfiles()
+        var synced = 0
+        var failed = 0
+        var unsupported = 0
+        for (profile in profiles) {
+            if (seq != syncSeq) return
+            val result = runCatching {
+                val client = repository.client(profile)
+                    ?: throw IllegalStateException("Token 缺失，无法连接该设备")
+                withTimeoutOrNull(SYNC_TIMEOUT_MS) { client.tokenUsageSync("incremental") }
+            }
+            if (seq != syncSeq) return
+            result.fold(
+                onSuccess = { r ->
+                    if (r == null) failed += 1 else {
+                        synced += r.synced
+                        failed += r.failed
+                        refreshDeviceSlice(profile.id)
+                    }
+                },
+                onFailure = { e ->
+                    if (e is CancellationException) throw e
+                    if (isUnsupportedMethod(e)) unsupported += 1 else failed += 1
+                },
+            )
+        }
+        if (seq != syncSeq) return
+        _ui.update {
+            it.copy(
+                syncing = false,
+                actionNote = "同步完成：新增 $synced 条会话记录" +
+                    (if (failed > 0) "，$failed 条失败" else "") +
+                    (if (unsupported > 0) "，$unsupported 台设备不支持" else ""),
+            )
+        }
+        refresh()
     }
 
     // No periodic poll: usage data is not live. Fetch on entry, on manual
@@ -270,9 +283,17 @@ class TokenUsageViewModel @Inject constructor(
     }
 
     /** Single-device data re-pull after its sync finished (no generation bump —
-     *  the slice write is keyed by serverId and sync is user-paced). */
+     *  the slice write is keyed by serverId and sync is user-paced). A failure
+     *  here is harmless: syncAll's trailing refresh() re-slices from the flows
+     *  anyway; only cancellation propagates (fleet M3 审查 L1). */
     private suspend fun refreshDeviceSlice(serverId: String) {
-        val profile = repository.profiles.first().firstOrNull { it.id == serverId } ?: return
+        val profile = try {
+            repository.profiles.first().firstOrNull { it.id == serverId } ?: return
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return
+        }
         val result = runCatching {
             val client = repository.client(profile) ?: return
             val filter = usageFilter(_ui.value.period)
@@ -290,6 +311,29 @@ class TokenUsageViewModel @Inject constructor(
                     },
                 )
             }
+        }
+    }
+
+    /** Retry one failed device — not a global refresh (fleet M3 审查 M1:
+     *  sibling cards must not flash LOADING / re-fan-out). Uses the current
+     *  generation so a loadLoop round starting meanwhile discards this write. */
+    fun retry(serverId: String) {
+        viewModelScope.launch {
+            _ui.update { state ->
+                state.copy(
+                    devices = state.devices.map {
+                        if (it.serverId == serverId) it.copy(status = DeviceStatus.LOADING, error = null) else it
+                    },
+                )
+            }
+            val profile = try {
+                repository.profiles.first().firstOrNull { it.id == serverId } ?: return@launch
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return@launch
+            }
+            fetchDevice(profile, generation)
         }
     }
 

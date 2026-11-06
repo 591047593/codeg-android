@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -90,11 +91,15 @@ fun TokenUsageScreen(viewModel: TokenUsageViewModel = hiltViewModel()) {
                             },
                             modifier = Modifier.weight(1f),
                         )
-                        if (ui.syncing) {
-                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                        } else {
-                            IconButton(onClick = viewModel::syncAll, enabled = ui.anySupported) {
-                                Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.usage_sync), tint = colors.textSecondary)
+                        // Fixed 48dp slot so the spinner never swaps the row
+                        // height / shifts the refresh button (M3 审查 M2).
+                        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            if (ui.syncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                            } else {
+                                IconButton(onClick = viewModel::syncAll, enabled = ui.anySupported) {
+                                    Icon(Icons.Rounded.Sync, contentDescription = stringResource(R.string.usage_sync), tint = colors.textSecondary)
+                                }
                             }
                         }
                         IconButton(onClick = viewModel::refresh) {
@@ -140,7 +145,7 @@ fun TokenUsageScreen(viewModel: TokenUsageViewModel = hiltViewModel()) {
                     } else {
                         stringResource(R.string.usage_period_week)
                     },
-                    onRetry = viewModel::refresh,
+                    onRetry = { viewModel.retry(device.serverId) },
                 )
             }
             item {
@@ -203,7 +208,7 @@ private fun DeviceUsageCard(
                         style = MaterialTheme.typography.labelLarge,
                         color = colors.accent,
                         modifier = Modifier
-                            .clickable(onClick = onRetry)
+                            .clickable(role = Role.Button, onClick = onRetry)
                             .padding(vertical = 4.dp),
                     )
                 }
@@ -313,7 +318,7 @@ private fun TopNBlock(title: String, items: List<TokenUsageBreakdownItem>) {
                 }
                 Box(
                     Modifier
-                        .fillMaxWidth(item.totalTokens.toFloat() / maxTokens)
+                        .fillMaxWidth((item.totalTokens.toFloat() / maxTokens).coerceIn(0f, 1f))
                         .height(3.dp)
                         .background(colors.accent.copy(alpha = 0.55f), RoundedCornerShape(50)),
                 )

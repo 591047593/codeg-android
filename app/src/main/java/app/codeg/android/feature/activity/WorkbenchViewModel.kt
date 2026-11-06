@@ -438,6 +438,10 @@ class WorkbenchViewModel @Inject constructor(
                             // own tighter budget, 404/old server pins a solid 0
                             // (supported=false semantics), any other failure leaves
                             // a null (this round's contribution hides).
+                            // Both probes are nested inside the 10s outer device
+                            // budget, so their own budget is capped at 3s (M3 审查
+                            // M1): a slow probe must degrade to null, never eat the
+                            // task list's window or sink the whole round.
                             val autoFails = try {
                                 withTimeoutOrNull(AUTOMATION_PROBE_TIMEOUT_MS) {
                                     client.automationList().sumOf { it.unseenFailures }
@@ -448,10 +452,7 @@ class WorkbenchViewModel @Inject constructor(
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                if ((e as? ApiError)?.let { err ->
-                                        (err as? ApiError.Server)?.status == 404
-                                    } == true
-                                ) 0 else null
+                                if (app.codeg.android.core.network.isUnsupportedMethod(e)) 0 else null
                             }
                             automationFailures.update { it + (profile.id to autoFails) }
                             // 批v163（M3）: today's token total, same degrade
@@ -475,10 +476,7 @@ class WorkbenchViewModel @Inject constructor(
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                if ((e as? ApiError)?.let { err ->
-                                        (err as? ApiError.Server)?.status == 404
-                                    } == true || app.codeg.android.core.network.isUnsupportedMethod(e)
-                                ) 0L else null
+                                if (app.codeg.android.core.network.isUnsupportedMethod(e)) 0L else null
                             }
                             usageTodayTokens.update { it + (profile.id to usageToday) }
                             list to count
@@ -503,9 +501,12 @@ class WorkbenchViewModel @Inject constructor(
                         onFailure = { e ->
                             if (e is CancellationException) throw e
                             // A dead device must not keep feeding its stale count
-                            // into the server-truth sum — invalidate it.
+                            // into the server-truth sum — invalidate it. The usage
+                            // map gets the same treatment (M3 审查 H1): a stale
+                            // token total must not pose as "known" on a dead device.
                             automationFailures.update { it + (profile.id to null) }
                             attentionCounts.update { it + (profile.id to null) }
+                            usageTodayTokens.update { it + (profile.id to null) }
                             round.update { r ->
                                 r.copy(
                                     deviceStates = r.deviceStates.map {
@@ -528,12 +529,13 @@ class WorkbenchViewModel @Inject constructor(
     }
 
     companion object {
-        /** automation_list 探测独立 10s 预算：复用 3s 的 attention 预算会把慢
-         *  设备整轮打成 null，琥珀行随之整块消失。 */
-        private const val AUTOMATION_PROBE_TIMEOUT_MS = 10_000L
+        /** automation_list 探测独立预算——嵌在 10s 外层设备预算内，所以封顶 3s
+         *  （M3 审查 M1）：慢设备探测降级为 null（琥珀行该轮隐藏，下轮补上），
+         *  绝不吃掉任务列表的时间窗、更不能把整轮打成 FAILED。 */
+        private const val AUTOMATION_PROBE_TIMEOUT_MS = 3_000L
 
-        /** token_usage_report 探测（今日总量）独立预算。 */
-        private const val USAGE_PROBE_TIMEOUT_MS = 10_000L
+        /** token_usage_report 探测（今日总量）独立预算，同上 3s 封顶。 */
+        private const val USAGE_PROBE_TIMEOUT_MS = 3_000L
         /** Workbench poll cadence — counters, not a live board (the board tab
          *  polls at 25s); foreground-gated by the poll combine. */
         const val POLL_INTERVAL_MS = 60_000L
