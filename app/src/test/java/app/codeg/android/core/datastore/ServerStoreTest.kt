@@ -3,6 +3,7 @@ package app.codeg.android.core.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,23 +51,34 @@ class ServerStoreTest {
 
     private fun newDataStore(): DataStore<Preferences> {
         val dir = tmp.newFolder()
-        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob()).also { scopes += it }
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + testScopeHandler()).also { scopes += it }
         return PreferenceDataStoreFactory.create(scope = scope) {
             File(dir, "codeg_prefs.preferences_pb")
         }
     }
 
     private fun collectorScope(): CoroutineScope =
-        CoroutineScope(Dispatchers.IO + SupervisorJob()).also { scopes += it }
+        CoroutineScope(Dispatchers.IO + SupervisorJob() + testScopeHandler()).also { scopes += it }
+
+    /** Teardown noise silencer: after `tearDown` cancels a scope, its coroutines
+     *  can still race the TemporaryFolder deletion and throw (e.g. writing to the
+     *  removed file). Unhandled, that lands on whichever test happens to be
+     *  running (seen as UncaughtExceptionsBeforeTest) — a false red that rotates.
+     *  It is scaffolding noise, not a regression signal: real failures assert in
+     *  the test body via suspend calls, which propagate normally. */
+    private fun testScopeHandler() = CoroutineExceptionHandler { _, throwable ->
+        println("ServerStoreTest: swallowed scaffolding exception: $throwable")
+    }
 
     private fun profile(id: String) =
         ServerProfile(id = id, name = id.uppercase(), baseUrl = "https://$id.test")
 
-    /** Skips emissions the predicate rejects. 20s, not 5s: this spans REAL
-     *  DataStore file I/O on Dispatchers.IO; a genuine regression still fails,
-     *  just 20s later. */
+    /** Skips emissions the predicate rejects. 45s, not 5s: this spans REAL
+     *  DataStore file I/O on Dispatchers.IO under a loaded CI runner (the v146
+     *  20s budget was still hit twice in one Release run); a genuine regression
+     *  still fails, just later. */
     private suspend fun <T> Channel<T>.awaitMatching(predicate: (T) -> Boolean): T =
-        withTimeout(20_000) {
+        withTimeout(45_000) {
             while (true) {
                 val value = receive()
                 if (predicate(value)) return@withTimeout value

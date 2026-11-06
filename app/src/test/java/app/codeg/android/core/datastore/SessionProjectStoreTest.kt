@@ -3,6 +3,7 @@ package app.codeg.android.core.datastore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,12 +32,22 @@ class SessionProjectStoreTest {
     val tmp = TemporaryFolder()
 
     private fun TestScope.newStore(): Pair<SessionProjectStore, CoroutineScope> {
-        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + scaffoldingHandler())
         val dir = tmp.newFolder()
         val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
             File(dir, "projects.preferences_pb")
         }
         return SessionProjectStore(dataStore) to scope
+    }
+
+    /** Teardown noise silencer: after the finally block cancels the scope, its
+     *  coroutines can still race the TemporaryFolder deletion and throw unhandled
+     *  — which JUnit attributes to whichever test is running next (observed as
+     *  UncaughtExceptionsBeforeTest on pruneServer, a false red that rotates).
+     *  Real failures assert in the test body via suspend calls and propagate
+     *  normally; this only silences post-cancel scaffolding noise. */
+    private fun scaffoldingHandler() = CoroutineExceptionHandler { _, throwable ->
+        println("SessionProjectStoreTest: swallowed scaffolding exception: $throwable")
     }
 
     private fun project(id: String, name: String = id) =
@@ -128,7 +139,7 @@ class SessionProjectStoreTest {
 
     @Test
     fun `corrupt json degrades to empty instead of throwing on every read`() = runTest {
-        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + scaffoldingHandler())
         val dir = tmp.newFolder()
         val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
             File(dir, "corrupt.preferences_pb")

@@ -2,6 +2,7 @@ package app.codeg.android.core.data
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import app.codeg.android.core.datastore.SessionProjectStore
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,7 +32,9 @@ class SessionProjectRepositoryTest {
     val tmp = TemporaryFolder()
 
     private fun newRepo(): Pair<SessionProjectRepository, CoroutineScope> {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + CoroutineExceptionHandler { _, throwable ->
+            println("SessionProjectRepositoryTest: swallowed scaffolding exception: $throwable")
+        })
         val dir = tmp.newFolder()
         val dataStore = PreferenceDataStoreFactory.create(scope = scope) {
             File(dir, "repo.preferences_pb")
@@ -44,11 +47,13 @@ class SessionProjectRepositoryTest {
     /** R2-A P3: the `members` StateFlow is fed Eagerly on Dispatchers.Default — a
      *  write's echo lags the suspend call by 1-2 hops with no happens-before edge.
      *  The member-derived assertions poll instead of racing (the activateCreated
-     *  test below already does this for `projects`). */
+     *  test below already does this for `projects`). Budget 20s, not 2s: a loaded
+     *  CI runner stalled the echo past 2s once (Release gate, rc.1); a genuine
+     *  regression still fails, just later. */
     private fun awaitMemberKey(repo: SessionProjectRepository, key: String) {
-        repeat(100) {
+        repeat(200) {
             if (repo.members.value.values.any { refs -> refs.any { it.key == key } }) return
-            Thread.sleep(20)
+            Thread.sleep(100)
         }
         error("members never echoed $key: ${repo.members.value}")
     }
