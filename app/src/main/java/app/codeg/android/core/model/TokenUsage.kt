@@ -26,7 +26,7 @@ data class TokenUsageFilter(
     val models: List<String>? = null,
     /** day | week | month（轻量版只用 day）。 */
     val bucket: String = "day",
-    /** `-new Date().getTimezoneOffset()` 的等价物：UTC 偏移分钟（东八区=-480）。 */
+    /** `-new Date().getTimezoneOffset()` 的等价物：查看者相对 UTC 的东向偏移分钟（东八区=+480）。 */
     val tzOffsetMinutes: Int = 0,
     val comparePrevious: Boolean = false,
 )

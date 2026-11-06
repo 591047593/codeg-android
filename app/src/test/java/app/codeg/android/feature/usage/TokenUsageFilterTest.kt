@@ -21,7 +21,9 @@ class TokenUsageFilterTest {
         assertEquals("2026-11-05T16:00:00Z", f.start) // 11-06 00:00+08:00
         assertEquals(null, f.end)
         assertEquals("day", f.bucket)
-        assertEquals(-480, f.tzOffsetMinutes)
+        // JS `-getTimezoneOffset()` convention: UTC+8 → +480 (server buckets
+        // by this offset; it is the viewer's distance EAST of UTC).
+        assertEquals(480, f.tzOffsetMinutes)
         assertEquals(false, f.comparePrevious)
     }
 
