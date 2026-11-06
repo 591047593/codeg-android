@@ -1,5 +1,8 @@
 package app.codeg.android.core.data
 
+import app.codeg.android.core.model.ConversationStatus
+import app.codeg.android.core.model.ConversationSummary
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -128,4 +131,44 @@ class TaskBoardPagesTest {
         serverName = "srv",
         task = app.codeg.android.core.model.WorkTaskInfo(id = 1, title = "t", status = "done"),
     )
+
+    private fun sampleConv(id: Int = 1) = BoardConversationEntry(
+        serverId = "s1",
+        serverName = "srv",
+        conversation = ConversationSummary(
+            id = id,
+            folderId = 7,
+            title = "C$id",
+            agentType = app.codeg.android.core.model.AgentType.CLAUDE_CODE,
+            status = ConversationStatus.fromWire("in_progress"),
+            messageCount = 4,
+            createdAt = Instant.parse("2026-11-06T09:00:00Z"),
+            updatedAt = Instant.parse("2026-11-06T10:00:00Z"),
+        ),
+        live = true,
+        archived = false,
+    )
+
+    /** 批v161.2: the anchor looked at tasks only — a board holding ONLY tracked
+     *  sessions opened on a blank first page with the cards elsewhere. */
+    @Test
+    fun `initial page follows conversations too`() {
+        val onlyDone = TaskBoardData(conversations = mapOf(TaskSegment.DONE to listOf(sampleConv())))
+        assertEquals(1, initialKanbanPage(onlyDone, 2))
+        assertEquals(3, initialKanbanPage(onlyDone, 1))
+
+        val running = TaskBoardData(conversations = mapOf(TaskSegment.RUNNING to listOf(sampleConv())))
+        assertEquals(0, initialKanbanPage(running, 2))
+        assertEquals(1, initialKanbanPage(running, 1))
+
+        val attention = TaskBoardData(conversations = mapOf(TaskSegment.ATTENTION to listOf(sampleConv())))
+        assertEquals(1, initialKanbanPage(attention, 1))
+
+        // Mixed board: the first non-empty segment (a task) still wins.
+        val mixed = TaskBoardData(
+            segments = mapOf(TaskSegment.TODO to listOf(sampleEntry())),
+            conversations = mapOf(TaskSegment.DONE to listOf(sampleConv())),
+        )
+        assertEquals(0, initialKanbanPage(mixed, 2))
+    }
 }
