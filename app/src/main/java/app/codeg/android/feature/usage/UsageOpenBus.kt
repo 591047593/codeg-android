@@ -1,6 +1,5 @@
 package app.codeg.android.feature.usage
 
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * One-shot「打开用量页」请求总线：动态工作台的「今日用量」统计卡 fire，
@@ -8,9 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * ServerRepository.requestAutomationTab 的既有模式）。
  */
 object UsageOpenBus {
-    private val pending = MutableStateFlow(0L)
+    private val pending = java.util.concurrent.atomic.AtomicLong(0L)
 
-    fun request() { pending.value = System.currentTimeMillis() }
+    fun request() { pending.set(System.currentTimeMillis()) }
 
     /** True at most once per request, within [FRESHNESS_MS] of it. */
     fun consume(): Boolean {

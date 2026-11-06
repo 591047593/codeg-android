@@ -458,18 +458,20 @@ class WorkbenchViewModel @Inject constructor(
                             // shape as the failure probe — old server pins 0
                             // (nothing to report), a failed probe leaves null
                             // and the stat card hides the whole sum.
-                            val usageToday = try {
+                            val usageToday: Long? = try {
                                 val r = withTimeoutOrNull(USAGE_PROBE_TIMEOUT_MS) {
                                     client.tokenUsageReport(
-                                        app.codeg.android.core.model.usageFilter(
+                                        app.codeg.android.feature.usage.usageFilter(
                                             app.codeg.android.feature.usage.UsagePeriod.TODAY,
                                         ),
                                     )
                                 }
-                                r ?: run {
+                                if (r == null) {
                                     android.util.Log.w("WorkbenchViewModel", "token_usage_report timeout on ${profile.id}")
                                     null
-                                }?.totals?.totalTokens
+                                } else {
+                                    r.totals.totalTokens
+                                }
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {

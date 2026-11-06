@@ -75,6 +75,26 @@ data class TokenUsageReport(
     val truncated: Boolean = false,
 )
 
+/** 项目 facet：alias 已设置时 label 用 alias；筛选列表用 `alias [ name ]`。 */
+@Serializable
+data class TokenUsageFolderFacet(
+    val folderId: Int = 0,
+    val label: String = "",
+    val name: String = "",
+    val alias: String? = null,
+    val path: String = "",
+    val parentId: Int? = null,
+)
+
+@Serializable
+data class TokenUsageFacets(
+    val folders: List<TokenUsageFolderFacet> = emptyList(),
+    val agents: List<String> = emptyList(),
+    val models: List<String> = emptyList(),
+    val dataStart: String? = null,
+    val dataEnd: String? = null,
+)
+
 @Serializable
 data class TokenUsageSyncStatus(
     val totalConversations: Int = 0,
