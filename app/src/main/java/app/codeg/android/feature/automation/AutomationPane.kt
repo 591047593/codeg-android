@@ -42,6 +42,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +63,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -106,7 +108,9 @@ fun AutomationPane(
     val editor by viewModel.editor.collectAsStateWithLifecycle()
     val colors = CodegTheme.colors
     // 删除是破坏性动作：走确认弹层（菜单项只装载目标）。
-    var deleteTarget by remember { mutableStateOf<AutomationInfo?>(null) }
+    // (serverId, automation)：行携带 device scope 的 serverId——automation id
+    // 是设备内自增，跨设备反查必撞号（误删另一台的同 id 条目）。
+    var deleteTarget by remember { mutableStateOf<Pair<String, AutomationInfo>?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         ui.actionError?.let { error ->
@@ -196,7 +200,7 @@ fun AutomationPane(
                                     onRunNow = { viewModel.runNow(automation, device.serverId) },
                                     onOpenRuns = { viewModel.openRuns(automation, device.serverId) },
                                     onEdit = { viewModel.openEditor(automation, device.serverId) },
-                                    onDelete = { deleteTarget = automation },
+                                    onDelete = { deleteTarget = device.serverId to automation },
                                 )
                             }
                         }
@@ -238,7 +242,7 @@ fun AutomationPane(
     editor?.let { state ->
         AutomationEditorSheet(state = state, viewModel = viewModel)
     }
-    deleteTarget?.let { target ->
+    deleteTarget?.let { (serverId, target) ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text(stringResource(R.string.automation_delete_confirm_title)) },
@@ -247,11 +251,8 @@ fun AutomationPane(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    // serverId 由行携带（device scope）— 从列表反查。
-                    val serverId = ui.devices
-                        .firstOrNull { d -> d.automations.any { it.id == target.id } }?.serverId
                     deleteTarget = null
-                    if (serverId != null) viewModel.delete(target, serverId)
+                    viewModel.delete(target, serverId)
                 }) { Text(stringResource(R.string.automation_delete), color = colors.danger) }
             },
             dismissButton = {
@@ -440,6 +441,7 @@ private fun AutomationRow(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun RunsSheet(
     state: AutomationViewModel.RunsState,
     onClose: () -> Unit,
@@ -581,6 +583,7 @@ private fun RunRow(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun AutomationEditorSheet(
     state: AutomationViewModel.EditorState,
     viewModel: AutomationViewModel,
@@ -706,7 +709,6 @@ private fun AutomationEditorSheet(
                             selectedIndex = if (state.scheduled) 0 else 1,
                             onSelect = { index ->
                                 viewModel.updateEditor { it.copy(scheduled = index == 0) }
-                                viewModel.scheduleNextRunPreview()
                             },
                         )
                         if (!state.isManual) {
@@ -717,7 +719,6 @@ private fun AutomationEditorSheet(
                                         selected = state.preset == preset,
                                         onClick = {
                                             viewModel.updateEditor { it.copy(preset = preset) }
-                                            viewModel.scheduleNextRunPreview()
                                         },
                                     )
                                 }
@@ -744,7 +745,7 @@ private fun AutomationEditorSheet(
                                         Text(
                                             text = stringResource(
                                                 R.string.automation_time_of_day,
-                                                String.format("%02d:%02d", state.hour, state.minute),
+                                                String.format(java.util.Locale.ROOT, "%02d:%02d", state.hour, state.minute),
                                             ),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = colors.textPrimary,
@@ -758,15 +759,17 @@ private fun AutomationEditorSheet(
                                     value = state.customCron,
                                     onValueChange = { value ->
                                         viewModel.updateEditor { it.copy(customCron = value) }
-                                        viewModel.scheduleNextRunPreview()
                                     },
                                     label = stringResource(R.string.automation_field_custom_cron),
                                     placeholder = stringResource(R.string.automation_custom_cron_hint),
                                     singleLine = true,
                                 )
                             }
+                            // 预览唯一触发点：所有 cron 输入的 key 都在这里，
+                            // 回调里不再直调（否则双触发，靠 sig 去重也只是兜底）。
                             LaunchedEffect(
-                                state.preset, state.minute, state.hour, state.customCron, state.timezone,
+                                state.scheduled, state.preset, state.minute, state.hour,
+                                state.customCron, state.timezone,
                             ) {
                                 viewModel.scheduleNextRunPreview()
                             }
@@ -878,7 +881,6 @@ private fun AutomationEditorSheet(
                     viewModel.updateEditor {
                         it.copy(hour = timeState.hour, minute = timeState.minute)
                     }
-                    viewModel.scheduleNextRunPreview()
                     showTime = false
                 }) { Text(stringResource(android.R.string.ok)) }
             },

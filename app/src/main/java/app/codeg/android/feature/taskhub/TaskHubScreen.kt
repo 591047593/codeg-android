@@ -229,6 +229,7 @@ fun TaskHubScreen(
     // column. Consumed once on entry (the request is read-then-cleared in the
     // repository), so a later plain tab return keeps the board where the user
     // left it.
+    var automationMode by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel) {
         viewModel.consumeSegmentRequest()?.let { seg -> pendingSegment = seg }
         if (viewModel.consumeAutomationTabRequest()) automationMode = true
@@ -352,7 +353,6 @@ fun TaskHubScreen(
     val automationViewModel: app.codeg.android.feature.automation.AutomationViewModel =
         hiltViewModel(key = "automation")
     val automationUi by automationViewModel.ui.collectAsStateWithLifecycle()
-    var automationMode by rememberSaveable { mutableStateOf(false) }
     // The 25s/60s polls run only while their segment is actually on screen:
     // entering arms the active one, leaving disposes both. The VMs survive tab
     // switches, so without this the polls leaked forever after one visit.

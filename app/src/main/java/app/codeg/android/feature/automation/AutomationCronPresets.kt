@@ -64,10 +64,10 @@ fun matchCronPreset(cron: String?): CronPreset {
     }
     val parts = c.split(Regex("\\s+"))
     if (parts.size != 5) return CronPreset.CUSTOM
-    val (min, hour, dom, mon, dow) = parts
+    val (minStr, hourStr, dom, mon, dow) = parts
     if (mon != "*") return CronPreset.CUSTOM
-    val minute = min.toIntOrNull() ?: return CronPreset.CUSTOM
-    val hour = hour.toIntOrNull() ?: return CronPreset.CUSTOM
+    val minute = minStr.toIntOrNull() ?: return CronPreset.CUSTOM
+    val hour = hourStr.toIntOrNull() ?: return CronPreset.CUSTOM
     if (minute !in 0..59 || hour !in 0..23) return CronPreset.CUSTOM
     return when {
         dom == "*" && dow == "*" -> CronPreset.DAILY

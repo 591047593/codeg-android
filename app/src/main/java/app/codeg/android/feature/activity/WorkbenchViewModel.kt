@@ -425,7 +425,7 @@ class WorkbenchViewModel @Inject constructor(
                             // (supported=false semantics), any other failure leaves
                             // a null (this round's contribution hides).
                             val autoFails = try {
-                                withTimeoutOrNull(ATTENTION_COUNT_TIMEOUT_MS) {
+                                withTimeoutOrNull(AUTOMATION_PROBE_TIMEOUT_MS) {
                                     client.automationList().sumOf { it.unseenFailures }
                                 } ?: run {
                                     android.util.Log.w("WorkbenchViewModel", "automation_list timeout on ${profile.id}")
@@ -487,6 +487,9 @@ class WorkbenchViewModel @Inject constructor(
     }
 
     companion object {
+        /** automation_list 探测独立 10s 预算：复用 3s 的 attention 预算会把慢
+         *  设备整轮打成 null，琥珀行随之整块消失。 */
+        private const val AUTOMATION_PROBE_TIMEOUT_MS = 10_000L
         /** Workbench poll cadence — counters, not a live board (the board tab
          *  polls at 25s); foreground-gated by the poll combine. */
         const val POLL_INTERVAL_MS = 60_000L

@@ -3,17 +3,17 @@ package app.codeg.android.feature.automation
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.codeg.android.app.CodegApplication
+import app.codeg.android.CodegApplication
 import app.codeg.android.core.data.AGG_DEVICE_TIMEOUT_MS
 import app.codeg.android.core.data.DispatchTargetLoader
 import app.codeg.android.core.data.DispatchTargets
 import app.codeg.android.core.data.DeviceLoadStatus
 import app.codeg.android.core.data.ServerRepository
 import app.codeg.android.core.model.AgentType
-import app.codeg.android.core.model.ApiError
+import app.codeg.android.core.network.ApiError
 import app.codeg.android.core.model.AutomationInfo
 import app.codeg.android.core.model.AutomationRunInfo
-import app.codeg.android.core.model.ServerProfile
+import app.codeg.android.core.datastore.ServerProfile
 import app.codeg.android.core.model.buildAutomationDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -176,15 +176,13 @@ class AutomationViewModel @Inject constructor(
                         lastSeenTick = input.tick
                         fetchAll()
                     }
-                    when {
-                        input.active && input.fg -> {
-                            if (input.tick == 0) fetchAll()
-                            while (currentCoroutineContext().isActive) {
-                                delay(POLL_INTERVAL_MS)
-                                fetchAll()
-                            }
+                    // 初始拉取并入 active 分支：段不可见时不白拉全设备。
+                    if (input.active && input.fg) {
+                        if (input.tick == 0) fetchAll()
+                        while (currentCoroutineContext().isActive) {
+                            delay(POLL_INTERVAL_MS)
+                            fetchAll()
                         }
-                        input.tick == 0 -> fetchAll()
                     }
                 }
         }
@@ -309,16 +307,18 @@ class AutomationViewModel @Inject constructor(
                 _ui.update { it.copy(actionError = "无法连接该设备") }
                 return@launch
             }
+            _ui.update { it.copy(busyKey = key) }
             // Optimistic row flip; revert on failure (v-row discipline).
             updateAutomationLocally(serverId, automation.id) { it.copy(enabled = enabled) }
             try {
                 client.automationSetEnabled(automation.id, enabled)
+                _ui.update { it.copy(busyKey = null) }
                 refresh()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 updateAutomationLocally(serverId, automation.id) { it.copy(enabled = !enabled) }
-                _ui.update { it.copy(actionError = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败") }
+                _ui.update { it.copy(busyKey = null, actionError = (e as? ApiError)?.displayMessage() ?: e.message ?: "操作失败") }
             }
         }
     }
@@ -399,23 +399,34 @@ class AutomationViewModel @Inject constructor(
     /** Opens the runs sheet: list (limit 100) + mark_seen so the failure badge
      *  clears (server-wide unseen counter, Q3). */
     fun openRuns(automation: AutomationInfo, serverId: String) {
+        val seq = ++runsSeq
         _runs.value = RunsState(automation, serverId)
         viewModelScope.launch {
             val client = clientFor(serverId)
             if (client == null) {
-                _runs.update { it?.copy(loading = false, error = "无法连接该设备") }
+                if (seq == runsSeq) _runs.update { it?.copy(loading = false, error = "无法连接该设备") }
                 return@launch
             }
             try {
                 val list = client.automationRuns(automation.id, RUNS_LIMIT)
+                if (seq != runsSeq) return@launch
                 _runs.update { it?.copy(runs = list, loading = false, error = null) }
                 if (automation.unseenFailures > 0) {
                     runCatching { client.automationMarkSeen() }
-                    updateAutomationLocally(serverId, automation.id) { it.copy(unseenFailures = 0) }
+                    // mark_seen 是服务端全局计数：本地把所有行的徽标一并清零，
+                    // 不然其余行要等下一轮 60s 轮询才消失（抖动）。
+                    _ui.update { state ->
+                        state.copy(
+                            devices = state.devices.map { d ->
+                                d.copy(automations = d.automations.map { it.copy(unseenFailures = 0) })
+                            },
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (seq != runsSeq) return@launch
                 _runs.update {
                     it?.copy(loading = false, error = (e as? ApiError)?.displayMessage() ?: e.message ?: "加载失败")
                 }
@@ -427,7 +438,7 @@ class AutomationViewModel @Inject constructor(
 
     fun cancelRun(runId: Int, serverId: String) {
         viewModelScope.launch {
-            val client = repository.clientById(serverId) ?: return@launch
+            val client = clientFor(serverId) ?: return@launch
             try {
                 client.automationCancelRun(runId)
                 _runs.update { state ->
@@ -502,7 +513,7 @@ class AutomationViewModel @Inject constructor(
                     targets = targets ?: state.targets.copy(foldersLoading = false, error = "无法连接目标设备"),
                     // Drop selections the fresh lists no longer contain.
                     folderId = state.folderId?.takeIf { id -> targets?.folders?.any { it.id == id } == true },
-                    agentType = state.agentType?.takeIf { agent -> targets?.agents?.any { it.agentType == agent } == true },
+                    agentType = state.agentType?.takeIf { agent -> targets?.agents?.contains(agent) == true },
                 )
             }
         }
@@ -516,7 +527,12 @@ class AutomationViewModel @Inject constructor(
             _editor.update { it?.copy(nextRun = null, nextRunStale = false) }
             return
         }
-        val cron = state.preset.buildFor(state.minute, state.hour, state.customCron) ?: return
+        val cron = state.preset.buildFor(state.minute, state.hour, state.customCron)
+            ?: run {
+                // 自定义表达式清空 = 当前 cron 无效：旧预览不能残留。
+                _editor.update { it?.copy(nextRun = null, nextRunStale = false, nextRunSig = null) }
+                return
+            }
         val sig = cron to state.timezone
         if (!state.nextRunStale && state.nextRunSig == sig) return
         _editor.update { it?.copy(nextRunStale = true, nextRunSig = sig) }
@@ -539,6 +555,9 @@ class AutomationViewModel @Inject constructor(
 
     private var previewSeq = 0
 
+    /** Runs-sheet seq: closing/reopening supersedes the previous load. */
+    private var runsSeq = 0
+
     /** Reconstruct the editable prompt text from the captured config blob
      *  (text block preferred; display_text as the fallback). */
     private fun promptOf(info: AutomationInfo): String {
@@ -558,11 +577,13 @@ class AutomationViewModel @Inject constructor(
         val state = _editor.value ?: return
         val serverId = state.serverId ?: return
         if (state.saving) return
+        // 进编辑器即置位：双击保存不得双建（校验失败在下方各出口回落）。
+        _editor.update { it?.copy(saving = true, error = null) }
         viewModelScope.launch {
             val cron = if (state.isManual) null else {
                 val built = state.preset.buildFor(state.minute, state.hour, state.customCron)
                 if (built == null || !isPlausibleCron(built)) {
-                    _editor.update { it?.copy(error = "cron 表达式无效（需 5 段：分 时 日 月 周）") }
+                    _editor.update { it?.copy(saving = false, error = "cron 表达式无效") }
                     return@launch
                 }
                 built
@@ -581,18 +602,17 @@ class AutomationViewModel @Inject constructor(
                 promptText = state.prompt,
             )
             if (draft.name.isBlank()) {
-                _editor.update { it?.copy(error = "名称不能为空") }
+                _editor.update { it?.copy(saving = false, error = "名称不能为空") }
                 return@launch
             }
             if (state.prompt.isBlank()) {
-                _editor.update { it?.copy(error = "Prompt 不能为空") }
+                _editor.update { it?.copy(saving = false, error = "Prompt 不能为空") }
                 return@launch
             }
             val client = clientFor(serverId) ?: run {
-                _editor.update { it?.copy(error = "无法连接该设备") }
+                _editor.update { it?.copy(saving = false, error = "无法连接该设备") }
                 return@launch
             }
-            _editor.update { it?.copy(saving = true, error = null) }
             try {
                 val editing = state.editing
                 if (editing == null) client.automationCreate(draft) else client.automationUpdate(editing.id, draft)
@@ -616,7 +636,7 @@ class AutomationViewModel @Inject constructor(
         private const val RUNS_LIMIT = 100
         private const val PREVIEW_TIMEOUT_MS = 8_000L
         private val UNSUPPORTED_CODES = setOf(
-            "unknown_method", "method_not_found", "invalid_method", "no_such_method", "not_found",
+            "unknown_method", "method_not_found", "invalid_method", "no_such_method",
         )
         private val UNSUPPORTED_MSG = listOf("unknown method", "no such method", "method not found")
     }
