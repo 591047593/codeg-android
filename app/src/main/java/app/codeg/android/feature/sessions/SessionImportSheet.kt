@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
 import app.codeg.android.core.common.RelativeTime
+import app.codeg.android.core.model.AgentType
 import app.codeg.android.core.designsystem.theme.CodegTheme
 import app.codeg.android.core.designsystem.component.DeviceChipRow
 import app.codeg.android.core.designsystem.component.EmptyState
@@ -80,9 +82,13 @@ fun SessionImportSheet(
     val colors = CodegTheme.colors
 
     // The host refreshes its list once an import actually changed conversations.
-    LaunchedEffect(ui.importedSomething) {
-        if (ui.importedSomething) onImported()
+    // An epoch (not a Boolean) keeps firing for repeat imports in one sitting.
+    LaunchedEffect(ui.importEpoch) {
+        if (ui.importEpoch > 0) onImported()
     }
+    // The VM is backstack-scoped and outlives the sheet — every open (including
+    // a reopen) resets to a fresh round instead of resurrecting the last one.
+    LaunchedEffect(Unit) { viewModel.onSheetShown() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -216,6 +222,17 @@ private fun PickerBody(
                 FolderCard(folder = folder, ui = ui, viewModel = viewModel)
             }
         }
+        // Import failure used to be invisible (phase stays OK) — the CTA just
+        // snapped back with no feedback. Show it above the button; retrying is
+        // re-tapping the CTA (selection is untouched on failure).
+        ui.error?.let { err ->
+            Text(
+                text = err,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.danger,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         Box(
             Modifier
                 .fillMaxWidth()
@@ -298,7 +315,10 @@ private fun SessionImportRow(
     val imported = session.status == ScanSessionStatus.IMPORTED
     val deleted = session.status == ScanSessionStatus.DELETED
     val checked = SessionImportViewModel.sessionKey(session) in ui.selection
-    val selectable = !imported && (!deleted || ui.includeDeleted)
+    // UNKNOWN agents are never sent (wire contract) — keep them unselectable so
+    // the CTA count matches what actually rides the request.
+    val selectable = !imported && (!deleted || ui.includeDeleted) &&
+        session.agentType != AgentType.UNKNOWN
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -351,13 +371,17 @@ private fun SessionImportRow(
     }
 }
 
-private fun sessionCaption(session: ScanSession): String = buildList {
-    add(session.agentType.shortName)
-    add("${session.messageCount} msgs")
-    val at = session.endedAt ?: session.startedAt
-    parseIso(at)?.let { add(RelativeTime.compact(it)) }
-    session.gitBranch?.takeIf { it.isNotBlank() }?.let { add(it) }
-}.joinToString(" · ")
+@Composable
+private fun sessionCaption(session: ScanSession): String {
+    val msgs = stringResource(R.string.session_import_msg_count, session.messageCount)
+    return buildList {
+        add(session.agentType.shortName)
+        add(msgs)
+        val at = session.endedAt ?: session.startedAt
+        parseIso(at)?.let { add(RelativeTime.compact(it)) }
+        session.gitBranch?.takeIf { it.isNotBlank() }?.let { add(it) }
+    }.joinToString(" · ")
+}
 
 private fun parseIso(raw: String): Instant? = runCatching {
     OffsetDateTime.parse(raw).toInstant()
@@ -377,11 +401,13 @@ private fun ReceiptPanel(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // All-failed / all-not-found gets the alarm icon, not a green check.
+        val anyChanged = receipt.imported > 0 || receipt.updated > 0 || receipt.restored > 0
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(
-                Icons.Rounded.CheckCircle,
+                if (anyChanged) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
                 contentDescription = null,
-                tint = colors.success,
+                tint = if (anyChanged) colors.success else colors.danger,
                 modifier = Modifier.size(22.dp),
             )
             Text(

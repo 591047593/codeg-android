@@ -1651,6 +1651,7 @@
     <string name="session_import_empty_title">Nothing to import</string>
     <string name="session_import_empty_hint">Sessions run by CLIs on that device will show up here, grouped by project folder.</string>
     <string name="session_import_summary">%1$d importable of %2$d sessions</string>
+    <string name="session_import_msg_count">%1$d msgs</string>
     <string name="session_import_no_folder">Another %1$d session(s) carry no project path and are not listed.</string>
     <string name="session_import_include_deleted">Include deleted</string>
     <string name="session_import_badge_imported">Imported</string>

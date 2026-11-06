@@ -1637,11 +1637,12 @@
     <string name="session_import_empty_title">没有可导入的会话</string>
     <string name="session_import_empty_hint">在该设备上用各 CLI 跑过的会话会出现在这里，按项目文件夹分组。</string>
     <string name="session_import_summary">共 %2$d 个会话，可导入 %1$d 个</string>
+    <string name="session_import_msg_count">%1$d 条消息</string>
     <string name="session_import_no_folder">另有 %1$d 个会话无项目路径，未列出。</string>
     <string name="session_import_include_deleted">含已删除</string>
     <string name="session_import_badge_imported">已导入</string>
     <string name="session_import_badge_deleted">已删除</string>
-    <string name="session_import_folder_meta">%1$d / %2$d 可导入</string>
+    <string name="session_import_folder_meta">新增 %1$d / 共 %2$d</string>
     <string name="session_import_cta">导入所选 %1$d 条</string>
     <string name="session_import_receipt">完成：新增 %1$d · 更新 %2$d · 恢复 %3$d</string>
     <string name="session_import_receipt_issue">跳过 %1$d · 未找到 %2$d · 失败 %3$d</string>

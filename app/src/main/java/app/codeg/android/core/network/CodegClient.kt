@@ -962,20 +962,36 @@ class CodegClient(
         )
 
     /** 会话导入（fleet M4）：扫本机各 CLI 的会话文件并与 DB 对账
-     *  （new/imported/deleted 三态）。服务端已按文件夹可导入数排序。 */
+     *  （new/imported/deleted 三态）。服务端已按文件夹可导入数排序。
+     *  三个调用服务端都要全量解析本机 transcript（大库分钟级），统一走
+     *  [IMPORT_HTTP_TIMEOUT_MS] 放宽——否则 OkHttp 引擎默认 30s 读超时先掐断。 */
     suspend fun scanImportableSessions(): ScanResult =
-        decode(send("scan_importable_sessions", encode(EmptyBody)), ScanResult.serializer())
+        decode(
+            send("scan_importable_sessions", encode(EmptyBody), timeoutMs = IMPORT_HTTP_TIMEOUT_MS),
+            ScanResult.serializer(),
+        )
 
     /** 勾选导入：按 cwd 建夹/复用夹，逐会话导入；软删除的会话选中即原地恢复。 */
     suspend fun importSelectedSessions(selections: List<SelectedSessionKey>): ImportSelectedResult =
         decode(
-            send("import_selected_sessions", encode(ImportSelectedBody(selections))),
+            send(
+                "import_selected_sessions",
+                encode(ImportSelectedBody(selections)),
+                timeoutMs = IMPORT_HTTP_TIMEOUT_MS,
+            ),
             ImportSelectedResult.serializer(),
         )
 
     /** 旧版整夹导入（服务端已无 UI 调用，仅为 API 对账保留）。 */
     suspend fun importLocalConversations(folderId: Int): ImportResult =
-        decode(send("import_local_conversations", encode(ImportLocalBody(folderId))), ImportResult.serializer())
+        decode(
+            send(
+                "import_local_conversations",
+                encode(ImportLocalBody(folderId)),
+                timeoutMs = IMPORT_HTTP_TIMEOUT_MS,
+            ),
+            ImportResult.serializer(),
+        )
 
     suspend fun workTaskGet(id: Int): WorkTaskInfo? {
         val root = sendJsonElement("work_task_get", WorkTaskWire.idBody(id).toString())
@@ -1679,6 +1695,10 @@ class CodegClient(
         /** token_usage_sync 的专用读上限——服务端同步跑完才回包，首台大库
          *  存量机器解析全部会话可能远超共享引擎的 30s readTimeout。 */
         const val SYNC_HTTP_TIMEOUT_MS = 120_000L
+
+        /** M4 会话导入三调用（scan/import_selected/import_local）同档放宽：
+         *  服务端两个入口都要全量解析本机 transcript，大库分钟级。 */
+        const val IMPORT_HTTP_TIMEOUT_MS = 120_000L
 
         /** Trim a trailing slash so `"$baseUrl/api/<name>"` never doubles up. */
         fun normalizeBaseUrl(raw: String): String =

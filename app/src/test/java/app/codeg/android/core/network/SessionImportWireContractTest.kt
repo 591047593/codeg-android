@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -170,5 +171,29 @@ class SessionImportWireContractTest {
                 """[ { "path": "/p", "name": "p", "agent_types": ["codex", "future_cli"], "sessions": [] } ]""",
             ).single().agentTypes,
         )
+    }
+
+    @Test
+    fun `multi-word agent type rides the request with its exact snake_case wire name`() {
+        // "codex" is case-insensitive — pin a multi-word wire name so a
+        // serializer regression to enum name/displayName cannot slip through
+        // green (claude_code must not go out as claudeCode/CLAUDE_CODE/Claude Code).
+        val body = ImportSelectedBody(
+            selections = listOf(SelectedSessionKey(agentType = AgentType.CLAUDE_CODE, externalId = "c1")),
+        )
+        val key = CodegJson.request
+            .parseToJsonElement(CodegJson.request.encodeToString(ImportSelectedBody.serializer(), body))
+            .jsonObject["selections"]!!.jsonArray.single().jsonObject
+        assertEquals("claude_code", key["agentType"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `scan folder without folder_id decodes to null (folder not yet in codeg)`() {
+        val folder = CodegJson.response.decodeFromString(
+            ListSerializer(ScanFolder.serializer()),
+            """[ { "path": "/p", "name": "p", "exists_in_codeg": false, "agent_types": [], "sessions": [] } ]""",
+        ).single()
+        assertNull(folder.folderId)
+        assertEquals(false, folder.existsInCodeg)
     }
 }

@@ -205,6 +205,8 @@ fun SessionListScreen(
         SessionImportSheet(
             onDismiss = { showImportSheet = false },
             // 导入改变了会话表 —— 立刻刷新列表，别等下一轮 25s 轮询。
+            // 边界：sheet 内可切设备，跨设备导入只刷宿主列表——别台的变更
+            // 等切设备（force 重拉）或聚合重扫时呈现，V1 不做定向刷新。
             onImported = viewModel::refresh,
         )
     }
