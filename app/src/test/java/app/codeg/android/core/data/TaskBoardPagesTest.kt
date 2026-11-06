@@ -162,7 +162,10 @@ class TaskBoardPagesTest {
         assertEquals(1, initialKanbanPage(running, 1))
 
         val attention = TaskBoardData(conversations = mapOf(TaskSegment.ATTENTION to listOf(sampleConv())))
-        assertEquals(1, initialKanbanPage(attention, 1))
+        // ATTENTION is SEGMENT_ORDER[2] — one column per page anchors it on
+        // page 2 (page 1 is RUNNING's; landing there is the blank-page bug
+        // this batch fixes). 批v163: 37baf15 landed with 1 and Verify red.
+        assertEquals(2, initialKanbanPage(attention, 1))
 
         // Mixed board: the first non-empty segment (a task) still wins.
         val mixed = TaskBoardData(
