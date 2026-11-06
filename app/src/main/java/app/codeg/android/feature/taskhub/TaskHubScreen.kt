@@ -115,6 +115,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.codeg.android.core.designsystem.component.CodegSegmented
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.codeg.android.R
@@ -230,6 +231,7 @@ fun TaskHubScreen(
     // left it.
     LaunchedEffect(viewModel) {
         viewModel.consumeSegmentRequest()?.let { seg -> pendingSegment = seg }
+        if (viewModel.consumeAutomationTabRequest()) automationMode = true
     }
     // 批v156: after an action (启动/取消/重试…) the card moves columns — follow
     // it so it never "vanishes" one page away (the VM emits the landed segment
@@ -345,161 +347,198 @@ fun TaskHubScreen(
         mutableStateOf<List<TaskHubViewModel.StartAllTarget>?>(null)
     }
 
-    // The 25s poll runs only while the board is actually on screen: entering
-    // this composable arms it, leaving the Activity tab (or switching back to
-    // the feed page) disposes it and stops the radio. The VM survives tab
-    // switches, so without this the poll leaked forever after one visit.
-    DisposableEffect(viewModel) {
-        viewModel.setActive(true)
-        onDispose { viewModel.setActive(false) }
+    // 批v163（舰队 M2，Q2 拍板）：任务板页内「任务｜自动化」两段切换。五栏
+    // 导航不动、不加第六栏——两个段共享本页面，各自只在自己可见时轮询。
+    val automationViewModel: app.codeg.android.feature.automation.AutomationViewModel =
+        hiltViewModel(key = "automation")
+    val automationUi by automationViewModel.ui.collectAsStateWithLifecycle()
+    var automationMode by rememberSaveable { mutableStateOf(false) }
+    // The 25s/60s polls run only while their segment is actually on screen:
+    // entering arms the active one, leaving disposes both. The VMs survive tab
+    // switches, so without this the polls leaked forever after one visit.
+    DisposableEffect(viewModel, automationMode) {
+        viewModel.setActive(!automationMode)
+        automationViewModel.setActive(automationMode)
+        onDispose {
+            viewModel.setActive(false)
+            automationViewModel.setActive(false)
+        }
     }
 
     PullToRefreshBox(
-        isRefreshing = ui.deviceStates.any { it.status == DeviceLoadStatus.LOADING } && ui.tasks.isEmpty(),
-        onRefresh = { viewModel.refresh(); viewModel.refreshFolders() },
+        isRefreshing = if (automationMode) {
+            automationUi.loading && automationUi.devices.isEmpty()
+        } else {
+            ui.deviceStates.any { it.status == DeviceLoadStatus.LOADING } && ui.tasks.isEmpty()
+        },
+        onRefresh = {
+            if (automationMode) {
+                automationViewModel.refresh()
+            } else {
+                viewModel.refresh()
+                viewModel.refreshFolders()
+            }
+        },
         modifier = Modifier.fillMaxSize(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // M1 全部启动: only on a todo-bearing, unsearched view — a searched
-            // subset would understate what work_task_start_all claims (whole folder).
-            val startAllAvailable = board.segments[TaskSegment.TODO].orEmpty().isNotEmpty() &&
-                ui.searchQuery.isBlank()
-            ToolbarRow(
-                folderFilter = ui.folderFilter,
-                searchOpen = searchOpen,
-                showCanceled = ui.showCanceled,
-                showArchived = ui.showArchived,
-                onToggleSearch = {
-                    searchOpen = !searchOpen
-                    if (!searchOpen) viewModel.setSearchQuery("")
-                },
-                onFolderClick = { folderSheet = true },
-                onShowCanceled = viewModel::setShowCanceled,
-                onShowArchived = viewModel::setShowArchived,
-                onNewTask = { showNewTask = true },
-                onStartAll = if (startAllAvailable) {
-                    { startAllTargets = viewModel.startAllTargets().ifEmpty { null } }
-                } else null,
-                onOverview = { overviewOpen = true },
+            // 两段切换在两态里都置顶（位置稳定，切换不跳）。
+            CodegSegmented(
+                options = listOf(
+                    stringResource(R.string.task_segment_tasks),
+                    stringResource(R.string.task_segment_automations),
+                ),
+                selectedIndex = if (automationMode) 1 else 0,
+                onSelect = { index -> automationMode = index == 1 },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
             )
-            if (searchOpen) {
-                OutlinedTextField(
-                    value = ui.searchQuery,
-                    onValueChange = viewModel::setSearchQuery,
-                    placeholder = { Text(stringResource(R.string.task_search_hint)) },
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(onClick = { viewModel.setSearchQuery(""); searchOpen = false }) {
-                            Icon(Icons.Rounded.Close, contentDescription = null)
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-            }
-            if (ui.failedDevices > 0) {
-                FailedBanner(ui = ui, onRetry = viewModel::retryFailedDevices)
-            }
-            ui.actionError?.let { error ->
-                Text(
-                    text = stringResource(R.string.task_action_failed) + " · " + error,
-                    color = colors.danger,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clickable { viewModel.clearActionError() },
-                )
-            }
-            // Non-error outcome note (e.g. merge queued behind the folder's
-            // serial merge slot): tap to dismiss, same lifecycle as actionError.
-            ui.actionNote?.let { note ->
-                Text(
-                    text = note,
-                    color = colors.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
-                        .clickable { viewModel.clearActionError() },
-                )
-            }
-            if (ui.archivedHidden > 0) {
-                Text(
-                    text = stringResource(R.string.task_archived_hidden, ui.archivedHidden),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-            }
-            if (boardIsEmpty) {
-                EmptyState(
-                    icon = Icons.Rounded.Refresh,
-                    title = stringResource(
-                        if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
-                    ),
-                    message = stringResource(R.string.task_empty_hint),
-                    modifier = Modifier.padding(top = 48.dp),
-                )
-            }
-            // 批v161: the four-status bar is shared by both shapes — one tap
-            // jumps a phone to that status, and it doubles as list mode's tabs.
-            TaskBoardStatusBar(
-                counts = board.counts,
-                selectedIndex = focusIndex,
-                onSelect = { segment -> pendingSegment = segment },
-            )
-            val onCardAction: (ConfirmAction) -> Unit = { action ->
-                // 编辑 opens a sheet, not a confirm dialog.
-                if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
-            }
-            if (boardLayout == TASK_BOARD_LIST) {
-                val segment = SEGMENT_ORDER[focusIndex.coerceIn(0, SEGMENT_ORDER.lastIndex)]
-                TaskBoardList(
-                    segment = segment,
-                    entries = board.segments[segment].orEmpty(),
-                    conversations = board.conversations[segment].orEmpty(),
-                    unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
-                    columns = listColumns,
-                    folderNames = ui.folderNames,
-                    busy = ui.busyKey != null,
-                    spinningKey = ui.busyKey,
-                    canArchiveAll = segment == TaskSegment.DONE &&
-                        archiveAllCandidates(board.segments[segment].orEmpty()).isNotEmpty(),
-                    onArchiveAll = viewModel::archiveAllDone,
-                    onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
+            if (automationMode) {
+                app.codeg.android.feature.automation.AutomationPane(
+                    viewModel = automationViewModel,
                     onOpenSession = onOpenSession,
-                    onAction = onCardAction,
-                    onArchiveConversation = viewModel::setConversationArchived,
-                    onUntrackConversation = viewModel::untrackConversation,
-                    onSetStatusConversation = viewModel::setConversationStatus,
-                    modifier = Modifier.weight(1f),
-                    showEmptyHint = showEmptyHint,
                 )
             } else {
-                // 批v161 kanban: pages of one or two columns (four on a tablet),
-                // so a narrow phone shows complete columns instead of "one
-                // column plus a sliver" (批v160's 72%-width LazyRow).
-                KanbanPager(
-                    pagerState = pagerState,
-                    columnsPerPage = kanbanColumns,
-                    board = board,
-                    folderNames = ui.folderNames,
-                    busy = ui.busyKey != null,
-                    spinningKey = ui.busyKey,
-                    onArchiveAll = viewModel::archiveAllDone,
-                    onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
-                    onOpenSession = onOpenSession,
-                    onAction = onCardAction,
-                    onArchiveConversation = viewModel::setConversationArchived,
-                    onUntrackConversation = viewModel::untrackConversation,
-                    onSetStatusConversation = viewModel::setConversationStatus,
-                    modifier = Modifier.weight(1f),
-                    showEmptyHint = showEmptyHint,
+                // M1 全部启动: only on a todo-bearing, unsearched view — a searched
+                // subset would understate what work_task_start_all claims (whole folder).
+                val startAllAvailable = board.segments[TaskSegment.TODO].orEmpty().isNotEmpty() &&
+                    ui.searchQuery.isBlank()
+                ToolbarRow(
+                    folderFilter = ui.folderFilter,
+                    searchOpen = searchOpen,
+                    showCanceled = ui.showCanceled,
+                    showArchived = ui.showArchived,
+                    onToggleSearch = {
+                        searchOpen = !searchOpen
+                        if (!searchOpen) viewModel.setSearchQuery("")
+                    },
+                    onFolderClick = { folderSheet = true },
+                    onShowCanceled = viewModel::setShowCanceled,
+                    onShowArchived = viewModel::setShowArchived,
+                    onNewTask = { showNewTask = true },
+                    onStartAll = if (startAllAvailable) {
+                        { startAllTargets = viewModel.startAllTargets().ifEmpty { null } }
+                    } else null,
+                    onOverview = { overviewOpen = true },
                 )
+                if (searchOpen) {
+                    OutlinedTextField(
+                        value = ui.searchQuery,
+                        onValueChange = viewModel::setSearchQuery,
+                        placeholder = { Text(stringResource(R.string.task_search_hint)) },
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.setSearchQuery(""); searchOpen = false }) {
+                                Icon(Icons.Rounded.Close, contentDescription = null)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+                if (ui.failedDevices > 0) {
+                    FailedBanner(ui = ui, onRetry = viewModel::retryFailedDevices)
+                }
+                ui.actionError?.let { error ->
+                    Text(
+                        text = stringResource(R.string.task_action_failed) + " · " + error,
+                        color = colors.danger,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clickable { viewModel.clearActionError() },
+                    )
+                }
+                // Non-error outcome note (e.g. merge queued behind the folder's
+                // serial merge slot): tap to dismiss, same lifecycle as actionError.
+                ui.actionNote?.let { note ->
+                    Text(
+                        text = note,
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp)
+                            .clickable { viewModel.clearActionError() },
+                    )
+                }
+                if (ui.archivedHidden > 0) {
+                    Text(
+                        text = stringResource(R.string.task_archived_hidden, ui.archivedHidden),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+                if (boardIsEmpty) {
+                    EmptyState(
+                        icon = Icons.Rounded.Refresh,
+                        title = stringResource(
+                            if (ui.deviceStates.isEmpty()) R.string.task_empty_no_devices else R.string.task_empty_board,
+                        ),
+                        message = stringResource(R.string.task_empty_hint),
+                        modifier = Modifier.padding(top = 48.dp),
+                    )
+                }
+                // 批v161: the four-status bar is shared by both shapes — one tap
+                // jumps a phone to that status, and it doubles as list mode's tabs.
+                TaskBoardStatusBar(
+                    counts = board.counts,
+                    selectedIndex = focusIndex,
+                    onSelect = { segment -> pendingSegment = segment },
+                )
+                val onCardAction: (ConfirmAction) -> Unit = { action ->
+                    // 编辑 opens a sheet, not a confirm dialog.
+                    if (action is ConfirmAction.EDIT) editEntry = action.entry else confirm = action
+                }
+                if (boardLayout == TASK_BOARD_LIST) {
+                    val segment = SEGMENT_ORDER[focusIndex.coerceIn(0, SEGMENT_ORDER.lastIndex)]
+                    TaskBoardList(
+                        segment = segment,
+                        entries = board.segments[segment].orEmpty(),
+                        conversations = board.conversations[segment].orEmpty(),
+                        unknown = if (segment == TaskSegment.ATTENTION) board.unknown else emptyList(),
+                        columns = listColumns,
+                        folderNames = ui.folderNames,
+                        busy = ui.busyKey != null,
+                        spinningKey = ui.busyKey,
+                        canArchiveAll = segment == TaskSegment.DONE &&
+                            archiveAllCandidates(board.segments[segment].orEmpty()).isNotEmpty(),
+                        onArchiveAll = viewModel::archiveAllDone,
+                        onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
+                        onOpenSession = onOpenSession,
+                        onAction = onCardAction,
+                        onArchiveConversation = viewModel::setConversationArchived,
+                        onUntrackConversation = viewModel::untrackConversation,
+                        onSetStatusConversation = viewModel::setConversationStatus,
+                        modifier = Modifier.weight(1f),
+                        showEmptyHint = showEmptyHint,
+                    )
+                } else {
+                    // 批v161 kanban: pages of one or two columns (four on a tablet),
+                    // so a narrow phone shows complete columns instead of "one
+                    // column plus a sliver" (批v160's 72%-width LazyRow).
+                    KanbanPager(
+                        pagerState = pagerState,
+                        columnsPerPage = kanbanColumns,
+                        board = board,
+                        folderNames = ui.folderNames,
+                        busy = ui.busyKey != null,
+                        spinningKey = ui.busyKey,
+                        onArchiveAll = viewModel::archiveAllDone,
+                        onOpenDetail = { entry -> detailKey = entry.serverId to entry.task.id },
+                        onOpenSession = onOpenSession,
+                        onAction = onCardAction,
+                        onArchiveConversation = viewModel::setConversationArchived,
+                        onUntrackConversation = viewModel::untrackConversation,
+                        onSetStatusConversation = viewModel::setConversationStatus,
+                        modifier = Modifier.weight(1f),
+                        showEmptyHint = showEmptyHint,
+                    )
+                }
             }
         }
     }

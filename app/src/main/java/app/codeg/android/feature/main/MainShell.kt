@@ -1451,6 +1451,13 @@ fun MainShell(appViewModel: AppViewModel, servers: List<ServerProfile>) {
                     onOpenInteraction = { row ->
                         handoffTo(row.serverId) { openConversationAndMark(row.serverId, row.conversationId) }
                     },
+                    // 批v163（舰队 M2，Q3）：自动化失败行 → 任务板自动化段（one-shot
+                    // request，与任务段位直达同款纪律）。
+                    onOpenAutomations = {
+                        appViewModel.requestAutomationTab()
+                        jumpToTab(HomeTab.TASKS)
+                        if (servers.size >= 2 && !activityAll) appViewModel.setTasksAll(false)
+                    },
                 )
             }
             composable(ROUTE_SEARCH) {

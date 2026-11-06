@@ -66,13 +66,29 @@ data class WorkbenchStats(
     val interactiveSessions: List<PendingInteraction> = emptyList(),
     val onlineDevices: Int = 0,
     val totalDevices: Int = 0,
+    /** 批v163（舰队 M2，Q3）：summed unseen_failures across the scope. Only
+     *  counted when [automationFailuresKnown] — a failed probe on ANY in-scope
+     *  device hides the whole contribution (never mixes known with unknown). */
+    val automationFailures: Int = 0,
+    val automationFailuresKnown: Boolean = false,
+    /** Per-device rows with unseen_failures > 0 (device name resolved). */
+    val automationFailureDevices: List<AutomationFailureDevice> = emptyList(),
     /** False until the first fetch round completes: without it the cards would
      *  flash "0 everywhere" while the spinners are still running. */
     val hasLoaded: Boolean = false,
 )
 
-/** 需要处理 everywhere = blocked tasks + agents waiting on a confirmation. */
-internal val WorkbenchStats.attentionTotal: Int get() = attentionTasks + interactiveSessions.size
+/** One 琥珀区 row: a device whose automations have unseen failures. */
+data class AutomationFailureDevice(
+    val serverId: String,
+    val deviceName: String,
+    val failures: Int,
+)
+
+/** 需要处理 everywhere = blocked tasks + agents waiting + automation failures. */
+internal val WorkbenchStats.attentionTotal: Int
+    get() = attentionTasks + interactiveSessions.size +
+        if (automationFailuresKnown) automationFailures else 0
 
 /** The five poll/board inputs of the stats projection — the typed combine
  *  overload caps at 5 flows, so they travel as one (批v160 W7 nesting). */
@@ -182,6 +198,15 @@ class WorkbenchViewModel @Inject constructor(
      */
     private val attentionCounts = MutableStateFlow<Map<String, Int?>>(emptyMap())
 
+    /**
+     * 批v163（舰队 M2，Q3）: per-device summed unseen_failures. Present key +
+     * non-null value = probed OK (0 = none, or an old server without the
+     * automation routes); null value = probe failed this round; ABSENT key =
+     * unsupported/never probed (treated as unknown → contribution hidden when
+     * any in-scope device lacks a solid value).
+     */
+    private val automationFailures = MutableStateFlow<Map<String, Int?>>(emptyMap())
+
     private val round = MutableStateFlow(RoundState())
 
     val stats: StateFlow<WorkbenchStats> =
@@ -199,13 +224,29 @@ class WorkbenchViewModel @Inject constructor(
             ) { round, tasks, profiles, selectedId, allMode ->
                 BoardInputs(round, tasks, profiles, selectedId, allMode)
             },
-            combine(attentionCounts, watcher.requests) { counts, interactive -> counts to interactive },
-        ) { inputs, (counts, interactive) ->
+            combine(attentionCounts, watcher.requests, automationFailures) { counts, interactive, autoFails ->
+                Triple(counts, interactive, autoFails)
+            },
+        ) { inputs, (counts, interactive, autoFails) ->
             val scope = scopeIds(inputs.profiles, inputs.allMode, inputs.selectedId)
             val board = buildBoard(inputs.tasks.filter { it.serverId in scope })
             val scopeCounts = counts.filterKeys { it in scope }
             val serverAttention = scopeCounts.values.sumOf { it ?: 0 }
             val allReported = scopeCounts.isNotEmpty() && scopeCounts.values.all { it != null }
+            val scopeAuto = autoFails.filterKeys { it in scope }
+            val autoKnown = scope.isNotEmpty() && scopeAuto.keys.containsAll(scope) &&
+                scopeAuto.values.all { it != null }
+            val autoTotal = if (autoKnown) scopeAuto.values.sumOf { it ?: 0 } else 0
+            val autoDevices = if (autoKnown) {
+                scopeAuto.entries
+                    .filter { (it.value ?: 0) > 0 }
+                    .mapNotNull { (id, count) ->
+                        inputs.round.deviceStates.firstOrNull { it.serverId == id }
+                            ?.let { d -> AutomationFailureDevice(id, d.name, count ?: 0) }
+                    }
+            } else {
+                emptyList()
+            }
             WorkbenchStats(
                 runningTasks = board.segments[TaskSegment.RUNNING].orEmpty().size,
                 attentionTasks = if (allReported) {
@@ -217,6 +258,9 @@ class WorkbenchViewModel @Inject constructor(
                 interactiveSessions = interactive
                     .filter { it.serverId in scope }
                     .sortedBy { it.since },
+                automationFailures = autoTotal,
+                automationFailuresKnown = autoKnown,
+                automationFailureDevices = autoDevices,
                 onlineDevices = inputs.round.deviceStates.count { it.serverId in scope && it.status == DeviceLoadStatus.OK },
                 totalDevices = inputs.round.deviceStates.count { it.serverId in scope },
                 hasLoaded = inputs.round.hasLoaded,
@@ -353,6 +397,7 @@ class WorkbenchViewModel @Inject constructor(
         // the same instant must not lose a slice to a read-modify-write race.
         tasks.update { it.filter { e -> e.serverId in ids } }
         attentionCounts.update { it.filterKeys { id -> id in ids } }
+        automationFailures.update { it.filterKeys { id -> id in ids } }
         coroutineScope {
             devices.forEach { profile ->
                 launch {
@@ -375,6 +420,26 @@ class WorkbenchViewModel @Inject constructor(
                                 android.util.Log.w("WorkbenchViewModel", "attention_count unavailable on ${profile.id}")
                                 null
                             }
+                            // 批v163（Q3）: same best-effort shape as the count —
+                            // own tighter budget, 404/old server pins a solid 0
+                            // (supported=false semantics), any other failure leaves
+                            // a null (this round's contribution hides).
+                            val autoFails = try {
+                                withTimeoutOrNull(ATTENTION_COUNT_TIMEOUT_MS) {
+                                    client.automationList().sumOf { it.unseenFailures }
+                                } ?: run {
+                                    android.util.Log.w("WorkbenchViewModel", "automation_list timeout on ${profile.id}")
+                                    null
+                                }
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                if ((e as? ApiError)?.let { err ->
+                                        (err as? ApiError.Server)?.status == 404
+                                    } == true
+                                ) 0 else null
+                            }
+                            automationFailures.update { it + (profile.id to autoFails) }
                             list to count
                         } ?: throw java.util.concurrent.TimeoutException("device timeout")
                     }
@@ -398,6 +463,7 @@ class WorkbenchViewModel @Inject constructor(
                             if (e is CancellationException) throw e
                             // A dead device must not keep feeding its stale count
                             // into the server-truth sum — invalidate it.
+                            automationFailures.update { it + (profile.id to null) }
                             attentionCounts.update { it + (profile.id to null) }
                             round.update { r ->
                                 r.copy(

@@ -431,10 +431,15 @@ internal fun WorkbenchAttentionCard(
     onToggleCollapse: () -> Unit,
     onOpenTasks: () -> Unit,
     onOpenInteraction: (PendingInteraction) -> Unit,
+    onOpenAutomations: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = CodegTheme.colors
-    if (stats.attentionTasks == 0 && stats.interactiveSessions.isEmpty()) return
+    if (stats.attentionTasks == 0 && stats.interactiveSessions.isEmpty() &&
+        (!stats.automationFailuresKnown || stats.automationFailures == 0)
+    ) {
+        return
+    }
     val stateText = stringResource(
         if (collapsed) R.string.workbench_attention_collapsed else R.string.workbench_attention_expanded
     )
@@ -496,6 +501,20 @@ internal fun WorkbenchAttentionCard(
                     stats.interactiveSessions.take(WorkbenchViewModel.INTERACTIVE_MAX)
                         .forEach { item -> InteractiveRow(item) { onOpenInteraction(item) } }
                 }
+                // 批v163（舰队 M2，Q3 拍板）：自动化失败进琥珀区——unseen_failures
+                // 驱动，进运行历史 mark_seen 清零；整行跳任务板自动化段。
+                if (stats.automationFailuresKnown && stats.automationFailures > 0) {
+                    Text(
+                        text = stringResource(R.string.workbench_automation_title, stats.automationFailures),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.danger,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    )
+                    stats.automationFailureDevices.forEach { device ->
+                        AutomationFailureRow(device) { onOpenAutomations() }
+                    }
+                }
                 stats.attentionPreview.forEach { entry -> AttentionRow(entry, onOpenTasks) }
                 if (stats.attentionTasks > stats.attentionPreview.size) {
                     Text(
@@ -519,6 +538,50 @@ internal fun WorkbenchAttentionCard(
     }
 }
 
+/** 批v163（Q3）：一台设备的自动化失败行——琥珀区同款 48dp 触达，直达自动化段。 */
+@Composable
+private fun AutomationFailureRow(
+    device: AutomationFailureDevice,
+    onClick: () -> Unit,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.danger.copy(alpha = 0.10f))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = stringResource(R.string.workbench_automation_open),
+                onClick = onClick,
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = colors.danger.copy(alpha = 0.18f),
+        ) {
+            Text(
+                text = stringResource(R.string.workbench_automation_chip, device.failures),
+                fontSize = 11.sp,
+                color = colors.danger,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+        Text(
+            text = device.deviceName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
 /** The whole fixed header: collapse rail → stats → quick entry → attention preview. */
 @Composable
 internal fun WorkbenchHeader(
@@ -533,6 +596,7 @@ internal fun WorkbenchHeader(
     onOpenNewSession: () -> Unit,
     onOpenTasks: (TaskSegment) -> Unit,
     onOpenInteraction: (PendingInteraction) -> Unit,
+    onOpenAutomations: () -> Unit,
     onOpenDevices: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -558,6 +622,7 @@ internal fun WorkbenchHeader(
             onToggleAttention,
             onOpenTasks = { onOpenTasks(TaskSegment.ATTENTION) },
             onOpenInteraction = onOpenInteraction,
+            onOpenAutomations = onOpenAutomations,
             modifier = Modifier.padding(top = 10.dp),
         )
     }

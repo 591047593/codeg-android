@@ -325,6 +325,9 @@ class AppViewModel @Inject constructor(
     /** One-shot segment jump for the task board (stat cards / 需要处理 preview). */
     fun requestTaskSegment(segment: TaskSegment) = serverRepository.requestTaskSegment(segment)
 
+    /** 批v163（舰队 M2，Q3）：琥珀区「自动化失败」直达任务板自动化段。 */
+    fun requestAutomationTab() = serverRepository.requestAutomationTab()
+
     fun consumeTaskSegment(): TaskSegment? = serverRepository.consumeTaskSegment()
 
     val sessionProjects: StateFlow<List<SessionProject>> = sessionProjectRepo.projects

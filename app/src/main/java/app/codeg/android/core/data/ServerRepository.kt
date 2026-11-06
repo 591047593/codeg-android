@@ -138,6 +138,24 @@ class ServerRepository @Inject constructor(
         }
     }
 
+    // 批v163（舰队 M2，Q3）：工作台琥珀区「自动化失败」行 → 直达任务板的
+    // 自动化段。Same one-shot discipline as the task-segment request: consumed
+    // on entry, freshness-windowed so an abandoned tap never hijacks later.
+    private val _automationTabRequest = MutableStateFlow<Long?>(null)
+
+    fun requestAutomationTab() {
+        _automationTabRequest.value = android.os.SystemClock.elapsedRealtime()
+    }
+
+    fun consumeAutomationTabRequest(): Boolean {
+        while (true) {
+            val current = _automationTabRequest.value ?: return false
+            if (_automationTabRequest.compareAndSet(current, null)) {
+                return android.os.SystemClock.elapsedRealtime() - current <= 10_000
+            }
+        }
+    }
+
     /** Refresh tick for the aggregate Chats list (mode bumps + conversationsChanged). */
     private val _chatsRefreshTick = MutableStateFlow(0)
     val chatsRefreshTick: StateFlow<Int> = _chatsRefreshTick.asStateFlow()

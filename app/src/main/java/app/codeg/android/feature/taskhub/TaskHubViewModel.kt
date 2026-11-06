@@ -265,6 +265,9 @@ class TaskHubViewModel @Inject constructor(
      *  board reads then clears it so a plain tab return keeps the user's choice. */
     fun consumeSegmentRequest(): TaskSegment? = repository.consumeTaskSegment()
 
+    /** 批v163（舰队 M2，Q3）：琥珀区「自动化失败」行请求打开自动化段。 */
+    fun consumeAutomationTabRequest(): Boolean = repository.consumeAutomationTabRequest()
+
     init {
         viewModelScope.launch { pollLoop() }
         // 批v155: same crash-recovery sweep as every dispatch surface — the board
