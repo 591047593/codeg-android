@@ -19,7 +19,7 @@ class AutomationCronPresetsTest {
     @Test
     fun `buildFor emits canonical five-field crons`() {
         assertEquals("0 9 * * *", CronPreset.DAILY.buildFor(0, 9, ""))
-        assertEquals("0 9 * * 1-5", CronPreset.WORKDAYS.buildFor(30, 9, ""))
+        assertEquals("30 9 * * 1-5", CronPreset.WORKDAYS.buildFor(30, 9, ""))
         assertEquals("0 9 * * 1", CronPreset.MONDAYS.buildFor(0, 9, ""))
         assertEquals("0 9 1 * *", CronPreset.MONTHLY_FIRST.buildFor(0, 9, ""))
         assertEquals("0 * * * *", CronPreset.HOURLY.buildFor(37, 21, ""))
