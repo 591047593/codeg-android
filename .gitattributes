@@ -1,0 +1,24 @@
+# Store every text file with LF in the repository and check it out with LF.
+#
+# Not cosmetic: `verifyThirdPartyLicenseReport` compares the checked-in notice
+# bundle byte-for-byte against a freshly generated one, and Gradle always writes
+# LF. Without this, a Windows checkout rewrites the files to CRLF and the bundle
+# is reported "stale" — failing `check` and every release build for a reason
+# that has nothing to do with the actual change.
+* text=auto eol=lf
+
+# Binary assets must never be converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.jks binary
+*.keystore binary
+*.apk binary
+*.zip binary
+
+# Gradle wrapper must keep its exact bytes on every platform.
+gradlew text eol=lf
+gradlew.bat text eol=crlf
