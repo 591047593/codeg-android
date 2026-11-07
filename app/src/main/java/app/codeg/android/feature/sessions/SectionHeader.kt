@@ -91,12 +91,16 @@ fun CollapsibleSectionHeader(
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         // Same 26dp diameter as the row AgentAvatars (SessionRow), so the group icon
-        // matches the agent icons and the big title lines up with the row titles.
+        // matches the agent icons and the title lines up with the row titles.
         SectionBadgeIcon(icon = icon, tint = tint, size = 26.dp)
+        // titleSmall, not titleLarge: a group caption must stay QUIETER than the
+        // conversation titles it heads. At titleLarge the folder name was 22sp Bold
+        // while the session titles under it are 14sp — every folder shouted louder
+        // than its own contents, and four groups filled a whole screen.
         Text(
             text = label,
-            style = MaterialTheme.typography.titleLarge,
-            color = colors.textPrimary,
+            style = MaterialTheme.typography.titleSmall,
+            color = colors.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),

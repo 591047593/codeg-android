@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -477,6 +478,20 @@ private fun SessionList(
             val isCollapsed = section.id in collapsed
             item(key = "h-${section.id}", contentType = "header") {
                 val style = sectionStyle(section.kind)
+                // An empty folder still has to be reachable (long-press hides it, the
+                // hidden-manager restores it), but at full header weight six empty
+                // folders push the first real conversation off screen. Empty groups
+                // collapse to one quiet 36dp line.
+                if (section.count == 0) {
+                    EmptySectionRow(
+                        icon = style.icon,
+                        tint = style.tint,
+                        label = style.label,
+                        onClick = { onLongPressSection(section) },
+                        modifier = Modifier.animateItem(),
+                    )
+                    return@item
+                }
                 CollapsibleSectionHeader(
                     icon = style.icon,
                     tint = style.tint,
@@ -525,6 +540,48 @@ private fun SessionList(
                 )
             }
         }
+    }
+}
+
+/**
+ * One quiet line for a group that currently has no conversations. Not collapsible
+ * (there is nothing to fold) but still long-pressable, so an empty folder can be
+ * hidden like any other.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EmptySectionRow(
+    icon: ImageVector,
+    tint: Color,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = CodegTheme.colors
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, start = 8.dp, end = 8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint.copy(alpha = 0.55f), modifier = Modifier.size(14.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textTertiary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "0",
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textTertiary.copy(alpha = 0.7f),
+        )
     }
 }
 
