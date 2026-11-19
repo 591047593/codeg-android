@@ -90,42 +90,49 @@ class NotifyFeature : ShellFeature {
         // Notifications belong to the page that raised them; a tap after a
         // navigation must not reach a new document's instances.
         waitingForPermission.clear()
-        // Early install: the web settings panel reads `Notification.permission`
-        // in a mount effect, which can run before `onPageFinished`. The script is
-        // idempotent per document, so the later pass is the safety net.
-        inject(host, view, url)
+        // Early install so the settings panel's mount-time permission read is
+        // answered; `onPageFinished` re-runs the (idempotent) script as the
+        // safety net for a page whose frames were not ready yet.
+        inject(host, view, url, deliverTap = false)
     }
 
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
-        inject(host, view, url)
+        inject(host, view, url, deliverTap = true)
     }
 
-    private fun inject(host: ShellHost, view: WebView, url: String) {
+    /**
+     * [deliverTap] is false on `onPageStarted`: the page has not run the shim
+     * yet, so `__codegNotifyTap` does not exist and a tap handed over then would
+     * be dropped. A tap that started the app is delivered once the document has
+     * finished loading instead.
+     */
+    private fun inject(host: ShellHost, view: WebView, url: String, deliverTap: Boolean) {
         val server = origin(host.currentServerUrl) ?: return
         if (documentToken.isEmpty() || documentOrigin != server) return
         if (origin(url) != server || origin(view.url) != server || host.webView !== view) return
         view.evaluateJavascript(notificationScript(server, documentToken, permissionState(host)), null)
-        // A tap that started the app has no page instance to click yet; the
-        // script above is what creates them, so hand it over now.
-        pendingTap?.let { id ->
-            pendingTap = null
-            view.evaluateJavascript(notificationClickScript(id), null)
-        }
+        if (!deliverTap) return
+        deliverPendingTap(view)
     }
 
     override fun onIntent(host: ShellHost, intent: Intent): Boolean {
         val id = intent.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return false
         intent.removeExtra(EXTRA_NOTIFICATION_ID)
         NotificationManagerCompat.from(host.activity).cancel(id.hashCode())
-        val view = host.webView
-        if (view == null) {
-            // Cold start or a renderer crash: the page (and its instance) is
-            // rebuilt after this call, so deliver the tap once it has loaded.
-            pendingTap = id
-            return true
-        }
-        view.evaluateJavascript(notificationClickScript(id), null)
+        // Hold it until a page that has the shim answers `true`. The WebView
+        // exists by now only after the first composition; on a cold start it is
+        // still null, and a page that is mid-load has no `__codegNotifyTap`.
+        pendingTap = id
+        host.webView?.let { view -> deliverPendingTap(view) }
         return true
+    }
+
+    /** Hands the tap to the page; keeps it pending unless the shim confirms. */
+    private fun deliverPendingTap(view: WebView) {
+        val id = pendingTap ?: return
+        view.evaluateJavascript(notificationClickScript(id)) { result ->
+            if (result == "true" && pendingTap == id) pendingTap = null
+        }
     }
 
     override fun onResume(host: ShellHost) {

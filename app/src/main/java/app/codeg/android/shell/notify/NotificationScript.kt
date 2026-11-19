@@ -113,11 +113,16 @@ internal fun notificationScript(origin: String, token: String, initial: String):
           // The first install may itself follow a grant (the caller re-injects
           // after the dialog); take that answer rather than the stale literal.
           refresh();
-          Object.defineProperty(window, 'Notification', {
-            configurable: true, writable: true, value: Notification
-          });
           window.__codegNotifyRefresh = refresh;
           window.__codegNotifyInstalled = true;
+          try {
+            Object.defineProperty(window, 'Notification', {
+              configurable: true, writable: true, value: Notification
+            });
+          } catch (_) {
+            // A platform that defines Notification as non-configurable keeps
+            // its own; the shim stays installed for the rest of the API.
+          }
         })();
     """.trimIndent()
 }
