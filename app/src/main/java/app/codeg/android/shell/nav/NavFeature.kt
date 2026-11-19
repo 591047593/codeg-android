@@ -22,13 +22,20 @@ class NavFeature : ShellFeature {
     private val popupHandler = Handler(Looper.getMainLooper())
     private val popups = mutableSetOf<WebView>()
 
+    /** The page URL the back button was last synced for, or null when not shown. */
+    private var backButtonPage: String? = null
+
     override fun onWebViewCreated(host: ShellHost, webView: WebView) {
         backPending = false
         exitArmedAt = null
+        backButtonPage = null
     }
 
     override fun doUpdateVisitedHistory(host: ShellHost, view: WebView, url: String, isReload: Boolean) {
         exitArmedAt = null
+        // A client-side route change does not reload the document; this is the
+        // only callback a single-page transition gives us.
+        if (!isReload) syncBackButton(host, view, url)
     }
 
     override fun onPause(host: ShellHost) {
@@ -40,6 +47,35 @@ class NavFeature : ShellFeature {
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: android.graphics.Bitmap?) {
         exitArmedAt = null
+        // A new document starts without the injected button; the finished load
+        // (and any client-side transition) puts it back.
+        backButtonPage = null
+    }
+
+    override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
+        syncBackButton(host, view, url)
+    }
+
+    /**
+     * Window-style routes get a back button; [backButtonScript] explains why.
+     *
+     * These routes are reached by `window.open`, which the shell turns into a
+     * navigation of the single WebView, so the page that opened them is gone.
+     * A desktop window has its own chrome and a browser tab its back button; a
+     * WebView has neither, and `SettingsShell`'s mobile title bar is a menu
+     * button and nothing else.
+     */
+    private fun syncBackButton(host: ShellHost, view: WebView?, url: String) {
+        val server = host.currentServerUrl ?: return
+        if (view == null || host.webView !== view) return
+        if (!sameOrigin(host, Uri.parse(url))) return
+        val path = Uri.parse(url).path.orEmpty().trimEnd('/')
+        val visible = WINDOW_ROUTES.any { path == it || path.startsWith("$it/") }
+        // Nothing to remove and nothing to add.
+        if (backButtonPage == null && !visible) return
+        if (backButtonPage != null && backButtonPage == url && visible) return
+        backButtonPage = if (visible) url else null
+        view.evaluateJavascript(backButtonScript(server, visible), null)
     }
 
     override fun onBack(host: ShellHost): Boolean {
@@ -233,3 +269,21 @@ class NavFeature : ShellFeature {
         return true
     }
 }
+
+/**
+ * Routes codeg web opens as a separate window, and which therefore have no way
+ * out in a WebView (`src/lib/api.ts`: `openSettingsWindow`, `openMergeWindow`,
+ * `openStashWindow`, `openPushWindow`, `openCommitWindow`,
+ * `openImportSessionsWindow`, `openProjectBootWindow`). Every one of them draws
+ * `AppTitleBar` with only a `center`, leaving the left slot free for the shell's
+ * back button.
+ */
+private val WINDOW_ROUTES = listOf(
+    "/settings",
+    "/merge",
+    "/stash",
+    "/push",
+    "/commit",
+    "/import-sessions",
+    "/project-boot",
+)
