@@ -75,7 +75,8 @@ class NavFeature : ShellFeature {
         @JavascriptInterface
         fun home(token: String) {
             if (token.isEmpty() || token != documentToken || host.webView !== view) return
-            if (!sameOrigin(host, view.url)) return
+            val page = view.url?.let(Uri::parse) ?: return
+            if (!sameOrigin(host, page)) return
             view.post {
                 if (host.webView !== view) return@post
                 // Reaching here means the page had no history of its own, so the
