@@ -21,7 +21,7 @@
 - `AndroidManifest.xml` 默认不准改；任务单明确允许的才改，且只加自己那一段。
 - FileProvider 已配置：authority `${applicationId}.files`，路径见 `res/xml/file_paths.xml`（`cache/updates/`、`cache/camera/`、`cache/shared/`），直接用，不要再声明 provider。
 - JavaScript 桥（`addJavascriptInterface`）名字统一用 `CodegShell<功能>`，例如 `CodegShellDownload`；只在页面 origin 等于 `host.currentServerUrl` 时才响应调用。
-- minSdk 30、targetSdk 36，不需要为更低版本写兼容分支。
+- minSdk 36、targetSdk 36（个人构建只装 Android 16 真机），不需要为更低版本写兼容分支。
 
 ## 开发与验证（CI 模式）
 - 你在 codeg 为本任务新建的 worktree 里（基于 `shell` 分支）。只在这个 worktree 里提交，不要切换分支，不要动主仓库，不要推 `main`/`shell`/`sit`，不开 PR，不 merge。

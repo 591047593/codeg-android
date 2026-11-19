@@ -1,6 +1,6 @@
 # Codeg for Android
 
-Android 11+ WebView 套壳客户端，直接显示所选 Codeg 服务器的网页。业务功能、登录和会话由服务器网页提供；原生层负责服务器设置及 WebView 适配。
+Android 16+ WebView 套壳客户端，直接显示所选 Codeg 服务器的网页。业务功能、登录和会话由服务器网页提供；原生层负责服务器设置及 WebView 适配。
 
 ## 使用
 

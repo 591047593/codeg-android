@@ -36,7 +36,8 @@ android {
         // Personal fork: own id so it installs alongside the upstream build
         // (a different signing key can't upgrade app.codeg.android in place).
         applicationId = "app.codeg.android.mine"
-        minSdk = 30
+        // Personal build targets one Android 16 device only; no legacy support.
+        minSdk = 36
         targetSdk = 36
         versionCode = providers.gradleProperty("codegVersionCode").orNull?.toInt() ?: 2
         versionName = providers.gradleProperty("codegVersionName").orNull ?: "1.0.1"
