@@ -126,8 +126,10 @@ class UploadFeature : ShellFeature {
         multiple = params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
         // Directory picking (`<input type=file webkitdirectory>`) is its own
         // contract: the browser wants a tree, not files, and only
-        // ACTION_OPEN_DOCUMENT_TREE produces one.
-        if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_FOLDER) {
+        // ACTION_OPEN_DOCUMENT_TREE produces one. `MODE_OPEN_FOLDER` is 2 in
+        // WebChromeClient.FileChooserParams but is not part of the public SDK
+        // (it is @SystemApi-hidden), so the value is spelled out here.
+        if (params.mode == MODE_OPEN_FOLDER) {
             launch { folder.launch(null) }
             return true
         }
@@ -263,3 +265,10 @@ class UploadFeature : ShellFeature {
             if (types.isEmpty() || "*/*" in types) arrayOf("*/*") else types.toTypedArray()
         }
 }
+
+/**
+ * `WebChromeClient.FileChooserParams.MODE_OPEN_FOLDER`. The constant exists on
+ * the platform (value 2, between MODE_OPEN_MULTIPLE and MODE_SAVE) but is not
+ * exported to the public SDK, so it cannot be referenced by name.
+ */
+private const val MODE_OPEN_FOLDER = 2
