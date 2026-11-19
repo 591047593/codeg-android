@@ -63,6 +63,15 @@ internal fun backButtonScript(origin: String, visible: Boolean): String = """
   button.addEventListener('click', function(event) {
     event.preventDefault();
     event.stopPropagation();
+    // A page entered directly (a notification tap, a deep link) has no history
+    // to go back to. `history.back()` would then be a no-op, and the shell's own
+    // back gesture would read it as "press back again to exit". Ask the shell
+    // for the workspace root instead.
+    if (window.history.length <= 1) {
+      var bridge = window.CodegShellWindow;
+      if (bridge && bridge.home) { bridge.home(); return; }
+      return;
+    }
     window.history.back();
   });
 

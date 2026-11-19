@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -15,6 +16,7 @@ import app.codeg.android.R
 import app.codeg.android.shell.ShellFeature
 import app.codeg.android.shell.ShellHost
 import java.util.Locale
+import java.util.UUID
 
 class NavFeature : ShellFeature {
     private var backPending = false
@@ -25,10 +27,15 @@ class NavFeature : ShellFeature {
     /** The page URL the back button was last synced for, or null when not shown. */
     private var backButtonPage: String? = null
 
+    /** Secret for the current document's window bridge, or null before a load. */
+    private var documentToken: String? = null
+
     override fun onWebViewCreated(host: ShellHost, webView: WebView) {
         backPending = false
         exitArmedAt = null
         backButtonPage = null
+        documentToken = null
+        webView.addJavascriptInterface(WindowBridge(host, webView), "CodegShellWindowNative")
     }
 
     override fun doUpdateVisitedHistory(host: ShellHost, view: WebView, url: String, isReload: Boolean) {
@@ -50,10 +57,33 @@ class NavFeature : ShellFeature {
         // A new document starts without the injected button; the finished load
         // (and any client-side transition) puts it back.
         backButtonPage = null
+        documentToken = UUID.randomUUID().toString()
     }
 
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
+        val token = documentToken
+        if (token != null && sameOrigin(host, Uri.parse(url)) && view === host.webView) {
+            // `window.close()` is ignored in a WebView unless the script opened
+            // the window, and the shell never gives it one to close.
+            view.evaluateJavascript(windowCloseBridgeScript(host.currentServerUrl.orEmpty(), token), null)
+        }
         syncBackButton(host, view, url)
+    }
+
+    /** Back to where the page was opened from; the last resort of the back button. */
+    private inner class WindowBridge(private val host: ShellHost, private val view: WebView) {
+        @JavascriptInterface
+        fun home(token: String) {
+            if (token.isEmpty() || token != documentToken || host.webView !== view) return
+            if (!sameOrigin(host, view.url)) return
+            view.post {
+                if (host.webView !== view) return@post
+                // Reaching here means the page had no history of its own, so the
+                // workspace root is the only sensible destination.
+                val server = host.currentServerUrl ?: return@post
+                view.loadUrl(server)
+            }
+        }
     }
 
     /**
