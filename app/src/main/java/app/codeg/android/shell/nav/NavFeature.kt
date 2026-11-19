@@ -91,8 +91,48 @@ class NavFeature : ShellFeature {
         }
     }
 
+    /**
+     * Leave the WebView only for a real external address.
+     *
+     * codeg web signs in to a SpaceRing account the same way a browser does
+     * (`src/lib/srn-account/navigate.ts` `sendTabTo`): the top frame is sent to
+     * `https://spacering.net/...` and comes back to `/workspace?srn=…` in the
+     * same tab. Handing that navigation to the system browser strands the
+     * sign-in — the tab that returns is not the app. So a top-frame navigation
+     * to a sign-in provider stays inside the WebView.
+     *
+     * The provider list mirrors what the page can reach: the release origin
+     * (`DEFAULT_SRN_ORIGIN`) and anything under `spacering.net` — the sign-in
+     * page and the account console the page opens from its menu. A development
+     * server on a custom `CODEG_SRN_ORIGIN` is not covered: those sign-ins go
+     * to the browser, where the page's `srn` result would also be lost.
+     *
+     * The return leg is a redirect from the provider back to the server, and it
+     * stays in the WebView too (see the redirect rule below), which also keeps
+     * an auth proxy's login redirect and its return on the page — the only way
+     * a proxied server is reachable at all.
+     */
     override fun shouldOverrideUrlLoading(host: ShellHost, view: WebView, request: WebResourceRequest): Boolean {
-        return route(host, request.url, allowExternal = request.isForMainFrame)
+        if (!request.isForMainFrame) return route(host, request.url, allowExternal = false)
+        if (sameOrigin(host, request.url)) return false
+        if (isSignInProvider(request.url)) return false
+        val scheme = request.url.scheme?.lowercase(Locale.ROOT)
+        // A redirect that started inside the app stays in the app: SRN's return
+        // leg, and an auth proxy's login round trip, are both chains the page
+        // must finish itself. A redirect reached from an already-external page
+        // (only possible when the chain began outside) is left to the default.
+        val page = view.url?.let(Uri::parse)
+        if (request.isRedirect && (scheme == "http" || scheme == "https") &&
+            (page == null || sameOrigin(host, page) || isSignInProvider(page))
+        ) return false
+        return route(host, request.url, allowExternal = true)
+    }
+
+    /** Where codeg web's SRN sign-in and account console live. */
+    private fun isSignInProvider(uri: Uri): Boolean {
+        if (!uri.scheme.equals("https", true)) return false
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        return host == "spacering.net" || host.endsWith(".spacering.net")
     }
 
     private fun sameOrigin(host: ShellHost, uri: Uri): Boolean {

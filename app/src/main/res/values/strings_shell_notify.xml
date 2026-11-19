@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_notify_channel">Codeg</string>
+    <string name="shell_notify_channel_description">Agent errors, permission requests and other Codeg alerts</string>
+</resources>

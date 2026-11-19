@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Message
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
@@ -80,4 +82,23 @@ internal class ShellChromeClient(
 
     override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean =
         features.any { it.onCreateWindow(host, view, isDialog, isUserGesture, resultMsg) }
+
+    override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean {
+        if (features.any { it.onJsConfirm(host, view, url, message, result) }) return true
+        // Nobody claimed it: hand the call back to the platform, which shows its
+        // own dialog. Answering `false` ourselves would silently decline a
+        // confirm the page still needs an answer to.
+        return super.onJsConfirm(view, url, message, result)
+    }
+
+    override fun onJsPrompt(
+        view: WebView,
+        url: String,
+        message: String,
+        defaultValue: String,
+        result: JsPromptResult,
+    ): Boolean {
+        if (features.any { it.onJsPrompt(host, view, url, message, defaultValue, result) }) return true
+        return super.onJsPrompt(view, url, message, defaultValue, result)
+    }
 }

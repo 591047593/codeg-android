@@ -1,9 +1,11 @@
 package app.codeg.android.shell
 
+import app.codeg.android.shell.dialog.DialogFeature
 import app.codeg.android.shell.display.DisplayFeature
 import app.codeg.android.shell.download.DownloadFeature
 import app.codeg.android.shell.error.ErrorFeature
 import app.codeg.android.shell.nav.NavFeature
+import app.codeg.android.shell.notify.NotifyFeature
 import app.codeg.android.shell.server.ServerFeature
 import app.codeg.android.shell.update.UpdateFeature
 import app.codeg.android.shell.upload.UploadFeature
@@ -20,9 +22,14 @@ class ShellFeatures(
     val display: DisplayFeature = DisplayFeature(),
     val upload: UploadFeature = UploadFeature(),
     val download: DownloadFeature = DownloadFeature(),
+    val dialog: DialogFeature = DialogFeature(),
     val nav: NavFeature = NavFeature(),
     val error: ErrorFeature = ErrorFeature(),
+    val notify: NotifyFeature = NotifyFeature(),
     val update: UpdateFeature = UpdateFeature(),
 ) {
-    val all: List<ShellFeature> = listOf(webSettings, server, display, upload, download, nav, error, update)
+    // `dialog` sits before `nav`: a page-blocking confirm/prompt must answer a
+    // back press itself instead of letting nav pop the page out from under it.
+    val all: List<ShellFeature> =
+        listOf(webSettings, server, display, upload, download, dialog, nav, error, notify, update)
 }

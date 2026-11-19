@@ -58,6 +58,7 @@ class UploadFeature : ShellFeature {
     private lateinit var photos: ActivityResultLauncher<PickVisualMediaRequest>
     private lateinit var document: ActivityResultLauncher<Array<String>>
     private lateinit var documents: ActivityResultLauncher<Array<String>>
+    private lateinit var folder: ActivityResultLauncher<Uri?>
     private lateinit var camera: ActivityResultLauncher<Uri>
 
     override fun onCreate(host: ShellHost) {
@@ -78,6 +79,14 @@ class UploadFeature : ShellFeature {
             externalPending = false
             complete(it.takeIf { uris -> uris.isNotEmpty() }?.toTypedArray())
         }
+        // `webkitdirectory` (codeg web's folder upload, src/components/layout/
+        // workspace-upload-dialog.tsx) arrives as MODE_OPEN_FOLDER. Chromium
+        // answers with ACTION_OPEN_DOCUMENT_TREE's result and enumerates the
+        // tree itself, so the tree URI is the whole answer.
+        folder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
+            externalPending = false
+            complete(it?.let { uri -> arrayOf(uri) })
+        }
         camera = activity.registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
             externalPending = false
             val uri = cameraUri
@@ -94,6 +103,7 @@ class UploadFeature : ShellFeature {
                 photos.unregister()
                 document.unregister()
                 documents.unregister()
+                folder.unregister()
                 camera.unregister()
             }
         })
@@ -114,6 +124,13 @@ class UploadFeature : ShellFeature {
         this.callback = callback
         mimeTypes = normalizeTypes(params.acceptTypes)
         multiple = params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+        // Directory picking (`<input type=file webkitdirectory>`) is its own
+        // contract: the browser wants a tree, not files, and only
+        // ACTION_OPEN_DOCUMENT_TREE produces one.
+        if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_FOLDER) {
+            launch { folder.launch(null) }
+            return true
+        }
         if (params.mode != WebChromeClient.FileChooserParams.MODE_OPEN && !multiple) {
             complete(null)
         } else if (params.isCaptureEnabled && isVisual() && canTakePhoto()) {

@@ -11,6 +11,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.lifecycle.Lifecycle
 import app.codeg.android.BuildConfig
 import app.codeg.android.shell.ShellFeature
 import app.codeg.android.shell.ShellHost
@@ -53,6 +54,12 @@ class WebSettingsFeature : ShellFeature {
 
     override fun onPause(host: ShellHost) {
         CookieManager.getInstance().flush()
+        // The page believes it stays visible otherwise; see VisibilityScript.
+        host.webView?.evaluateJavascript(visibilityUpdateScript(hidden = true), null)
+    }
+
+    override fun onResume(host: ShellHost) {
+        host.webView?.evaluateJavascript(visibilityUpdateScript(hidden = false), null)
     }
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: Bitmap?) {
@@ -69,6 +76,12 @@ class WebSettingsFeature : ShellFeature {
         val server = origin(host.currentServerUrl) ?: return
         if (origin(url) == server && documentOrigin == server && documentToken.isNotEmpty()) {
             view.evaluateJavascript(clipboardScript(server, documentToken), null)
+            view.evaluateJavascript(visibilityScript, null)
+            // A page loaded while the app is already in the background starts
+            // with the flag cleared; restore the real state once the script exists.
+            if (!host.activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                view.evaluateJavascript(visibilityUpdateScript(hidden = true), null)
+            }
         }
     }
 

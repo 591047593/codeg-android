@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_notify_channel">Codeg</string>
+    <string name="shell_notify_channel_description">智能体报错、权限请求及其它 Codeg 提醒</string>
+</resources>

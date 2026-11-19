@@ -4,6 +4,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Message
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.PermissionRequest
 import android.net.http.SslError
 import android.webkit.RenderProcessGoneDetail
@@ -80,6 +82,25 @@ interface ShellFeature {
     fun onReceivedSslError(host: ShellHost, view: WebView, handler: SslErrorHandler, error: SslError): Boolean = false
     /** Return true when handled (the shell then must not crash). */
     fun onRenderProcessGone(host: ShellHost, view: WebView, detail: RenderProcessGoneDetail): Boolean = false
+
+    // ---- JavaScript dialogs ----
+    /**
+     * `window.confirm()`. Return true only when the feature takes ownership of
+     * [result] — it must then call confirm()/cancel() exactly once, possibly
+     * later. Returning false leaves the call to the shell, which passes it to
+     * the platform's own dialog, so the page always gets an answer.
+     */
+    fun onJsConfirm(host: ShellHost, view: WebView, url: String, message: String, result: JsResult): Boolean = false
+
+    /** `window.prompt()`, same ownership rule as [onJsConfirm]. */
+    fun onJsPrompt(
+        host: ShellHost,
+        view: WebView,
+        url: String,
+        message: String,
+        defaultValue: String,
+        result: JsPromptResult,
+    ): Boolean = false
 
     // ---- WebChromeClient ----
     fun onProgressChanged(host: ShellHost, view: WebView, progress: Int) {}
