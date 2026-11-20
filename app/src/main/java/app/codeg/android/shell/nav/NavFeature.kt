@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.SystemClock
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -60,6 +61,14 @@ class NavFeature : ShellFeature {
         popupHandler.removeCallbacksAndMessages(null)
         popups.toList().forEach { it.destroy() }
         popups.clear()
+    }
+
+    override fun onRenderProcessGone(host: ShellHost, view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        if (host.webView !== view) return false
+        documentToken = null
+        documentServer = null
+        backPending = false
+        return false // ErrorFeature owns recovery; invalidate before it recreates the view.
     }
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: android.graphics.Bitmap?) {

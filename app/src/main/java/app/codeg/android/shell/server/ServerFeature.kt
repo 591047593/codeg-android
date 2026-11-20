@@ -78,6 +78,12 @@ class ServerFeature : ShellFeature {
         }
     }
 
+    /** Restoration must not race the startup refresh or treat failure as an empty store. */
+    internal suspend fun awaitInitialization(): Boolean {
+        startupJob?.join()
+        return ready.value && !startupFailed.value
+    }
+
     internal suspend fun savedProfile(origin: String): ServerProfile? =
         store.profiles.first().firstOrNull { serverOrigin(it.baseUrl) == origin }
 

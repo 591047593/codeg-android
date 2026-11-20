@@ -1,0 +1,13 @@
+# Final integration fix — review blocker and lifecycle hardening
+
+Read-only reviewer of 0bea194 found a real blocker: ErrorFeature.onPageFinished checks only WebView identity, so A-start -> B-start -> A-finish/error can cancel B's timeout, unlock its retry gate and clear B's error. Fix in a small scoped wave.
+
+Owned files only: ErrorFeature.kt, PageRetryGate.kt, ShellReliabilityTest.kt; ShellActivityHost.kt and ServerFeature.kt for startup/restore ordering; NavFeature.kt only renderer-loss token invalidation. No other agents currently edit these. NO stage/commit/push/branch/build/ADB/network/subdelegation.
+
+Requirements:
+1. Gate records active navigation URL and monotonic generation; expose source-testable acceptance checks. Every finished/error/HTTP-error callback must match current active navigation before touching timeout/error/gate. Timeout closure captures generation. Preserve one-load retry behavior. Add JVM regression A-start -> B-start -> stale A finish/error rejected -> B remains loading, then B completes. URL fragment changes must not invalidate main-document ownership. WebView callbacks do not provide unique ids for identical URL retries: do not claim impossible guarantees; guard current view URL/progress/document completion if useful while preserving real error reporting.
+2. Startup restore ordering: openServerTarget can race asynchronous ServerFeature.refresh. Add a suspend await-initialization method and await it before restoring notification targets/selecting profiles, handle failed startup without clearing data, prevent old target work from overwriting a newer target request. Keep same-origin/saved-profile validation and UI-thread WebView operations. Await actual initialization, not blind delays.
+3. Closing native manager must not mark document visible/request focus when Activity is backgrounded. Use actual Activity resumed state for visibility sync; preserve retained WebView on manager cancel.
+4. NavFeature.onRenderProcessGone invalidates documentToken/documentServer/backPending for the lost current view immediately; do not change system back or workspace destination logic.
+
+Current branch 0bea194 had passing GitHub CI 44740825097: 48 Node tests + Kotlin debug/release unit tasks + APK builds; do not run local Gradle. Run relevant Node suite if nav changed, and git diff --check. No need to read/review whole branch again. Keep implementation minimal (<15 tool calls ideally), final <=300 words with edited paths/test evidence. Write report .taskmaster/docs/shell/v3/V8-final-fix-report.md. Do not touch release notes/workflows/notifications/clipboard/updater. Coordinator will commit, run CI, get scoped re-review and publish.

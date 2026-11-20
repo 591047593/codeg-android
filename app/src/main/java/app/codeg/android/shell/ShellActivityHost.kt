@@ -9,6 +9,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +26,7 @@ class ShellActivityHost(
 
     override var webView: WebView? = null
         private set
+    private var webViewServer: String? = null
 
     override val currentServerUrl: String? get() = features.server.current.value
 
@@ -31,6 +35,8 @@ class ShellActivityHost(
     override val isWebContentVisible: Boolean get() = !managerOpen.value
 
     private var pendingTarget: Pair<String, String>? = null
+    private var targetRequest = 0L
+    private val targetMutex = Mutex()
 
     private val generation = MutableStateFlow(0)
     val webViewGeneration: StateFlow<Int> = generation.asStateFlow()
@@ -41,6 +47,7 @@ class ShellActivityHost(
         view.webViewClient = ShellWebViewClient(this, features.all)
         view.webChromeClient = ShellChromeClient(this, features.all)
         webView = view
+        webViewServer = currentServerUrl
         features.all.forEach { it.onWebViewCreated(this, view) }
         currentServerUrl?.let { server ->
             val pending = pendingTarget?.takeIf { it.first == server }
@@ -52,7 +59,10 @@ class ShellActivityHost(
     }
 
     internal fun releaseWebView(view: WebView) {
-        if (webView === view) webView = null
+        if (webView === view) {
+            webView = null
+            webViewServer = null
+        }
         view.stopLoading()
         view.destroy()
     }
@@ -87,10 +97,11 @@ class ShellActivityHost(
 
     fun closeServerManager() {
         managerOpen.value = false
+        val resumed = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         webView?.let {
-            it.visibility = View.VISIBLE
-            it.requestFocus()
-            it.evaluateJavascript("window.__codegShellSetHidden && window.__codegShellSetHidden(false)", null)
+            it.visibility = if (resumed) View.VISIBLE else View.INVISIBLE
+            if (resumed) it.requestFocus()
+            it.evaluateJavascript("window.__codegShellSetHidden && window.__codegShellSetHidden(${!resumed})", null)
         }
     }
 
@@ -102,26 +113,52 @@ class ShellActivityHost(
         if (source.username.isNotEmpty() || source.password.isNotEmpty() || target.username.isNotEmpty() || target.password.isNotEmpty() ||
             source.scheme != target.scheme || source.host != target.host || source.port != target.port) return false
         val normalized = app.codeg.android.shell.server.serverOrigin(serverOrigin) ?: return false
+        val request = ++targetRequest
+        pendingTarget = null // Supersede an older staged restore before its factory can consume it.
         scope.launch {
-            try {
-                val profile = features.server.savedProfile(normalized) ?: return@launch
-                if (currentServerUrl != normalized) {
-                    pendingTarget = normalized to target.toString()
-                    features.server.select(profile.id)
-                } else if (webView == null) {
-                    pendingTarget = normalized to target.toString()
-                } else {
-                    webView?.loadUrl(target.toString())
+            // Serialize selection side effects too, not just the final WebView load.
+            targetMutex.withLock {
+                if (request != targetRequest) return@withLock
+                val restore = normalized to target.toString()
+                var restored = false
+                try {
+                    if (!features.server.awaitInitialization() || request != targetRequest) return@withLock
+                    val profile = features.server.savedProfile(normalized) ?: return@withLock
+                    if (request != targetRequest) return@withLock
+                    val switching = currentServerUrl != normalized
+                    if (switching) {
+                        // refresh can publish the new server before select returns;
+                        // its WebView factory must already have the destination.
+                        pendingTarget = restore
+                        features.server.select(profile.id)
+                    }
+                    if (request != targetRequest) return@withLock
+                    if (!switching) {
+                        if (webView == null || webViewServer != normalized) {
+                            pendingTarget = restore
+                        } else {
+                            pendingTarget = null
+                            webView?.loadUrl(target.toString())
+                        }
+                    }
+                    closeServerManager()
+                    restored = true
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                  catch (_: java.io.IOException) { /* Keep saved profiles and current page on read failure. */ }
+                finally {
+                    // Never clear a newer/recreated view's pending destination.
+                    if (!restored && pendingTarget === restore) pendingTarget = null
                 }
-                closeServerManager()
-            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-              catch (_: java.io.IOException) { pendingTarget = null }
+            }
         }
         return true
     }
 
     fun onCreate() = features.all.forEach { it.onCreate(this) }
-    fun onResume() = features.all.forEach { it.onResume(this) }
+    fun onResume() {
+        webView?.visibility = if (managerOpen.value) View.INVISIBLE else View.VISIBLE
+        features.all.forEach { it.onResume(this) }
+    }
     fun onPause() = features.all.forEach { it.onPause(this) }
     fun onIntent(intent: Intent) = features.all.any { it.onIntent(this, intent) }
 

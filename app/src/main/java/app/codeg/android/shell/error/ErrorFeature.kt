@@ -35,6 +35,7 @@ import app.codeg.android.shell.ShellHost
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /** Owns only main-document failures; API and asset failures remain with the website. */
 class ErrorFeature : ShellFeature {
@@ -68,15 +69,12 @@ class ErrorFeature : ShellFeature {
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: Bitmap?) {
         trace("started active=${view === host.webView} failed=$failedLoad")
-        if (view !== host.webView) return
-        // Chromium can start its internal error document after reporting a failure.
-        // A different real navigation (including history back) may recover as well.
-        if (failedLoad && url != failedUrl && !url.startsWith("chrome-error://")) {
-            failedLoad = false
-        }
+        if (view !== host.webView || url.startsWith("chrome-error://")) return
+        // Internal error documents do not acquire real-navigation ownership.
+        if (failedLoad && !retryGate.accepts(url)) failedLoad = false
         loading = reason == null
         progress = 0
-        retryGate.begin()
+        retryGate.start(url)
         armLoadTimeout(host, view)
     }
 
@@ -88,24 +86,25 @@ class ErrorFeature : ShellFeature {
 
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
         trace("finished active=${view === host.webView} failed=$failedLoad internal=${url.startsWith("chrome-error://")}")
-        if (view !== host.webView) return
-        loadTimeoutJob?.cancel()
-        retryGate.finish()
-        loading = false
-        progress = 100
-        if (url.startsWith("chrome-error://")) {
-            if (reason == null) {
-                failedUrl = url
-                showError(host, R.string.shell_error_connection)
-            }
-        } else if (!failedLoad) {
-            clearError(host)
+        if (view !== host.webView || !retryGate.acceptsCompletion(url, view.url, view.progress)) return
+        val generation = retryGate.generation
+        // Progress alone cannot identify a same-URL retry's document. Confirm
+        // actual completion, then recheck ownership after the asynchronous read.
+        val documentUrl = JSONObject.quote(url.substringBefore('#'))
+        view.evaluateJavascript("document.readyState === 'complete' && location.href.split('#')[0] === $documentUrl") { complete ->
+            if (complete != "true" || host.webView !== view || !retryGate.owns(generation) ||
+                !retryGate.acceptsCompletion(url, view.url, view.progress)) return@evaluateJavascript
+            loadTimeoutJob?.cancel()
+            retryGate.finish()
+            loading = false
+            progress = 100
+            if (!failedLoad) clearError(host)
         }
     }
 
     override fun onReceivedError(host: ShellHost, view: WebView, request: WebResourceRequest, error: WebResourceError) {
         trace("error active=${view === host.webView} main=${request.isForMainFrame} code=${error.errorCode}")
-        if (view !== host.webView || !request.isForMainFrame) return
+        if (view !== host.webView || !request.isForMainFrame || !retryGate.accepts(request.url.toString())) return
         failedUrl = request.url.toString()
         showError(host, when (error.errorCode) {
             WebViewClient.ERROR_HOST_LOOKUP -> R.string.shell_error_dns
@@ -117,7 +116,8 @@ class ErrorFeature : ShellFeature {
 
     override fun onReceivedHttpError(host: ShellHost, view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
         trace("http active=${view === host.webView} main=${request.isForMainFrame} status=${response.statusCode}")
-        if (view !== host.webView || !request.isForMainFrame || response.statusCode !in 500..599) return
+        if (view !== host.webView || !request.isForMainFrame || response.statusCode !in 500..599 ||
+            !retryGate.accepts(request.url.toString())) return
         failedUrl = request.url.toString()
         status = response.statusCode
         showError(host, R.string.shell_error_http)
@@ -179,9 +179,10 @@ class ErrorFeature : ShellFeature {
 
     private fun armLoadTimeout(host: ShellHost, view: WebView) {
         loadTimeoutJob?.cancel()
+        val generation = retryGate.generation
         loadTimeoutJob = host.scope.launch {
             delay(45_000)
-            if (host.webView !== view || !retryGate.isLoading) return@launch
+            if (host.webView !== view || !retryGate.owns(generation)) return@launch
             view.stopLoading()
             retryGate.finish()
             showError(host, R.string.shell_error_timeout)
