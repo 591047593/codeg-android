@@ -22,4 +22,11 @@
     <string name="shell_server_title">服务器</string>
     <string name="shell_server_edit_title">编辑服务器</string>
     <string name="shell_server_more">%1$s 的更多操作</string>
+    <string name="shell_server_auth_required">此地址需要登录或已跳转到认证页，可保存后继续登录。</string>
+    <string name="shell_server_not_found">此地址返回 HTTP 404，请检查服务器地址。</string>
+    <string name="shell_server_http_error">服务器返回 HTTP 错误，请检查服务状态后继续。</string>
+    <string name="shell_server_unrecognized">地址可以访问，但未识别出 Codeg 页面。请确认地址后再保存。</string>
+    <string name="shell_server_loading">正在读取已保存的服务器…</string>
+    <string name="shell_server_startup_error">无法读取服务器配置。现有数据未被重置，可重试读取。</string>
+    <string name="shell_server_retry">重试</string>
 </resources>

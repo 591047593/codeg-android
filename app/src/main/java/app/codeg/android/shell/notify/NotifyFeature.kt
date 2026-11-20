@@ -8,139 +8,182 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import app.codeg.android.MainActivity
 import app.codeg.android.R
 import app.codeg.android.shell.ShellFeature
 import app.codeg.android.shell.ShellHost
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/**
- * Implements the Web Notifications API the web build calls (`src/lib/notification.ts`,
- * `src/components/settings/desktop-notification-settings.tsx`).
- *
- * Android WebView has no `window.Notification`, so the page's own capability
- * probe reports "unsupported" and every background turn, permission request and
- * question alert is dropped — the one case where a phone client matters most.
- * This feature installs the same three pieces a browser exposes
- * (`Notification.permission`, `Notification.requestPermission()` and
- * `new Notification(...)`) and turns the last one into a system notification.
- *
- * The page posts only while it believes it is hidden (`when: "hidden"` is its
- * default), which is exactly when the shell is in the background.
- *
- * Android 13+ needs `POST_NOTIFICATIONS` at runtime. It is requested from the
- * page's own `requestPermission()` call (and from an undecided `post`, which is
- * what a page that posts without asking looks like); a refusal is remembered so
- * the API then reports `denied`, which the web settings panel renders as
- * "blocked by the system".
- */
+/** Web Notifications shim. Permission prompts originate only from explicit foreground requests. */
 class NotifyFeature : ShellFeature {
-    private var documentToken = ""
-    private var documentOrigin: String? = null
+    /** Published by UI lifecycle hooks; bridge reads never inspect the host or a WebView. */
+    private data class Snapshot(
+        val token: String = "",
+        val origin: String? = null,
+        val view: WebView? = null,
+        val permission: String = "default",
+        val resumed: Boolean = false,
+        val ready: Boolean = false,
+    )
+
+    @Volatile private var snapshot = Snapshot()
+    private val main = Handler(Looper.getMainLooper())
+    private val queuedWork = AtomicInteger()
     private lateinit var permissionLauncher: ActivityResultLauncher<String>
     private var requesting = false
 
-    /** A tap that arrived before the page existed (cold start, renderer crash). */
-    private var pendingTap: String? = null
-
-    /** Payloads that arrived before the permission answer; posted on grant. */
-    private val waitingForPermission = ConcurrentHashMap<String, Pair<String, String>>()
+    private class PendingTap(val id: String, val origin: String, val pageUrl: String, val at: Long)
+    private var pendingTap: PendingTap? = null
+    private var tapTimeout: Runnable? = null
 
     override fun onCreate(host: ShellHost) {
+        host.activity.lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_DESTROY) {
+                clearPendingTap()
+                snapshot = Snapshot(permission = snapshot.permission)
+            }
+        })
+        ensureChannel(host)
+        refreshPermission(host)
         permissionLauncher = host.activity.registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
-        ) { granted ->
+        ) {
             requesting = false
-            if (!granted) {
-                waitingForPermission.clear()
-                return@registerForActivityResult
-            }
-            val pending = waitingForPermission.toList()
-            waitingForPermission.clear()
-            pending.forEach { (id, payload) ->
-                host.activity.runOnUiThread { deliver(host, id, payload.first, payload.second) }
-            }
+            refreshPermission(host)
+            updatePagePermission(host, settle = true)
         }
     }
 
     override fun onWebViewCreated(host: ShellHost, webView: WebView) {
-        documentToken = ""
-        documentOrigin = null
-        requesting = false
-        waitingForPermission.clear()
+        // Do not reset an in-flight permission dialog or tap when rebuilding a view.
+        snapshot = Snapshot(permission = permissionState(host), resumed = snapshot.resumed)
         ensureChannel(host)
         webView.addJavascriptInterface(Bridge(host, webView), "CodegShellNotify")
     }
 
+    override fun onRenderProcessGone(host: ShellHost, view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        val current = snapshot
+        if (current.view === view) {
+            // Invalidate immediately, before replacement composition. Queued bridge
+            // actions and late JS callbacks must fail even if the host still holds view.
+            snapshot = Snapshot(permission = current.permission, resumed = current.resumed)
+        }
+        // Recovery belongs to the host/error feature, not notification authorization.
+        return false
+    }
+
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: Bitmap?) {
-        // One token per document, like the clipboard bridge: `onPageFinished` can
-        // fire more than once for the same document, and re-issuing the token
-        // there would strand the installed script with a stale secret.
-        documentToken = UUID.randomUUID().toString()
-        documentOrigin = origin(url)
-        // Notifications belong to the page that raised them; a tap after a
-        // navigation must not reach a new document's instances.
-        waitingForPermission.clear()
-        // Early install so the settings panel's mount-time permission read is
-        // answered; `onPageFinished` re-runs the (idempotent) script as the
-        // safety net for a page whose frames were not ready yet.
-        inject(host, view, url, deliverTap = false)
+        if (host.webView !== view) return
+        snapshot = Snapshot(
+            token = UUID.randomUUID().toString(),
+            origin = serverOrigin(url),
+            view = view,
+            permission = permissionState(host),
+            resumed = snapshot.resumed,
+        )
+        // Early capability install; interactions wait for the page-finished acknowledgement.
+        inject(host, view, url, finished = false)
     }
 
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
-        inject(host, view, url, deliverTap = true)
+        inject(host, view, url, finished = true)
     }
 
-    /**
-     * [deliverTap] is false on `onPageStarted`: the page has not run the shim
-     * yet, so `__codegNotifyTap` does not exist and a tap handed over then would
-     * be dropped. A tap that started the app is delivered once the document has
-     * finished loading instead.
-     */
-    private fun inject(host: ShellHost, view: WebView, url: String, deliverTap: Boolean) {
-        val server = origin(host.currentServerUrl) ?: return
-        if (documentToken.isEmpty() || documentOrigin != server) return
-        if (origin(url) != server || origin(view.url) != server || host.webView !== view) return
-        view.evaluateJavascript(notificationScript(server, documentToken, permissionState(host)), null)
-        if (!deliverTap) return
-        deliverPendingTap(view)
+    private fun inject(host: ShellHost, view: WebView, url: String, finished: Boolean) {
+        refreshPermission(host)
+        val auth = snapshot
+        val origin = auth.origin ?: return
+        if (!isCurrent(host, view, auth) || serverOrigin(url) != origin) return
+        view.evaluateJavascript(notificationScript(origin, auth.token, auth.permission)) { result ->
+            if (!finished || result != "true" || !isCurrent(host, view, auth)) return@evaluateJavascript
+            snapshot = snapshot.copy(ready = true)
+            updatePagePermission(host, settle = !requesting)
+        }
+    }
+
+    /** UI-thread revalidation, both before actions and after asynchronous evaluations. */
+    private fun isCurrent(host: ShellHost, view: WebView, auth: Snapshot): Boolean {
+        val current = snapshot
+        return auth.token.isNotEmpty() && auth.origin != null && current.token == auth.token &&
+            current.origin == auth.origin && current.view === view && auth.view === view &&
+            host.webView === view && serverOrigin(host.currentServerUrl) == auth.origin &&
+            serverOrigin(view.url) == auth.origin
+    }
+
+    override fun onResume(host: ShellHost) {
+        snapshot = snapshot.copy(resumed = true)
+        refreshPermission(host)
+        updatePagePermission(host, settle = !requesting)
+    }
+
+    override fun onPause(host: ShellHost) {
+        snapshot = snapshot.copy(resumed = false)
     }
 
     override fun onIntent(host: ShellHost, intent: Intent): Boolean {
         val id = intent.getStringExtra(EXTRA_NOTIFICATION_ID) ?: return false
+        val origin = intent.getStringExtra(EXTRA_NOTIFICATION_ORIGIN)?.let(::serverOrigin)
+        val pageUrl = intent.getStringExtra(EXTRA_NOTIFICATION_PAGE)
         intent.removeExtra(EXTRA_NOTIFICATION_ID)
-        NotificationManagerCompat.from(host.activity).cancel(id.hashCode())
-        // Hold it until a page that has the shim answers `true`. The WebView
-        // exists by now only after the first composition; on a cold start it is
-        // still null, and a page that is mid-load has no `__codegNotifyTap`.
-        pendingTap = id
-        host.webView?.let { view -> deliverPendingTap(view) }
+        intent.removeExtra(EXTRA_NOTIFICATION_ORIGIN)
+        intent.removeExtra(EXTRA_NOTIFICATION_PAGE)
+        if (!validId(id)) return true
+        cancelNotification(host, id)
+        // Old id-only intents have no recoverable page. Never invent a session target.
+        clearPendingTap()
+        val savedOrigin = origin ?: return true
+        val target = savedTarget(savedOrigin, pageUrl) ?: return true
+        val tap = PendingTap(id, savedOrigin, target, SystemClock.elapsedRealtime())
+        pendingTap = tap
+        val auth = snapshot
+        val view = host.webView
+        if (view == null || !host.isWebContentVisible || !auth.ready ||
+            auth.origin != savedOrigin || !isCurrent(host, view, auth)
+        ) {
+            // Cold start, different server, or loading document: the host owns restoration,
+            // including any WebView/profile creation. No previous JS instance is needed.
+            restoreTap(host, tap)
+            return true
+        }
+        val timeout = Runnable { restoreTap(host, tap) }
+        tapTimeout = timeout
+        main.postDelayed(timeout, TAP_CALLBACK_TIMEOUT_MS)
+        view.evaluateJavascript(notificationClickScript(origin, auth.token, id)) { result ->
+            if (pendingTap !== tap) return@evaluateJavascript
+            if (result == "true" && host.isWebContentVisible && isCurrent(host, view, auth)) clearPendingTap()
+            else restoreTap(host, tap)
+        }
         return true
     }
 
-    /** Hands the tap to the page; keeps it pending unless the shim confirms. */
-    private fun deliverPendingTap(view: WebView) {
-        val id = pendingTap ?: return
-        view.evaluateJavascript(notificationClickScript(id)) { result ->
-            if (result == "true" && pendingTap == id) pendingTap = null
+    private fun restoreTap(host: ShellHost, tap: PendingTap) {
+        if (pendingTap !== tap) return
+        clearPendingTap()
+        if (SystemClock.elapsedRealtime() - tap.at <= TAP_TTL_MS) {
+            host.openServerTarget(tap.origin, tap.pageUrl)
         }
     }
 
-    override fun onResume(host: ShellHost) {
-        // Coming back from system settings (or the permission dialog) is the one
-        // moment the page's cached `Notification.permission` can be stale; the
-        // page itself only listens for visibilitychange, which a WebView does
-        // not reliably dispatch for an activity pause.
-        host.webView?.evaluateJavascript(REFRESH_SCRIPT, null)
+    private fun clearPendingTap() {
+        tapTimeout?.let { main.removeCallbacks(it) }
+        tapTimeout = null
+        pendingTap = null
     }
 
     private fun ensureChannel(host: ShellHost) {
@@ -155,52 +198,78 @@ class NotifyFeature : ShellFeature {
         )
     }
 
-    /** The three values the Web API exposes: `granted`, `denied`, `default`. */
     private fun permissionState(host: ShellHost): String {
         val context = host.activity
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val channel = manager.getNotificationChannel(CHANNEL_ID)
+        if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return "denied"
+        val group = channel?.group
+        if (group != null && manager.getNotificationChannelGroup(group)?.isBlocked == true) {
+            return "denied"
+        }
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         ) return if (NotificationManagerCompat.from(context).areNotificationsEnabled()) "granted" else "denied"
-        // Android only shows the system dialog once per install; a refusal is
-        // final until the user changes it in Settings, so it reads as `denied`
-        // rather than `default` (which would make the page ask again forever).
-        val asked = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_ASKED, false)
+        val asked = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ASKED, false)
         return if (asked && !requesting) "denied" else "default"
     }
 
+    private fun refreshPermission(host: ShellHost) {
+        snapshot = snapshot.copy(permission = permissionState(host))
+    }
+
+    /** Only a finished, acknowledged document receives native permission callbacks. */
+    private fun updatePagePermission(host: ShellHost, settle: Boolean) {
+        val auth = snapshot
+        val view = auth.view ?: return
+        val origin = auth.origin ?: return
+        if (!auth.ready || !isCurrent(host, view, auth)) return
+        view.evaluateJavascript(notificationPermissionScript(origin, auth.token, settle), null)
+    }
+
     private fun requestPermission(host: ShellHost) {
+        refreshPermission(host)
+        if (!snapshot.resumed || !host.isWebContentVisible || snapshot.permission != "default") {
+            updatePagePermission(host, settle = true)
+            return
+        }
         if (requesting) return
-        val context = host.activity
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        ) return
         requesting = true
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ASKED, true).apply()
-        // The launcher must run on the main thread; bridge calls do not.
-        host.activity.runOnUiThread {
-            try {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } catch (_: Exception) {
-                requesting = false
-            }
+        val prefs = host.activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val wasAsked = prefs.getBoolean(KEY_ASKED, false)
+        prefs.edit().putBoolean(KEY_ASKED, true).apply()
+        try {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } catch (_: Exception) {
+            // No dialog actually appeared: preserve the previous undecided state.
+            requesting = false
+            prefs.edit().putBoolean(KEY_ASKED, wasAsked).apply()
+            refreshPermission(host)
+            updatePagePermission(host, settle = true)
         }
     }
 
-    private fun deliver(host: ShellHost, id: String, title: String, body: String) {
+    private fun deliver(host: ShellHost, origin: String, id: String, title: String, body: String, pageUrl: String) {
+        val target = savedTarget(origin, pageUrl) ?: return
+        ensureChannel(host)
+        refreshPermission(host)
         val context = host.activity
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+        if (snapshot.permission != "granted" ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) return
-        ensureChannel(host)
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
+            // Distinct data prevents PendingIntent hash collisions from overwriting targets.
+            .setData(Uri.Builder().scheme("codeg-notification").authority("tap").appendPath(id).build())
             .putExtra(EXTRA_NOTIFICATION_ID, id)
+            .putExtra(EXTRA_NOTIFICATION_ORIGIN, origin)
+            .putExtra(EXTRA_NOTIFICATION_PAGE, target)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pending = PendingIntent.getActivity(
             context,
-            id.hashCode(),
+            0,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -214,66 +283,100 @@ class NotifyFeature : ShellFeature {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
         try {
-            NotificationManagerCompat.from(context).notify(id.hashCode(), notification)
+            NotificationManagerCompat.from(context).notify(id, 0, notification)
         } catch (_: SecurityException) {
-            // Permission was revoked between the check and the post.
+            refreshPermission(host)
+            updatePagePermission(host, settle = true)
+        }
+    }
+
+    private fun cancelNotification(host: ShellHost, id: String) {
+        NotificationManagerCompat.from(host.activity).apply {
+            cancel(id, 0)
+            cancel(id.hashCode()) // Compatibility with previously posted id-only notifications.
         }
     }
 
     private inner class Bridge(private val host: ShellHost, private val view: WebView) {
-        // JS interfaces are visible to every frame. Only the top-level injected
-        // closure gets this navigation's secret; checking WebView.url alone
-        // would also admit a hostile iframe.
-        private fun allowed(token: String): Boolean =
-            token.isNotEmpty() && token == documentToken && documentOrigin != null &&
-                origin(host.currentServerUrl) == documentOrigin && origin(view.url) == documentOrigin &&
-                host.webView === view
+        private fun authorized(token: String): Snapshot? {
+            val auth = snapshot
+            return auth.takeIf {
+                token.isNotEmpty() && token == it.token && it.origin != null && it.view === view
+            }
+        }
+
+        /** Bounded asynchronous UI work; no bridge method waits for the UI thread. */
+        private fun enqueue(auth: Snapshot, operation: () -> Unit): Boolean {
+            if (queuedWork.incrementAndGet() > MAX_QUEUED_WORK) {
+                queuedWork.decrementAndGet()
+                return false
+            }
+            val queuedAt = SystemClock.elapsedRealtime()
+            val accepted = main.post {
+                queuedWork.decrementAndGet()
+                if (SystemClock.elapsedRealtime() - queuedAt <= WORK_TTL_MS && isCurrent(host, view, auth)) {
+                    operation()
+                }
+            }
+            if (!accepted) queuedWork.decrementAndGet()
+            return accepted
+        }
 
         @JavascriptInterface
-        fun state(token: String): String? = if (allowed(token)) permissionState(host) else null
+        fun state(token: String): String? = authorized(token)?.permission
 
         @JavascriptInterface
         fun request(token: String): Boolean {
-            if (!allowed(token)) return false
-            requestPermission(host)
-            return true
+            val auth = authorized(token) ?: return false
+            return enqueue(auth) { requestPermission(host) }
         }
 
         @JavascriptInterface
-        fun post(token: String, id: String, title: String, body: String): Boolean {
-            if (!allowed(token) || id.isEmpty()) return false
-            return when (permissionState(host)) {
-                "granted" -> {
-                    host.activity.runOnUiThread { deliver(host, id, title, body) }
-                    true
-                }
-                // A page that skipped requestPermission still gets its alert
-                // once the user answers the dialog we raise for it.
-                else -> {
-                    waitingForPermission[id] = title to body
-                    requestPermission(host)
-                    true
-                }
-            }
+        fun post(token: String, id: String, title: String, body: String, pageUrl: String): Boolean {
+            val auth = authorized(token) ?: return false
+            if (!validId(id) || auth.permission != "granted" || pageUrl.length > MAX_PAGE_URL_LENGTH) return false
+            val safeTitle = title.take(MAX_TITLE_LENGTH)
+            val safeBody = body.take(MAX_BODY_LENGTH)
+            return enqueue(auth) { deliver(host, auth.origin!!, id, safeTitle, safeBody, pageUrl) }
         }
+
         @JavascriptInterface
         fun cancel(token: String, id: String) {
-            if (!allowed(token)) return
-            waitingForPermission.remove(id)
-            host.activity.runOnUiThread {
-                NotificationManagerCompat.from(host.activity).cancel(id.hashCode())
-            }
+            val auth = authorized(token) ?: return
+            if (validId(id)) enqueue(auth) { cancelNotification(host, id) }
         }
     }
 
     private companion object {
         const val CHANNEL_ID = "codeg_web"
         const val EXTRA_NOTIFICATION_ID = "app.codeg.android.extra.NOTIFICATION_ID"
+        const val EXTRA_NOTIFICATION_ORIGIN = "app.codeg.android.extra.NOTIFICATION_SERVER_ORIGIN"
+        const val EXTRA_NOTIFICATION_PAGE = "app.codeg.android.extra.NOTIFICATION_PAGE_URL"
         const val PREFS = "shell_notify"
         const val KEY_ASKED = "asked"
-        const val REFRESH_SCRIPT =
-            "(function(){ if (window.__codegNotifyRefresh) window.__codegNotifyRefresh(); })()"
+        const val MAX_QUEUED_WORK = 32
+        const val WORK_TTL_MS = 10_000L
+        const val TAP_CALLBACK_TIMEOUT_MS = 2_000L
+        const val TAP_TTL_MS = 60_000L
+        const val MAX_PAGE_URL_LENGTH = 16_384
+        const val MAX_TITLE_LENGTH = 512
+        const val MAX_BODY_LENGTH = 8_192
+
+        fun validId(id: String): Boolean = id.isNotEmpty() && id.length <= 160
+
+        fun savedTarget(origin: String, target: String?): String? {
+            if (target == null || target.length > MAX_PAGE_URL_LENGTH) return null
+            val url = target.toHttpUrlOrNull() ?: return null
+            if (url.username.isNotEmpty() || url.password.isNotEmpty() || serverOrigin(target) != origin) return null
+            return url.toString()
+        }
     }
 }
 
-private fun origin(url: String?): String? = url?.toHttpUrlOrNull()?.let { "${it.scheme}://${it.host}:${it.port}" }
+/** Browser-compatible serialization, including default ports, IDN and IPv6. */
+internal fun serverOrigin(url: String?): String? = url?.toHttpUrlOrNull()?.let {
+    val hostname = if (it.host.contains(':')) "[${it.host}]" else it.host
+    val defaultPort = if (it.isHttps) 443 else 80
+    val port = if (it.port == defaultPort) "" else ":${it.port}"
+    "${it.scheme}://$hostname$port"
+}

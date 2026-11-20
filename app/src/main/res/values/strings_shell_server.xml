@@ -22,4 +22,11 @@
     <string name="shell_server_title">Servers</string>
     <string name="shell_server_edit_title">Edit server</string>
     <string name="shell_server_more">More actions for %1$s</string>
+    <string name="shell_server_auth_required">The server requires sign-in or redirects to authentication. Save it to continue signing in.</string>
+    <string name="shell_server_not_found">This address returned HTTP 404. Check the server address.</string>
+    <string name="shell_server_http_error">The server returned an HTTP error. Check its status before continuing.</string>
+    <string name="shell_server_unrecognized">The address responded, but a Codeg page was not recognized. Verify the address before saving.</string>
+    <string name="shell_server_loading">Loading saved servers…</string>
+    <string name="shell_server_startup_error">Could not read saved server settings. Your data has not been reset.</string>
+    <string name="shell_server_retry">Retry</string>
 </resources>

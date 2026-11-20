@@ -47,6 +47,8 @@ class ErrorFeature : ShellFeature {
     private var failedUrl: String? = null
     private var failedLoad = false
     private var retryJob: Job? = null
+    private var loadTimeoutJob: Job? = null
+    private val retryGate = PageRetryGate()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate(host: ShellHost) {
@@ -74,6 +76,8 @@ class ErrorFeature : ShellFeature {
         }
         loading = reason == null
         progress = 0
+        retryGate.begin()
+        armLoadTimeout(host, view)
     }
 
     override fun onProgressChanged(host: ShellHost, view: WebView, progress: Int) {
@@ -85,6 +89,8 @@ class ErrorFeature : ShellFeature {
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
         trace("finished active=${view === host.webView} failed=$failedLoad internal=${url.startsWith("chrome-error://")}")
         if (view !== host.webView) return
+        loadTimeoutJob?.cancel()
+        retryGate.finish()
         loading = false
         progress = 100
         if (url.startsWith("chrome-error://")) {
@@ -118,15 +124,21 @@ class ErrorFeature : ShellFeature {
     }
 
     private fun showError(host: ShellHost, message: Int) {
+        loadTimeoutJob?.cancel()
+        retryGate.finish()
         failedLoad = true
         loading = false
         val firstFailure = reason == null
         reason = message
         if (!firstFailure) return // Failed retries must not reset the six-attempt budget.
         retryJob = host.scope.launch {
-            repeat(6) {
+            var attempts = 0
+            while (reason != null && attempts < 6) {
                 delay(10_000)
                 if (reason == null) return@launch
+                if (retryGate.isLoading) continue
+                if (!host.isWebContentVisible) continue
+                attempts++
                 retry(host)
             }
         }
@@ -157,9 +169,23 @@ class ErrorFeature : ShellFeature {
     }
 
     private fun retry(host: ShellHost) {
-        // Keep the native error page visible until this attempt finishes successfully.
+        val view = host.webView ?: return
+        if (!host.isWebContentVisible || !retryGate.begin()) return
+        // Never interrupt an already-running manual, network or automatic load.
         failedLoad = false
         host.reload()
+        armLoadTimeout(host, view)
+    }
+
+    private fun armLoadTimeout(host: ShellHost, view: WebView) {
+        loadTimeoutJob?.cancel()
+        loadTimeoutJob = host.scope.launch {
+            delay(45_000)
+            if (host.webView !== view || !retryGate.isLoading) return@launch
+            view.stopLoading()
+            retryGate.finish()
+            showError(host, R.string.shell_error_timeout)
+        }
     }
 
     private fun openWebViewStore(host: ShellHost) {
@@ -175,6 +201,9 @@ class ErrorFeature : ShellFeature {
     }
 
     private fun stopRecovery(host: ShellHost) {
+        loadTimeoutJob?.cancel()
+        loadTimeoutJob = null
+        retryGate.finish()
         retryJob?.cancel()
         retryJob = null
         networkCallback?.let {
@@ -185,6 +214,7 @@ class ErrorFeature : ShellFeature {
 
     private fun clearError(host: ShellHost) {
         reason = null
+        status = 0
         failedUrl = null
         stopRecovery(host)
     }

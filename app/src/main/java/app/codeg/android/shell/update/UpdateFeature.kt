@@ -26,10 +26,14 @@ import app.codeg.android.core.update.AppUpdate
 import app.codeg.android.core.update.UpdateChecker
 import app.codeg.android.core.update.UpdateDownloader
 import app.codeg.android.core.update.UpdateDownloadState
+import app.codeg.android.core.update.UpdateCheckPolicy
+import app.codeg.android.core.update.UpdateDownloadException
+import app.codeg.android.core.update.UpdateFailureReason
 import app.codeg.android.shell.ShellFeature
 import app.codeg.android.shell.ShellHost
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +46,11 @@ class UpdateFeature : ShellFeature {
     private var progress by mutableStateOf<Float?>(null)
     private var error by mutableStateOf<Int?>(null)
     private var file: File? = null
-    private var checking = false
+    private var checking by mutableStateOf(false)
+    private var manualRequested = false
+    private var manualCheckVisible by mutableStateOf(false)
+    private var checkMessage by mutableStateOf<Int?>(null)
+    private var downloadJob: Job? = null
     private var awaitingPermission = false
 
     private fun preferences(host: ShellHost) =
@@ -55,27 +63,52 @@ class UpdateFeature : ShellFeature {
             if (host.activity.packageManager.canRequestPackageInstalls()) install(host)
             else error = R.string.shell_update_install_failed
         }
+        check(host, manual = false)
+    }
+
+    fun checkNow(host: ShellHost) {
+        if (update != null || downloading) {
+            manualCheckVisible = false
+            return
+        }
+        manualCheckVisible = true
+        manualRequested = true
+        checkMessage = null
+        if (BuildConfig.DEBUG) {
+            checkMessage = R.string.shell_update_debug_disabled
+            return
+        }
+        check(host, manual = true)
+    }
+
+    private fun check(host: ShellHost, manual: Boolean) {
         if (checking || downloading || update != null) return
         val prefs = preferences(host)
-        val now = System.currentTimeMillis()
-        val previous = prefs.getLong("last_check", 0L)
-        if (previous != 0L && now >= previous && now - previous < SIX_HOURS) return
+        if (!UpdateCheckPolicy.shouldCheck(System.currentTimeMillis(), prefs.getLong("last_success", 0),
+                prefs.getLong("last_failure", 0), manual)) return
         checking = true
-        prefs.edit().putLong("last_check", now).apply()
         host.scope.launch {
             try {
-                // Close the anonymous client after each check; no server credentials are used.
-                val available = UpdateChecker().use { it.check(BuildConfig.VERSION_CODE) }
+                // A successful empty result and a network failure are different outcomes.
+                val available = UpdateChecker().use { it.check(BuildConfig.VERSION_CODE, manual = true) }
+                prefs.edit().putLong("last_success", System.currentTimeMillis()).remove("last_failure").apply()
                 if (available != null) {
                     val dismissedAt = prefs.getLong("dismissed_at", 0L)
                     val dismissed = prefs.getInt("dismissed_version", -1) == available.versionCode
                     val time = System.currentTimeMillis()
-                    if (!dismissed || time < dismissedAt || time - dismissedAt >= 4 * SIX_HOURS) {
+                    if (manualRequested || manual || !dismissed || time < dismissedAt || time - dismissedAt >= 4 * SIX_HOURS) {
                         update = available
+                        manualCheckVisible = false
                     }
-                }
+                } else if (manual || manualRequested) checkMessage = R.string.shell_update_up_to_date
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                prefs.edit().putLong("last_failure", System.currentTimeMillis()).apply()
+                if (manual || manualRequested) checkMessage = R.string.shell_update_check_failed
             } finally {
                 checking = false
+                manualRequested = false
             }
         }
     }
@@ -102,7 +135,7 @@ class UpdateFeature : ShellFeature {
         downloadState = UpdateDownloadState.Testing
         progress = null
         error = null
-        host.scope.launch {
+        downloadJob = host.scope.launch {
             try {
                 file = UpdateDownloader(host.activity.applicationContext).download(available,
                     onState = { state -> withContext(Dispatchers.Main.immediate) { downloadState = state } },
@@ -112,13 +145,23 @@ class UpdateFeature : ShellFeature {
                 install(host)
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
-                error = R.string.shell_update_download_failed
+            } catch (e: Exception) {
+                error = when ((e as? UpdateDownloadException)?.reason) {
+                    UpdateFailureReason.NO_ROUTE -> R.string.shell_update_no_route
+                    UpdateFailureReason.TRUSTED_CHECKSUM -> R.string.shell_update_checksum_unavailable
+                    UpdateFailureReason.VERIFICATION -> R.string.shell_update_verification_failed
+                    else -> R.string.shell_update_download_failed
+                }
             } finally {
+                // Keep retry disabled until cancellation has closed the call and removed the half-file.
                 downloading = false
+                downloadJob = null
+                progress = null
             }
         }
     }
+
+    private fun cancelDownload() { downloadJob?.cancel() }
 
     private fun install(host: ShellHost) {
         val apk = file ?: return
@@ -142,9 +185,18 @@ class UpdateFeature : ShellFeature {
 
     @Composable
     override fun Overlay(host: ShellHost) {
-        val available = update ?: return
+        val available = update
+        if (available == null) {
+            if (manualCheckVisible) AlertDialog(
+                onDismissRequest = { manualCheckVisible = false },
+                title = { Text(stringResource(R.string.shell_update_check)) },
+                text = { Text(stringResource(if (checking) R.string.shell_update_checking else checkMessage ?: R.string.shell_update_check_failed)) },
+                confirmButton = { TextButton(onClick = { manualCheckVisible = false }) { Text(stringResource(R.string.shell_update_close)) } },
+            )
+            return
+        }
         AlertDialog(
-            onDismissRequest = { dismiss(host) },
+            onDismissRequest = { if (downloading) cancelDownload() else dismiss(host) },
             title = { Text(stringResource(R.string.shell_update_available, available.versionName)) },
             text = {
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
@@ -157,7 +209,11 @@ class UpdateFeature : ShellFeature {
                         })
                         val value = progress
                         if (value == null) LinearProgressIndicator()
-                        else LinearProgressIndicator(progress = { value })
+                        else {
+                            LinearProgressIndicator(progress = { value })
+                            Text(stringResource(R.string.shell_update_download_progress,
+                                (value * 100).toInt(), value * available.size / 1048576f, available.size / 1048576f))
+                        }
                     }
                     error?.let { Text(stringResource(it)) }
                 }
@@ -168,8 +224,8 @@ class UpdateFeature : ShellFeature {
                 }
             },
             dismissButton = {
-                TextButton(enabled = !downloading, onClick = { dismiss(host) }) {
-                    Text(stringResource(R.string.shell_update_later))
+                TextButton(onClick = { if (downloading) cancelDownload() else dismiss(host) }) {
+                    Text(stringResource(if (downloading) R.string.shell_update_cancel_download else R.string.shell_update_later))
                 }
             },
         )

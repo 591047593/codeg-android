@@ -37,6 +37,9 @@ interface ShellHost {
     /** Origin of the server being shown, e.g. `https://example.com:8443`, or null when none is chosen. */
     val currentServerUrl: String?
 
+    /** False while a native management screen covers the retained web page. */
+    val isWebContentVisible: Boolean get() = true
+
     /** Load [url] in the WebView (absolute URL). */
     fun loadUrl(url: String)
 
@@ -48,6 +51,12 @@ interface ShellHost {
 
     /** Show the native server manager screen (S5). */
     fun openServerManager()
+
+    /** Restore a validated target on an already-saved server. Called on the UI thread. */
+    fun openServerTarget(serverOrigin: String, targetUrl: String): Boolean
+
+    /** Open the native manual update check and report its outcome. */
+    fun checkForUpdates()
 }
 
 /**

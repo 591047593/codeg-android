@@ -2,6 +2,7 @@ package app.codeg.android.core.update
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
@@ -19,7 +20,14 @@ data class AppUpdate(
 )
 
 /** Dedicated anonymous client; never inherits codeg server credentials. */
-class UpdateChecker(private val client: HttpClient = HttpClient(OkHttp) { expectSuccess = true }) : java.io.Closeable {
+class UpdateChecker(private val client: HttpClient = HttpClient(OkHttp) {
+    expectSuccess = true
+    install(HttpTimeout) {
+        requestTimeoutMillis = 12_000
+        connectTimeoutMillis = 5_000
+        socketTimeoutMillis = 8_000
+    }
+}) : java.io.Closeable {
     override fun close() = client.close()
     suspend fun check(currentVersion: Int, manual: Boolean = false): AppUpdate? = try {
         parse(client.get("https://api.github.com/repos/591047593/codeg-android/releases?per_page=20").bodyAsText(), currentVersion)

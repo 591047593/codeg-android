@@ -50,7 +50,10 @@ internal class ShellWebViewClient(
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-        if (features.any { it.onRenderProcessGone(host, view, detail) }) return true
+        // Every feature must invalidate its document state, even if an earlier
+        // feature already handled recovery (for example errors before notifications).
+        val handled = features.map { it.onRenderProcessGone(host, view, detail) }.any { it }
+        if (handled) return true
         // Nobody handled it: rebuild instead of letting the app crash.
         host.recreateWebView()
         return true

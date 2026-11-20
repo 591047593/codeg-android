@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify mobile token-rate layout in Chrome
-        run: node --test scripts/test_mobile_token_rate.cjs
+        run: node --test scripts/test_*.cjs
       - name: Set up Java
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:

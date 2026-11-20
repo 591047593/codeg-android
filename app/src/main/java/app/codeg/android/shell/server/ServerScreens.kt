@@ -96,6 +96,9 @@ internal fun ServerManager(feature: ServerFeature, host: ShellHost, onClose: () 
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            OutlinedButton(onClick = { host.checkForUpdates() }, modifier = Modifier.fillMaxWidth(), shape = ServerPill) {
+                Text(stringResource(R.string.shell_update_check))
+            }
             Button(
                 enabled = !busy, onClick = { adding = true }, shape = ServerPill,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp).heightIn(min = 48.dp),
@@ -170,6 +173,9 @@ internal fun ServerEditor(feature: ServerFeature, host: ShellHost, profile: Serv
                     if (problem == null) persist(value) else { error = problem; pending = value }
                 }
             }) { Text(stringResource(if (busy) R.string.shell_server_checking else R.string.shell_server_save)) }
+            if (onCancel == null) OutlinedButton(onClick = { host.checkForUpdates() }, shape = ServerPill, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.shell_update_check))
+            }
             onCancel?.let { OutlinedButton(
                 enabled = !busy, shape = ServerPill,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -322,8 +328,26 @@ private val probeClient = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECO
 
 private suspend fun probe(origin: String): Int? = withContext(Dispatchers.IO) {
     try {
-        probeClient.newCall(Request.Builder().url("$origin/").get().build()).execute().use { }
-        null
+        probeClient.newCall(Request.Builder().url("$origin/").get().build()).execute().use { response ->
+            val body = response.body
+            val sample = if (body == null || response.code !in 200..299) "" else body.byteStream().use { input ->
+                val bytes = ByteArray(64 * 1024)
+                var count = 0
+                while (count < bytes.size) {
+                    val read = input.read(bytes, count, bytes.size - count)
+                    if (read < 0) break
+                    count += read
+                }
+                String(bytes, 0, count, Charsets.UTF_8)
+            }
+            when (classifyServerProbe(response.code, response.header("Content-Type").orEmpty(), sample)) {
+                ServerProbeOutcome.READY -> null
+                ServerProbeOutcome.AUTH_REQUIRED -> R.string.shell_server_auth_required
+                ServerProbeOutcome.NOT_FOUND -> R.string.shell_server_not_found
+                ServerProbeOutcome.SERVER_ERROR -> R.string.shell_server_http_error
+                ServerProbeOutcome.UNRECOGNIZED -> R.string.shell_server_unrecognized
+            }
+        }
     } catch (_: SocketTimeoutException) { R.string.shell_server_timeout }
     catch (_: java.io.InterruptedIOException) { R.string.shell_server_timeout }
     catch (_: SSLException) { R.string.shell_server_certificate }

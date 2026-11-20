@@ -69,16 +69,20 @@ internal class UpdateDownloadEngine(
         val candidates = routesFor(update.apkUrl).distinctBy { it.url }.take(4)
         require(candidates.isNotEmpty()) { "No update routes configured" }
         onState(UpdateDownloadState.Testing)
-        val expected = expectedDigest(update)
+        val expected = try { expectedDigest(update) } catch (e: IOException) {
+            coroutineContext.ensureActive()
+            throw UpdateDownloadException(UpdateFailureReason.TRUSTED_CHECKSUM, e)
+        }
         val ranked = coroutineScope {
             candidates.map { route -> async { probe(route, update.size) } }
                 .awaitAll().filterNotNull().sortedBy { it.second }.map { it.first }
         }
-        if (ranked.isEmpty()) throw IOException("No usable update download route")
+        if (ranked.isEmpty()) throw UpdateDownloadException(UpdateFailureReason.NO_ROUTE)
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Cannot create update cache")
         val target = File(directory, "build-${update.versionCode}.apk")
         val partial = File(directory, "build-${update.versionCode}.part")
         var lastFailure: IOException? = null
+        var verificationFailed = false
         try {
             for (route in ranked) {
                 coroutineContext.ensureActive()
@@ -98,7 +102,7 @@ internal class UpdateDownloadEngine(
                         }
                         digest.digest().joinToString("") { "%02x".format(it) }
                     }
-                    if (!actual.equals(expected, ignoreCase = true)) throw IOException("Update SHA-256 mismatch")
+                    if (!actual.equals(expected, ignoreCase = true)) throw UpdateDownloadException(UpdateFailureReason.VERIFICATION)
                     coroutineContext.ensureActive()
                     if (target.exists() && !target.delete()) throw IOException("Cannot replace cached update")
                     if (!partial.renameTo(target)) throw IOException("Cannot finalize update")
@@ -108,10 +112,11 @@ internal class UpdateDownloadEngine(
                 } catch (e: IOException) {
                     coroutineContext.ensureActive()
                     lastFailure = e
+                    if ((e as? UpdateDownloadException)?.reason == UpdateFailureReason.VERIFICATION) verificationFailed = true
                     partial.delete()
                 }
             }
-            throw IOException("Every measured update route failed download or verification", lastFailure)
+            throw UpdateDownloadException(if (verificationFailed) UpdateFailureReason.VERIFICATION else UpdateFailureReason.DOWNLOAD, lastFailure)
         } finally {
             partial.delete()
         }

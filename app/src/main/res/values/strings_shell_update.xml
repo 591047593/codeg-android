@@ -10,4 +10,15 @@
     <string name="shell_update_later">Later</string>
     <string name="shell_update_download_failed">Download or verification failed. Tap Download and install to retry.</string>
     <string name="shell_update_install_failed">Unable to install. Allow installation from this app in Settings, then tap Download and install to retry.</string>
+    <string name="shell_update_check">Check for updates</string>
+    <string name="shell_update_checking">Checking for updates…</string>
+    <string name="shell_update_up_to_date">This app is up to date.</string>
+    <string name="shell_update_check_failed">Could not check for updates. Check your connection and retry.</string>
+    <string name="shell_update_debug_disabled">Automatic APK updates are disabled in debug builds.</string>
+    <string name="shell_update_close">Close</string>
+    <string name="shell_update_cancel_download">Cancel download</string>
+    <string name="shell_update_no_route">No download route is reachable. Change networks and retry.</string>
+    <string name="shell_update_checksum_unavailable">Could not obtain trusted update verification information. Installation was stopped.</string>
+    <string name="shell_update_verification_failed">The update did not match its trusted checksum. Installation was blocked.</string>
+    <string name="shell_update_download_progress">%1$d%% · %2$.1f / %3$.1f MiB</string>
 </resources>

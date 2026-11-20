@@ -183,6 +183,37 @@ class UpdateDownloadEngineTest {
         assertArrayEquals(apk, file.readBytes())
     }
 
+    @Test fun allUnusableRoutesReportConnectivityInsteadOfGenericVerificationFailure() = runBlocking {
+        try { engine(listOf(route("html", mode = "html"))).download(update(), directory); fail("No valid route") }
+        catch (e: UpdateDownloadException) { assertEquals(UpdateFailureReason.NO_ROUTE, e.reason) }
+        assertTrue(downloads.isEmpty())
+    }
+
+    @Test fun missingTrustedChecksumStopsBeforeContactingProxies() = runBlocking {
+        try { engine(listOf(route("good"))).download(update().copy(sha256 = null), directory); fail("Missing checksum") }
+        catch (e: UpdateDownloadException) { assertEquals(UpdateFailureReason.TRUSTED_CHECKSUM, e.reason) }
+        assertTrue(headers.isEmpty())
+    }
+
+    @Test fun laterNetworkFailureDoesNotHideEarlierDigestMismatch() = runBlocking {
+        try {
+            engine(listOf(route("tampered", mode = "corrupt"), route("offline", 150, "fail-download"))).download(update(), directory)
+            fail("No verified APK")
+        } catch (e: UpdateDownloadException) { assertEquals(UpdateFailureReason.VERIFICATION, e.reason) }
+        assertEquals(listOf("tampered", "offline"), downloads.toList())
+        assertEquals(emptyList<String>(), directory.list()!!.toList())
+    }
+
+    @Test fun cancellationDuringBodyReadCleansHalfFileWithoutStartingAnotherRoute() = runBlocking {
+        val first = route("slow-body", mode = "slow-download")
+        val second = route("backup", 50)
+        val job = launch(Dispatchers.IO) { engine(listOf(first, second)).download(update(), directory) }
+        withTimeout(2000) { while (downloads.isEmpty()) kotlinx.coroutines.delay(10) }
+        withTimeout(1500) { job.cancelAndJoin() }
+        assertEquals(listOf("slow-body"), downloads.toList())
+        assertEquals(emptyList<String>(), directory.list()!!.toList())
+    }
+
     @Test fun routeFactoryOnlyProxiesThisReposPublicHttpsReleaseApks() {
         val routes = githubUpdateRoutes(update().apkUrl)
         assertEquals(4, routes.size)

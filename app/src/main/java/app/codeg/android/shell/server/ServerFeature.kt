@@ -20,7 +20,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
@@ -47,19 +48,38 @@ class ServerFeature : ShellFeature {
     private lateinit var store: ServerStore
     private lateinit var secrets: SecretStore
     private val migrating = mutableSetOf<String>()
+    internal val ready = MutableStateFlow(false)
+    internal val startupFailed = MutableStateFlow(false)
+    private var startupJob: Job? = null
 
     override fun onCreate(host: ShellHost) {
         val deps = EntryPointAccessors.fromApplication(host.activity.applicationContext, ServerDependencies::class.java)
         store = deps.serverStore()
         secrets = deps.secretStore()
-        runBlocking { refresh() }
+        retryStartup(host)
         val intent = Intent(ACTION).setClassName(host.activity.packageName, "app.codeg.android.MainActivity")
-        host.activity.getSystemService(ShortcutManager::class.java).addDynamicShortcuts(listOf(
-            ShortcutInfo.Builder(host.activity, "shell_server_manager")
-                .setShortLabel(host.activity.getString(R.string.shell_server_switch))
-                .setIntent(intent).build(),
-        ))
+        // Launcher shortcuts are optional; restrictions must not prevent startup.
+        runCatching {
+            host.activity.getSystemService(ShortcutManager::class.java).addDynamicShortcuts(listOf(
+                ShortcutInfo.Builder(host.activity, "shell_server_manager")
+                    .setShortLabel(host.activity.getString(R.string.shell_server_switch))
+                    .setIntent(intent).build(),
+            ))
+        }
     }
+
+    internal fun retryStartup(host: ShellHost) {
+        if (startupJob?.isActive == true) return
+        startupFailed.value = false
+        startupJob = host.scope.launch {
+            try { refresh(); ready.value = true }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { startupFailed.value = true }
+        }
+    }
+
+    internal suspend fun savedProfile(origin: String): ServerProfile? =
+        store.profiles.first().firstOrNull { serverOrigin(it.baseUrl) == origin }
 
     private suspend fun refresh() {
         val list = store.profiles.first()

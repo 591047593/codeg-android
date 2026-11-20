@@ -59,7 +59,7 @@ class WebSettingsFeature : ShellFeature {
     }
 
     override fun onResume(host: ShellHost) {
-        host.webView?.evaluateJavascript(visibilityUpdateScript(hidden = false), null)
+        host.webView?.evaluateJavascript(visibilityUpdateScript(hidden = !host.isWebContentVisible), null)
     }
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: Bitmap?) {
@@ -79,7 +79,9 @@ class WebSettingsFeature : ShellFeature {
             view.evaluateJavascript(visibilityScript, null)
             // A page loaded while the app is already in the background starts
             // with the flag cleared; restore the real state once the script exists.
-            if (!host.activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            if (!host.isWebContentVisible ||
+                !host.activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            ) {
                 view.evaluateJavascript(visibilityUpdateScript(hidden = true), null)
             }
         }
@@ -99,7 +101,8 @@ class WebSettingsFeature : ShellFeature {
                 val server = origin(host.currentServerUrl)
                 if (token.isEmpty() || token != documentToken || server == null ||
                     documentOrigin != server || origin(view.url) != server ||
-                    host.webView !== view || !view.hasWindowFocus()
+                    host.webView !== view || !host.isWebContentVisible ||
+                    !view.isShown || !view.hasWindowFocus()
                 ) null else operation(host.activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             }
             if (!view.post(task)) return null

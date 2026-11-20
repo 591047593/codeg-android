@@ -1,5 +1,10 @@
 package app.codeg.android.core.update
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -25,5 +30,18 @@ class UpdateCheckerTest {
 
     @Test fun nullDigestKeepsCompatibilityWithLegacyReleaseMetadata() {
         assertNull(UpdateChecker.parse(release("null"), 199)!!.sha256)
+    }
+
+    @Test fun successfulNoUpdateIsAnEmptyResultNotAnError() = runBlocking {
+        val client = HttpClient(MockEngine { respond("[]", HttpStatusCode.OK) }) { expectSuccess = true }
+        UpdateChecker(client).use { assertNull(it.check(200, manual = true)) }
+    }
+
+    @Test fun foregroundCheckReportsNetworkFailureInsteadOfPretendingNoUpdate() = runBlocking {
+        val client = HttpClient(MockEngine { respond("unavailable", HttpStatusCode.ServiceUnavailable) }) { expectSuccess = true }
+        try {
+            UpdateChecker(client).use { it.check(200, manual = true) }
+            fail("HTTP failure must not look like no update")
+        } catch (_: io.ktor.client.plugins.ServerResponseException) {}
     }
 }

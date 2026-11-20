@@ -27,19 +27,29 @@ class NavFeature : ShellFeature {
     /** The page URL the back button was last synced for, or null when not shown. */
     private var backButtonPage: String? = null
 
-    /** Secret for the current document's window bridge, or null before a load. */
+    /** Secret and selected server for the current document's window bridge. */
     private var documentToken: String? = null
+    private var documentServer: String? = null
+
+    /** Native-only entry, including project/session query and fragment. */
+    private var workspaceEntry: String? = null
+    private var workspaceServer: String? = null
 
     override fun onWebViewCreated(host: ShellHost, webView: WebView) {
         backPending = false
         exitArmedAt = null
         backButtonPage = null
         documentToken = null
+        documentServer = null
+        workspaceEntry = null
+        workspaceServer = host.currentServerUrl
         webView.addJavascriptInterface(WindowBridge(host, webView), "CodegShellWindowNative")
     }
 
     override fun doUpdateVisitedHistory(host: ShellHost, view: WebView, url: String, isReload: Boolean) {
+        if (host.webView !== view) return
         exitArmedAt = null
+        rememberWorkspaceEntry(host, view, url)
         // A client-side route change does not reload the document; this is the
         // only callback a single-page transition gives us.
         if (!isReload) syncBackButton(host, view, url)
@@ -53,38 +63,68 @@ class NavFeature : ShellFeature {
     }
 
     override fun onPageStarted(host: ShellHost, view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+        if (host.webView !== view) return
         exitArmedAt = null
         // A new document starts without the injected button; the finished load
         // (and any client-side transition) puts it back.
         backButtonPage = null
         documentToken = UUID.randomUUID().toString()
+        documentServer = host.currentServerUrl
+        rememberWorkspaceEntry(host, view, url)
     }
 
     override fun onPageFinished(host: ShellHost, view: WebView, url: String) {
+        if (host.webView !== view) return
+        rememberWorkspaceEntry(host, view, url)
         val token = documentToken
-        if (token != null && sameOrigin(host, Uri.parse(url)) && view === host.webView) {
+        if (token != null && documentServer == host.currentServerUrl && sameOrigin(host, Uri.parse(url))) {
             // `window.close()` is ignored in a WebView unless the script opened
             // the window, and the shell never gives it one to close.
             view.evaluateJavascript(windowCloseBridgeScript(host.currentServerUrl.orEmpty(), token), null)
         }
-        syncBackButton(host, view, url)
+        // History can fire before the new document is ready for evaluation.
+        // Retry even if that early callback already marked this URL as synced.
+        syncBackButton(host, view, url, force = true)
     }
 
-    /** Back to where the page was opened from; the last resort of the back button. */
+    /** No WebView or host state is read until the JS interface call reaches UI. */
     private inner class WindowBridge(private val host: ShellHost, private val view: WebView) {
         @JavascriptInterface
         fun home(token: String) {
-            if (token.isEmpty() || token != documentToken || host.webView !== view) return
-            val page = view.url?.let(Uri::parse) ?: return
-            if (!sameOrigin(host, page)) return
             view.post {
-                if (host.webView !== view) return@post
-                // Reaching here means the page had no history of its own, so the
-                // workspace root is the only sensible destination.
+                if (token.isEmpty() || token != documentToken || host.webView !== view || host.activity.isDestroyed) return@post
                 val server = host.currentServerUrl ?: return@post
-                view.loadUrl(server)
+                if (documentServer != server) return@post
+                val page = view.url?.let(Uri::parse) ?: return@post
+                if (!sameOrigin(host, page) || !isWindowRoute(page)) return@post
+                // Only native-observed, same-origin workspace entries can be
+                // restored; no destination crosses the JavaScript interface.
+                val entry = workspaceEntry?.takeIf {
+                    workspaceServer == server && isWorkspace(host, Uri.parse(it))
+                }
+                val destination = entry ?: Uri.parse(server).buildUpon()
+                    .encodedPath("/workspace").clearQuery().fragment(null).build().toString()
+                view.loadUrl(destination)
             }
         }
+    }
+
+    private fun rememberWorkspaceEntry(host: ShellHost, view: WebView, url: String) {
+        if (host.webView !== view) return
+        val server = host.currentServerUrl
+        if (workspaceServer != server) {
+            workspaceEntry = null
+            workspaceServer = server
+        }
+        if (isWorkspace(host, Uri.parse(url))) workspaceEntry = url
+    }
+
+    private fun isWorkspace(host: ShellHost, uri: Uri): Boolean =
+        sameOrigin(host, uri) && uri.path.orEmpty().trimEnd('/') == "/workspace"
+
+    private fun isWindowRoute(uri: Uri): Boolean {
+        val path = uri.path.orEmpty().trimEnd('/')
+        return WINDOW_ROUTES.any { path == it || path.startsWith("$it/") }
     }
 
     /**
@@ -96,17 +136,17 @@ class NavFeature : ShellFeature {
      * WebView has neither, and `SettingsShell`'s mobile title bar is a menu
      * button and nothing else.
      */
-    private fun syncBackButton(host: ShellHost, view: WebView?, url: String) {
+    private fun syncBackButton(host: ShellHost, view: WebView?, url: String, force: Boolean = false) {
         val server = host.currentServerUrl ?: return
         if (view == null || host.webView !== view) return
         if (!sameOrigin(host, Uri.parse(url))) return
-        val path = Uri.parse(url).path.orEmpty().trimEnd('/')
-        val visible = WINDOW_ROUTES.any { path == it || path.startsWith("$it/") }
+        val visible = isWindowRoute(Uri.parse(url))
         // Nothing to remove and nothing to add.
         if (backButtonPage == null && !visible) return
-        if (backButtonPage != null && backButtonPage == url && visible) return
+        if (!force && backButtonPage != null && backButtonPage == url && visible) return
         backButtonPage = if (visible) url else null
-        view.evaluateJavascript(backButtonScript(server, visible), null)
+        val label = host.activity.getString(R.string.shell_nav_back_to_workspace)
+        view.evaluateJavascript(backButtonScript(server, visible, label), null)
     }
 
     override fun onBack(host: ShellHost): Boolean {
@@ -271,6 +311,8 @@ class NavFeature : ShellFeature {
 
     override fun onCreateWindow(host: ShellHost, view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
         val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+        if (host.webView !== view) return false
+        val openerServer = host.currentServerUrl
         val popup = WebView(host.activity)
         popup.settings.allowFileAccess = false
         popup.settings.allowContentAccess = false
@@ -281,7 +323,14 @@ class NavFeature : ShellFeature {
             if (url == "about:blank") return false
             if (handled) return true
             handled = true
-            if (!route(host, Uri.parse(url))) host.loadUrl(url)
+            if (host.webView === view && host.currentServerUrl == openerServer && !host.activity.isDestroyed &&
+                !route(host, Uri.parse(url))
+            ) {
+                // Capture the opener before replacing the single main WebView.
+                // A popup opened from a settings subpage must not replace it.
+                view.url?.let { rememberWorkspaceEntry(host, view, it) }
+                host.loadUrl(url)
+            }
             popupHandler.removeCallbacks(timeout)
             popupHandler.post { if (popups.remove(popup)) popup.destroy() }
             return true
