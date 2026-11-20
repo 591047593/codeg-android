@@ -126,7 +126,8 @@ internal class UpdateDownloadEngine(
         val checksumUrl = update.sha256Url ?: throw IOException("Update has no trusted SHA-256")
         if (checksumUrl != update.apkUrl + ".sha256") throw IOException("Invalid update checksum URL")
         githubUpdateRoutes(update.apkUrl)
-        return request(probeClient, Request.Builder().url(checksumUrl).header("Accept-Encoding", "identity").build()) { response ->
+        val checksumClient = client.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
+        return request(checksumClient, Request.Builder().url(checksumUrl).header("Accept-Encoding", "identity").build()) { response ->
             if (response.code != 200) throw IOException("Cannot obtain original GitHub checksum")
             val bytes = response.body?.byteStream()?.use { input ->
                 val buffer = ByteArray(4097)
@@ -185,7 +186,12 @@ internal class UpdateDownloadEngine(
     }
 
     private suspend fun transfer(route: UpdateRoute, size: Long, partial: File, progress: suspend (Float?) -> Unit) {
-        request(client, Request.Builder().url(route.url).header("Accept-Encoding", "identity").build()) { response ->
+        // Full APKs need a size-aware budget, not the short probe/client deadline.
+        // Allow roughly 64KiB/s plus setup time, bounded to 3–15 minutes; the
+        // per-read timeout still detects a stalled route much sooner.
+        val budgetMillis = (size / 64 + 30_000L).coerceIn(180_000L, 900_000L)
+        val transferClient = client.newBuilder().callTimeout(budgetMillis, TimeUnit.MILLISECONDS).build()
+        request(transferClient, Request.Builder().url(route.url).header("Accept-Encoding", "identity").build()) { response ->
             if (response.code != 200) throw IOException("Update download HTTP ${response.code}")
             val body = response.body ?: throw IOException("Missing update body")
             if (body.contentLength() >= 0 && body.contentLength() != size) throw IOException("Update length mismatch")
