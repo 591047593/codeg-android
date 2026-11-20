@@ -82,9 +82,11 @@ class DisplayFeature : ShellFeature {
     }
 
     private fun observePage(host: ShellHost, view: WebView) {
-        if (host.webView !== view || !sameOrigin(view.url, host.currentServerUrl)) return
+        val serverUrl = host.currentServerUrl ?: return
+        if (host.webView !== view || !sameOrigin(view.url, serverUrl)) return
         val token = UUID.randomUUID().toString()
         documentToken = token
+        view.evaluateJavascript(mobileTurnStatsScript(JSONObject.quote(serverUrl)), null)
         view.evaluateJavascript(themeObserver(JSONObject.quote(token)), null)
         view.evaluateJavascript(imeFocusObserver, null)
     }
