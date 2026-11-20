@@ -26,7 +26,7 @@ class UpdateDownloadEngineTest {
     private lateinit var server: ServerSocket
     private lateinit var directory: File
     private val executor = Executors.newCachedThreadPool()
-    private data class Reply(val bytes: ByteArray, val code: Int = 200, val type: String = "application/octet-stream", val range: String? = null)
+    private data class Reply(val bytes: ByteArray, val code: Int = 200, val type: String = "application/octet-stream", val range: String? = null, val pause: Long = 0)
     private val handlers = ConcurrentHashMap<String, (Map<String, String>) -> Reply>()
     private val downloads = CopyOnWriteArrayList<String>()
     private val headers = CopyOnWriteArrayList<Pair<String?, String?>>()
@@ -56,7 +56,15 @@ class UpdateDownloadEngineTest {
                             val reply = handlers[target]?.invoke(requestHeaders) ?: Reply(byteArrayOf(), 404)
                             val header = "HTTP/1.1 ${reply.code} Test\r\nContent-Length: ${reply.bytes.size}\r\nContent-Type: ${reply.type}\r\nConnection: close\r\n" +
                                 (reply.range?.let { "Content-Range: $it\r\n" } ?: "") + "\r\n"
-                            socket.getOutputStream().apply { write(header.toByteArray(Charsets.US_ASCII)); write(reply.bytes); flush() }
+                            socket.getOutputStream().apply {
+                                write(header.toByteArray(Charsets.US_ASCII))
+                                if (reply.pause > 0) {
+                                    write(reply.bytes, 0, 4096); flush()
+                                    Thread.sleep(reply.pause)
+                                    write(reply.bytes, 4096, reply.bytes.size - 4096)
+                                } else write(reply.bytes)
+                                flush()
+                            }
                         }
                     } catch (_: IOException) {} catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
@@ -86,6 +94,7 @@ class UpdateDownloadEngineTest {
                     "fail-download" -> Reply(byteArrayOf(), 503)
                     "corrupt" -> Reply(apk.clone().apply { this[lastIndex] = 0 })
                     "truncated" -> Reply(apk.copyOf(apk.size / 2))
+                    "slow-download" -> Reply(apk, pause = 500)
                     else -> Reply(apk)
                 }
             }
@@ -164,6 +173,14 @@ class UpdateDownloadEngineTest {
         withTimeout(1500) { job.cancelAndJoin() }
         assertTrue(downloads.isEmpty())
         assertEquals(emptyList<String>(), directory.list()!!.toList())
+    }
+
+    @Test fun fullTransferGetsItsOwnSizeBudgetInsteadOfShortClientDeadline() = runBlocking {
+        val route = route("slow-body", mode = "slow-download")
+        val client = OkHttpClient.Builder().callTimeout(100, TimeUnit.MILLISECONDS).readTimeout(2, TimeUnit.SECONDS).build()
+        val engine = UpdateDownloadEngine(client = client, routesFor = { listOf(route) }, probeTimeoutMillis = 1500, sampleByteCount = 4096)
+        val file = engine.download(update(), directory)
+        assertArrayEquals(apk, file.readBytes())
     }
 
     @Test fun routeFactoryOnlyProxiesThisReposPublicHttpsReleaseApks() {
