@@ -14,6 +14,8 @@ data class AppUpdate(
     val apkUrl: String,
     val sha256Url: String?,
     val size: Long,
+    /** SHA-256 supplied by the independent HTTPS GitHub Releases API. */
+    val sha256: String? = null,
 )
 
 /** Dedicated anonymous client; never inherits codeg server credentials. */
@@ -44,7 +46,10 @@ class UpdateChecker(private val client: HttpClient = HttpClient(OkHttp) { expect
             return AppUpdate("1.1.$code", code, item["body"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 apk["browser_download_url"]!!.jsonPrimitive.content,
                 checksum?.get("browser_download_url")?.jsonPrimitive?.content,
-                apk["size"]?.jsonPrimitive?.longOrNull ?: 0L)
+                apk["size"]?.jsonPrimitive?.longOrNull ?: 0L,
+                apk["digest"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
+                    ?.takeIf { it.matches(Regex("[a-fA-F0-9]{64}")) }?.lowercase())
         }
     }
 }

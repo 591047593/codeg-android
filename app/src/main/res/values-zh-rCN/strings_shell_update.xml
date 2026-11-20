@@ -3,6 +3,9 @@
     <string name="shell_update_available">发现新版本：%1$s</string>
     <string name="shell_update_no_notes">暂无更新说明。</string>
     <string name="shell_update_downloading">正在下载…</string>
+    <string name="shell_update_testing_routes">正在测试下载线路…</string>
+    <string name="shell_update_downloading_route">正在通过 %1$s 下载…</string>
+    <string name="shell_update_verifying">正在校验更新包…</string>
     <string name="shell_update_install">下载并安装</string>
     <string name="shell_update_later">稍后</string>
     <string name="shell_update_download_failed">下载或校验失败。点击“下载并安装”重试。</string>

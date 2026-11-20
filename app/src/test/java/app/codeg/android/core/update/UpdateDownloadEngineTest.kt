@@ -1,10 +1,10 @@
 package app.codeg.android.core.update
 
-import com.sun.net.httpserver.HttpExchange
-import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.io.IOException
-import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.ConcurrentHashMap
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
@@ -23,9 +23,11 @@ import org.junit.Before
 import org.junit.Test
 
 class UpdateDownloadEngineTest {
-    private lateinit var server: HttpServer
+    private lateinit var server: ServerSocket
     private lateinit var directory: File
     private val executor = Executors.newCachedThreadPool()
+    private data class Reply(val bytes: ByteArray, val code: Int = 200, val type: String = "application/octet-stream", val range: String? = null)
+    private val handlers = ConcurrentHashMap<String, (Map<String, String>) -> Reply>()
     private val downloads = CopyOnWriteArrayList<String>()
     private val headers = CopyOnWriteArrayList<Pair<String?, String?>>()
     private val apk = ByteArray(16 * 1024) { (it % 251).toByte() }.apply {
@@ -33,55 +35,62 @@ class UpdateDownloadEngineTest {
     }
 
     @Before fun setup() {
-        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.executor = executor
-        server.start()
+        server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         directory = Files.createTempDirectory("codeg-update-test-").toFile()
+        executor.execute {
+            while (!server.isClosed) {
+                val socket = try { server.accept() } catch (_: IOException) { break }
+                executor.execute handler@{
+                    try {
+                        socket.use {
+                            socket.soTimeout = 3000
+                            val input = socket.getInputStream().bufferedReader(Charsets.US_ASCII)
+                            val target = input.readLine()?.split(' ')?.getOrNull(1) ?: return@handler
+                            val requestHeaders = mutableMapOf<String, String>()
+                            while (true) {
+                                val line = input.readLine() ?: break
+                                if (line.isEmpty()) break
+                                val separator = line.indexOf(':')
+                                if (separator > 0) requestHeaders[line.substring(0, separator).lowercase()] = line.substring(separator + 1).trim()
+                            }
+                            val reply = handlers[target]?.invoke(requestHeaders) ?: Reply(byteArrayOf(), 404)
+                            val header = "HTTP/1.1 ${reply.code} Test\r\nContent-Length: ${reply.bytes.size}\r\nContent-Type: ${reply.type}\r\nConnection: close\r\n" +
+                                (reply.range?.let { "Content-Range: $it\r\n" } ?: "") + "\r\n"
+                            socket.getOutputStream().apply { write(header.toByteArray(Charsets.US_ASCII)); write(reply.bytes); flush() }
+                        }
+                    } catch (_: IOException) {} catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+                }
+            }
+        }
     }
 
     @After fun cleanup() {
-        server.stop(0)
+        server.close()
         executor.shutdownNow()
         directory.deleteRecursively()
     }
 
     private fun route(name: String, probeDelay: Long = 0, mode: String = "ok"): UpdateRoute {
-        server.createContext("/$name") { exchange ->
-            try {
-                headers.add(exchange.requestHeaders.getFirst("Authorization") to exchange.requestHeaders.getFirst("Cookie"))
-                val probing = exchange.requestHeaders.getFirst("Range") != null
-                if (probing) {
-                    if (probeDelay > 0) Thread.sleep(probeDelay)
-                    if (mode == "html") {
-                        exchange.responseHeaders.add("Content-Type", "text/html")
-                        exchange.sendResponseHeaders(200, 9)
-                        exchange.responseBody.use { it.write("<html>bad".toByteArray()) }
-                    } else if (mode == "ignore-range") {
-                        reply(exchange, apk, 200)
-                    } else {
-                        val sample = apk.copyOfRange(0, 4096)
-                        exchange.responseHeaders.add("Content-Range", "bytes 0-4095/${apk.size}")
-                        reply(exchange, sample, 206)
-                    }
-                } else {
-                    downloads.add(name)
-                    when (mode) {
-                        "fail-download" -> { exchange.sendResponseHeaders(503, -1); exchange.close() }
-                        "corrupt" -> reply(exchange, apk.clone().apply { this[lastIndex] = 0 }, 200)
-                        "truncated" -> reply(exchange, apk.copyOf(apk.size / 2), 200)
-                        else -> reply(exchange, apk, 200)
-                    }
+        handlers["/$name"] = { request ->
+            headers.add(request["authorization"] to request["cookie"])
+            if (request["range"] != null) {
+                if (probeDelay > 0) Thread.sleep(probeDelay)
+                when (mode) {
+                    "html" -> Reply("<html>bad".toByteArray(), type = "text/html")
+                    "ignore-range" -> Reply(apk)
+                    else -> Reply(apk.copyOfRange(0, 4096), 206, range = "bytes 0-4095/${apk.size}")
                 }
-            } catch (_: IOException) { exchange.close() }
-              catch (_: InterruptedException) { exchange.close(); Thread.currentThread().interrupt() }
+            } else {
+                downloads.add(name)
+                when (mode) {
+                    "fail-download" -> Reply(byteArrayOf(), 503)
+                    "corrupt" -> Reply(apk.clone().apply { this[lastIndex] = 0 })
+                    "truncated" -> Reply(apk.copyOf(apk.size / 2))
+                    else -> Reply(apk)
+                }
+            }
         }
-        return UpdateRoute(name, "http://127.0.0.1:${server.address.port}/$name")
-    }
-
-    private fun reply(exchange: HttpExchange, bytes: ByteArray, code: Int) {
-        exchange.responseHeaders.add("Content-Type", "application/octet-stream")
-        exchange.sendResponseHeaders(code, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
+        return UpdateRoute(name, "http://127.0.0.1:${server.localPort}/$name")
     }
 
     private fun update() = AppUpdate("1.1.200", 200, "", "https://github.com/591047593/codeg-android/releases/download/build-200/app.apk", null,

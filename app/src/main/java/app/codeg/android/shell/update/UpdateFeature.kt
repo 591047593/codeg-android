@@ -25,6 +25,7 @@ import app.codeg.android.R
 import app.codeg.android.core.update.AppUpdate
 import app.codeg.android.core.update.UpdateChecker
 import app.codeg.android.core.update.UpdateDownloader
+import app.codeg.android.core.update.UpdateDownloadState
 import app.codeg.android.shell.ShellFeature
 import app.codeg.android.shell.ShellHost
 import java.io.File
@@ -37,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 class UpdateFeature : ShellFeature {
     private var update by mutableStateOf<AppUpdate?>(null)
     private var downloading by mutableStateOf(false)
+    private var downloadState by mutableStateOf<UpdateDownloadState>(UpdateDownloadState.Testing)
     private var progress by mutableStateOf<Float?>(null)
     private var error by mutableStateOf<Int?>(null)
     private var file: File? = null
@@ -97,11 +99,14 @@ class UpdateFeature : ShellFeature {
         }
         val available = update ?: return
         downloading = true
+        downloadState = UpdateDownloadState.Testing
         progress = null
         error = null
         host.scope.launch {
             try {
-                file = UpdateDownloader(host.activity.applicationContext).download(available) { value ->
+                file = UpdateDownloader(host.activity.applicationContext).download(available,
+                    onState = { state -> withContext(Dispatchers.Main.immediate) { downloadState = state } },
+                ) { value ->
                     withContext(Dispatchers.Main.immediate) { progress = value }
                 }
                 install(host)
@@ -145,7 +150,11 @@ class UpdateFeature : ShellFeature {
                 Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                     Text(available.notes.ifBlank { stringResource(R.string.shell_update_no_notes) })
                     if (downloading) {
-                        Text(stringResource(R.string.shell_update_downloading))
+                        Text(when (val state = downloadState) {
+                            UpdateDownloadState.Testing -> stringResource(R.string.shell_update_testing_routes)
+                            is UpdateDownloadState.Downloading -> stringResource(R.string.shell_update_downloading_route, state.route)
+                            UpdateDownloadState.Verifying -> stringResource(R.string.shell_update_verifying)
+                        })
                         val value = progress
                         if (value == null) LinearProgressIndicator()
                         else LinearProgressIndicator(progress = { value })

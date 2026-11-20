@@ -3,6 +3,9 @@
     <string name="shell_update_available">Update available: %1$s</string>
     <string name="shell_update_no_notes">No release notes.</string>
     <string name="shell_update_downloading">Downloading…</string>
+    <string name="shell_update_testing_routes">Testing download routes…</string>
+    <string name="shell_update_downloading_route">Downloading via %1$s…</string>
+    <string name="shell_update_verifying">Verifying update…</string>
     <string name="shell_update_install">Download and install</string>
     <string name="shell_update_later">Later</string>
     <string name="shell_update_download_failed">Download or verification failed. Tap Download and install to retry.</string>

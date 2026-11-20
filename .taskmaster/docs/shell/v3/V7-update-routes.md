@@ -15,8 +15,8 @@
 
 ## 实施与验证
 
-1. 新增 JVM JUnit 回归测试，用 JDK HttpServer 回环服务模拟快慢、超时、伪 HTML、Range 忽略、下载失败、篡改及取消；先在修复分支 CI 观察红灯。
-2. `UpdateChecker` 加摘要解析与统一仓库常量。
+1. 新增 JVM JUnit 回归测试，用标准 ServerSocket 回环 HTTP 夹具模拟快慢、超时、伪 HTML、Range 忽略、下载失败、篡改及取消；先在修复分支 CI 观察红灯。Android Kotlin 单元测试编译环境不暴露 `com.sun.net.httpserver`，不增加新依赖，改用标准套接字实现夹具。
+2. `UpdateChecker` 加独立 GitHub API 摘要解析。
 3. 新增不依赖 Android Context 的 `UpdateDownloadEngine`，让现有 `UpdateDownloader` 只提供私有缓存目录。
 4. `UpdateFeature` 显示测速与选路状态，中英文资源一起更新。
 5. GitHub Verify 跑 JVM 测试、现有 Chrome 回归及 Android 检查/构建；只读复查后快进 main 并发版，核对签名门禁、摘要与中文发布说明。
